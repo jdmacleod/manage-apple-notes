@@ -1,0 +1,17 @@
+# Private config — contains personal folder names and paths
+config/*.local.*
+
+# All personal data — note exports, proposals, reports
+data/
+
+# Convenience: any file explicitly marked private
+*.private.md
+PRIVATE*.md
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.venv/

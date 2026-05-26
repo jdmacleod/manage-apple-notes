@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Blocks commits that may contain personal note data.
+
+set -e
+
+ERRORS=0
+
+# Block any file from data/
+if git diff --cached --name-only | grep -q '^data/'; then
+  echo "ERROR: Staged files found inside data/ — this directory is private."
+  ERRORS=$((ERRORS + 1))
+fi
+
+# Block large JSON files (likely note exports)
+while IFS= read -r file; do
+  if [[ "$file" == *.json ]]; then
+    size=$(git cat-file -s "$(git ls-files --error-unmatch --stage "$file" \
+      2>/dev/null | awk '{print $2}')" 2>/dev/null || echo 0)
+    if [ "$size" -gt 10240 ]; then  # 10 KB threshold
+      echo "ERROR: Large JSON file staged: $file (${size} bytes) — likely an export."
+      ERRORS=$((ERRORS + 1))
+    fi
+  fi
+done < <(git diff --cached --name-only)
+
+# Block *.local.* config files
+if git diff --cached --name-only | grep -q '\.local\.'; then
+  echo "ERROR: A *.local.* config file is staged — these are private."
+  ERRORS=$((ERRORS + 1))
+fi
+
+if [ "$ERRORS" -gt 0 ]; then
+  echo ""
+  echo "Commit blocked. Review staged files with: git diff --cached --name-only"
+  exit 1
+fi
+
+exit 0

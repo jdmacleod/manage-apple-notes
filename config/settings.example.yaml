@@ -1,0 +1,15 @@
+# General settings — copy to settings.local.yaml and customize.
+
+claude:
+  model: "claude-opus-4-6"   # or claude-sonnet-4-6 for cost/speed tradeoff
+  batch_size: 20              # Notes per API call during bulk classification
+
+paths:
+  exports_dir: "data/exports"
+  proposals_dir: "data/proposals"
+  reports_dir: "data/reports"
+
+export:
+  include_body: true
+  max_body_chars: 2000        # Truncate long notes for classification
+  skip_empty: true
