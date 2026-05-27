@@ -7,6 +7,33 @@ use of this project.
 
 ## Apple Notes Platform Behavior
 
+### `every note` does not expose folder context on macOS Sequoia
+
+When iterating `every note` at the application level, `container of aNote` returns a
+generic `item` reference — not a `folder` — on macOS Sequoia. Attempting `name of
+container of aNote` silently fails, leaving folder names empty.
+
+The reliable pattern is to iterate `accounts → folders of acct → notes of aFolder`.
+In this form, the folder context is always known from the outer loop:
+
+```applescript
+tell application "Notes"
+    repeat with acct in accounts
+        repeat with aFolder in folders of acct
+            set folderName to name of aFolder
+            if class of container of aFolder is folder then
+                set parentFolderName to name of container of aFolder
+            end if
+            repeat with aNote in notes of aFolder
+                -- folderName and parentFolderName are correct here
+            end repeat
+        end repeat
+    end repeat
+end tell
+```
+
+This also avoids needing `container of aNote` entirely.
+
 ### Why AppleScript, not SQLite
 
 Apple Notes stores data in `~/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite`.
