@@ -29,8 +29,10 @@ on run argv
 		error "Usage: osascript apply-proposal.applescript [--dry-run] <proposal.json>"
 	end if
 
-	-- Resolve to absolute path
-	set proposalFile to do shell script "cd " & quoted form of (do shell script "dirname " & quoted form of proposalFile) & " && pwd" & "/" & do shell script "basename " & quoted form of proposalFile
+	-- Resolve to absolute path (skip if already absolute)
+	if proposalFile does not start with "/" then
+		set proposalFile to do shell script "cd " & quoted form of (do shell script "dirname " & quoted form of proposalFile) & " && pwd" & "/" & do shell script "basename " & quoted form of proposalFile
+	end if
 
 	-- Verify file exists
 	try
