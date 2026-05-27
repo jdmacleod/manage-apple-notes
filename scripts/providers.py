@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import os
+import sys
+import urllib.error
+import urllib.request
 from typing import Protocol, runtime_checkable
 
 
@@ -40,12 +43,26 @@ class AnthropicProvider:
 
 
 class OllamaProvider:
-    def __init__(self, model: str, timeout: float = 1200.0) -> None:
+    def __init__(self, model: str, timeout: float = 1200.0, dry_run: bool = False) -> None:
         import openai
         raw = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
         base_url = raw if raw.endswith("/v1") else f"{raw}/v1"
         self._client = openai.OpenAI(base_url=base_url, api_key="ollama", timeout=timeout)
         self._model = os.environ.get("OLLAMA_MODEL", model)
+        if not dry_run:
+            self._probe(raw)
+
+    def _probe(self, raw: str) -> None:
+        root = raw[:-3].rstrip("/") if raw.endswith("/v1") else raw
+        try:
+            urllib.request.urlopen(f"{root}/api/tags", timeout=3)
+        except urllib.error.HTTPError:
+            pass  # server responded — Ollama is up
+        except (urllib.error.URLError, OSError):
+            sys.exit(
+                f"Ollama is not responding at {raw}\n"
+                "Is Ollama running?  Try: ollama serve"
+            )
 
     @property
     def name(self) -> str:
@@ -67,17 +84,17 @@ class OllamaProvider:
         return response.choices[0].message.content
 
 
-def get_provider(settings: dict) -> LLMProvider:
+def get_provider(settings: dict, dry_run: bool = False) -> LLMProvider:
     llm_cfg = settings.get("llm") or settings.get("claude", {})
     # OLLAMA_BASE_URL in the environment takes precedence over settings.local.yaml
     if os.environ.get("OLLAMA_BASE_URL"):
         model = llm_cfg.get("model", "llama3")
         timeout = float(llm_cfg.get("request_timeout", 1200))
-        return OllamaProvider(model, timeout=timeout)
+        return OllamaProvider(model, timeout=timeout, dry_run=dry_run)
     provider_name = llm_cfg.get("provider", "anthropic")
     default_model = "claude-opus-4-6" if provider_name == "anthropic" else "llama3"
     model = llm_cfg.get("model", default_model)
     if provider_name == "ollama":
         timeout = float(llm_cfg.get("request_timeout", 1200))
-        return OllamaProvider(model, timeout=timeout)
+        return OllamaProvider(model, timeout=timeout, dry_run=dry_run)
     return AnthropicProvider(model)

@@ -92,7 +92,7 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
     llm_cfg = settings.get("llm") or settings.get("claude", {})
     sample_size = llm_cfg.get("theme_discovery_sample", _DEFAULT_SAMPLE)
     min_subfolder = settings.get("thresholds", {}).get("min_notes_for_subfolder", _MIN_SUBFOLDER_DEFAULT)
-    provider = get_provider(settings)
+    provider = get_provider(settings, dry_run=dry_run)
     model = provider.model
 
     # Lightweight summaries — title + first 200 chars of body + folder context

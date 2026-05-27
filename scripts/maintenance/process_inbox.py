@@ -49,7 +49,7 @@ def run_inbox(dry_run: bool) -> None:
 
     llm_cfg = settings.get("llm") or settings.get("claude", {})
     batch_size = llm_cfg.get("batch_size", 20)
-    provider = get_provider(settings)
+    provider = get_provider(settings, dry_run=dry_run)
     model = provider.model
     batches = [notes[i : i + batch_size] for i in range(0, len(notes), batch_size)]
 
