@@ -92,6 +92,28 @@ Notes app (select the folder, then right-click → "Recover").
 `apply-dedup-proposal.applescript` uses `delete` for all removals specifically to preserve
 this recovery window. The `--execute` confirmation output reminds users of this.
 
+### Notes at account root have a shallow container chain
+
+Apple Notes allows notes to exist directly inside an account (no enclosing folder).
+When this is the case, `container of targetNote` in AppleScript returns the account
+itself — so the common pattern `container of (container of targetNote)` to reach the
+account fails with "Can't get container of container of note id …".
+
+The fix is to check the class of the direct container before dereferencing:
+
+```applescript
+set noteDirectContainer to container of targetNote
+if class of noteDirectContainer is account then
+    set noteAccount to noteDirectContainer
+else
+    set noteAccount to container of noteDirectContainer
+end if
+```
+
+This is relevant any time a script needs the account reference in order to create
+folders or move notes. Unorganized libraries (notes never placed in a folder) will
+trigger this path for every note on the first apply run.
+
 ### Folder depth supports up to five levels
 
 Apple Notes supports up to five levels of folder nesting (one top-level folder
