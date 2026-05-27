@@ -124,6 +124,11 @@ def _extract_json_array(text: str) -> list:
     return json.loads(text[start:end])
 
 
+def _is_context_overflow(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(k in msg for k in ("exceed_context", "context_length", "context size", "context window", "maximum context"))
+
+
 def classify_batch(
     provider: LLMProvider,
     notes_batch: list[dict],
@@ -147,6 +152,30 @@ def classify_batch(
         json.dumps(batch_payload, indent=2, ensure_ascii=False),
     )
     return _extract_json_array(text)
+
+
+def classify_batch_resilient(
+    provider: LLMProvider,
+    notes_batch: list[dict],
+    system_prompt: str,
+    settings: dict,
+) -> list[dict]:
+    """Classify a batch; on context overflow or truncated output, split and retry."""
+    if not notes_batch:
+        return []
+    try:
+        return classify_batch(provider, notes_batch, system_prompt, settings)
+    except Exception as exc:
+        is_recoverable = _is_context_overflow(exc) or isinstance(exc, (ValueError, json.JSONDecodeError))
+        if is_recoverable and len(notes_batch) > 1:
+            mid = len(notes_batch) // 2
+            console.print(f"[yellow]Batch failed ({type(exc).__name__}) — splitting ({len(notes_batch)} → {mid}+{len(notes_batch) - mid})[/yellow]")
+            return (
+                classify_batch_resilient(provider, notes_batch[:mid], system_prompt, settings)
+                + classify_batch_resilient(provider, notes_batch[mid:], system_prompt, settings)
+            )
+        console.print(f"[yellow]Warning:[/yellow] skipping note — batch of 1 failed: {exc}")
+        return []
 
 
 def price_per_million(model: str) -> float | None:
@@ -214,7 +243,7 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
     note_index = {n["id"]: n for n in notes}
 
     for batch in track(batches, description="Classifying..."):
-        results = classify_batch(provider, batch, system_prompt, settings)
+        results = classify_batch_resilient(provider, batch, system_prompt, settings)
 
         for result in results:
             note_id = result.get("id", "")
