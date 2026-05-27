@@ -7,6 +7,8 @@ load_dotenv()
 
 from scripts.classify.classify_notes import run_classify
 from scripts.classify.discover_themes import run_discover
+from scripts.execute.run_apply import run_apply
+from scripts.export.run_export import run_export
 from scripts.maintenance.audit import run_audit
 from scripts.maintenance.process_inbox import run_inbox
 
@@ -72,6 +74,28 @@ def audit(
 ):
     """Scan the library for stale, duplicate, and orphaned notes."""
     run_audit(export_file=None, output_override=output, dry_run=dry_run)
+
+
+@app.command()
+def export():
+    """Export all notes from Apple Notes to data/exports/."""
+    run_export()
+
+
+@app.command()
+def apply(
+    proposal_file: Optional[str] = typer.Argument(
+        default=None,
+        help="Proposal JSON to apply. Defaults to most recent file in data/proposals/.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Preview moves without touching Notes.",
+    ),
+):
+    """Apply an approved move proposal to Apple Notes."""
+    run_apply(proposal_file=proposal_file, dry_run=dry_run)
 
 
 if __name__ == "__main__":

@@ -153,44 +153,45 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
 
     # ── Run checks ───────────────────────────────────────────────────────────
 
-    stale_cutoff = now - timedelta(days=stale_days)
-    inbox_cutoff = now - timedelta(days=inbox_stale_days)
-    fleeting_cutoff = now - timedelta(days=fleeting_stale_days)
+    with console.status(f"Scanning {len(notes)} notes…"):
+        stale_cutoff = now - timedelta(days=stale_days)
+        inbox_cutoff = now - timedelta(days=inbox_stale_days)
+        fleeting_cutoff = now - timedelta(days=fleeting_stale_days)
 
-    stale_notes = sorted(
-        [
+        stale_notes = sorted(
+            [
+                n for n in notes
+                if n.get("folder") != archive_folder
+                and (d := _parse_date(n.get("modified", ""))) is not None
+                and d < stale_cutoff
+            ],
+            key=lambda n: n.get("modified", ""),
+        )
+
+        stub_notes = [n for n in notes if len((n.get("body") or "").strip()) < stub_chars]
+
+        title_groups: dict[str, list[dict]] = defaultdict(list)
+        for note in notes:
+            key = _normalize_title(note.get("title") or "")
+            if key:
+                title_groups[key].append(note)
+        duplicate_groups = {k: v for k, v in title_groups.items() if len(v) > 1}
+
+        stale_inbox = [
             n for n in notes
-            if n.get("folder") != archive_folder
+            if n.get("folder") == inbox_folder and inbox_folder
             and (d := _parse_date(n.get("modified", ""))) is not None
-            and d < stale_cutoff
-        ],
-        key=lambda n: n.get("modified", ""),
-    )
+            and d < inbox_cutoff
+        ]
 
-    stub_notes = [n for n in notes if len((n.get("body") or "").strip()) < stub_chars]
+        stale_fleeting = [
+            n for n in notes
+            if n.get("folder") == fleeting_folder and fleeting_folder
+            and (d := _parse_date(n.get("modified", ""))) is not None
+            and d < fleeting_cutoff
+        ]
 
-    title_groups: dict[str, list[dict]] = defaultdict(list)
-    for note in notes:
-        key = _normalize_title(note.get("title") or "")
-        if key:
-            title_groups[key].append(note)
-    duplicate_groups = {k: v for k, v in title_groups.items() if len(v) > 1}
-
-    stale_inbox = [
-        n for n in notes
-        if n.get("folder") == inbox_folder and inbox_folder
-        and (d := _parse_date(n.get("modified", ""))) is not None
-        and d < inbox_cutoff
-    ]
-
-    stale_fleeting = [
-        n for n in notes
-        if n.get("folder") == fleeting_folder and fleeting_folder
-        and (d := _parse_date(n.get("modified", ""))) is not None
-        and d < fleeting_cutoff
-    ]
-
-    subfolder_candidates = _find_subfolder_candidates(notes, category_folders, min_subfolder)
+        subfolder_candidates = _find_subfolder_candidates(notes, category_folders, min_subfolder)
 
     # ── Build report ─────────────────────────────────────────────────────────
 

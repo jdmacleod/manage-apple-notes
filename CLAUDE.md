@@ -37,25 +37,20 @@ uv sync
 
 ## Running Scripts
 
+The full workflow uses only `notes` commands:
+
 ```bash
-# 1. Export notes from Apple Notes
-osascript scripts/export/export-notes.applescript
-
-# 2. Classify exported notes (reads most recent export in data/exports/)
-uv run notes classify
-
-# 3. Dry-run the proposal to preview moves
-osascript scripts/execute/apply-proposal.applescript --dry-run data/proposals/proposal-YYYY-MM-DD.json
-
-# 4. Apply an approved proposal
-osascript scripts/execute/apply-proposal.applescript data/proposals/proposal-YYYY-MM-DD.json
-
-# Maintenance — inbox triage only
-uv run notes inbox
-
-# Maintenance — audit report
-uv run notes audit
+uv run notes export              # export from Apple Notes
+uv run notes discover            # Pass 1: discover themes → data/theme-maps/
+uv run notes classify            # Pass 2: classify notes → data/proposals/
+uv run notes apply --dry-run     # preview moves (uses latest proposal)
+uv run notes apply               # apply approved proposal to Apple Notes
+uv run notes inbox               # inbox triage only
+uv run notes audit               # quality report → data/reports/
 ```
+
+All commands accept `--dry-run` to preview without side effects.
+See `docs/runbooks/main-workflow.md` for the full step-by-step workflow.
 
 ## Architecture
 
