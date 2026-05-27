@@ -27,10 +27,12 @@ git config core.hooksPath .git-hooks
 cp config/taxonomy.example.yaml config/taxonomy.local.yaml
 cp config/settings.example.yaml config/settings.local.yaml
 
+# Set API key / Ollama URL (gitignored)
+cp .env.example .env
+# Edit .env: add ANTHROPIC_API_KEY or set OLLAMA_BASE_URL
+
 # Install Python deps and create virtual environment
 uv sync
-
-export ANTHROPIC_API_KEY=sk-...
 ```
 
 ## Running Scripts
@@ -84,9 +86,11 @@ Apple Notes → [export-notes.applescript] → data/exports/notes-YYYY-MM-DD.jso
 | File | Committed | Purpose |
 |------|-----------|---------|
 | `config/taxonomy.example.yaml` | Yes | Generic folder template |
-| `config/settings.example.yaml` | Yes | Model, batch size, paths |
+| `config/settings.example.yaml` | Yes | Provider, model, batch size, paths |
+| `.env.example` | Yes | Environment variable template |
 | `config/taxonomy.local.yaml` | **No** | Your actual folder names |
 | `config/settings.local.yaml` | **No** | Your personal settings |
+| `.env` | **No** | API keys and provider URLs |
 
 Python scripts resolve config by loading `*.local.*` if present, falling back to `*.example.*`.
 

@@ -1,13 +1,40 @@
 # Forever Notes folder taxonomy — generic template.
-# Copy to taxonomy.local.yaml and fill in your actual folder names.
+# Copy to taxonomy.local.yaml and fill in your actual folder names and subfolders.
+#
+# Subfolders are discovered during the theme discovery pass (notes discover).
+# Add them to taxonomy.local.yaml before running notes classify (Pass 2).
+# Categories without a subfolders key remain flat.
 
 forever_notes:
-  inbox: "[YOUR_INBOX_FOLDER]"           # e.g. "Inbox" or "Quick Capture"
-  fleeting: "[YOUR_FLEETING_FOLDER]"     # Temporary captures not yet processed
-  literature: "[YOUR_LITERATURE_FOLDER]" # Source-linked notes
-  permanent: "[YOUR_PERMANENT_FOLDER]"   # Atomic evergreen concepts
-  projects: "[YOUR_PROJECTS_FOLDER]"     # Active project notes
-  areas: "[YOUR_AREAS_FOLDER]"           # Ongoing responsibilities
-  resources: "[YOUR_RESOURCES_FOLDER]"   # Reference material
-  archive: "[YOUR_ARCHIVE_FOLDER]"       # Inactive / completed
-  review: "[YOUR_REVIEW_FOLDER]"         # Needs human triage (used during cleanup)
+  inbox:
+    folder: "[YOUR_INBOX_FOLDER]"          # keep flat
+
+  fleeting:
+    folder: "[YOUR_FLEETING_FOLDER]"       # keep flat
+
+  literature:
+    folder: "[YOUR_LITERATURE_FOLDER]"
+    subfolders: []                         # e.g. ["Health", "Technology", "History"]
+
+  permanent:
+    folder: "[YOUR_PERMANENT_FOLDER]"
+    subfolders: []                         # e.g. ["Health", "Writing", "Philosophy"]
+
+  projects:
+    folder: "[YOUR_PROJECTS_FOLDER]"
+    subfolders: []                         # one subfolder per active project
+
+  areas:
+    folder: "[YOUR_AREAS_FOLDER]"
+    subfolders: []                         # one subfolder per area of life/work
+
+  resources:
+    folder: "[YOUR_RESOURCES_FOLDER]"
+    subfolders: []                         # e.g. ["Recipes", "Coding", "Finance"]
+
+  archive:
+    folder: "[YOUR_ARCHIVE_FOLDER]"
+    subfolders: []                         # mirror of old structure where useful
+
+  review:
+    folder: "[YOUR_REVIEW_FOLDER]"         # keep flat

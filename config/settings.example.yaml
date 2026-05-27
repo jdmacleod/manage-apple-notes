@@ -1,8 +1,16 @@
 # General settings — copy to settings.local.yaml and customize.
 
-claude:
+# provider: "anthropic" (default, cloud) or "ollama" (local)
+llm:
+  provider: "anthropic"
   model: "claude-opus-4-6"   # or claude-sonnet-4-6 for cost/speed tradeoff
   batch_size: 20              # Notes per API call during bulk classification
+
+# Ollama example:
+# llm:
+#   provider: "ollama"
+#   model: "llama3"           # overridden by OLLAMA_MODEL env var if set
+#   batch_size: 5             # smaller batches work better for local models
 
 paths:
   exports_dir: "data/exports"

@@ -8,7 +8,7 @@ The pipeline is: **export → AI classify → human review → apply**. Nothing 
 
 - macOS with Apple Notes
 - [uv](https://docs.astral.sh/uv/) (`brew install uv` or `curl -LsSf https://astral.sh/uv/install.sh | sh`)
-- An [Anthropic API key](https://console.anthropic.com)
+- An LLM provider: an [Anthropic API key](https://console.anthropic.com) (cloud) **or** [Ollama](https://ollama.com) running locally
 
 ## Setup
 
@@ -28,8 +28,9 @@ cp config/settings.example.yaml config/settings.local.yaml
 # 4. Install Python dependencies and create virtual environment
 uv sync
 
-# 5. Set your API key
-export ANTHROPIC_API_KEY=sk-...
+# 5. Set your API key / provider URL
+cp .env.example .env
+# Edit .env — add ANTHROPIC_API_KEY for cloud, or set OLLAMA_BASE_URL for local
 ```
 
 ## One-Time Cleanup
@@ -65,6 +66,7 @@ uv run notes audit
 This is a public repo. Your note content and folder names never leave your machine unencrypted:
 
 - `config/taxonomy.local.yaml` and `config/settings.local.yaml` are gitignored
+- `.env` (your API keys) is gitignored; only `.env.example` is committed
 - The entire `data/` directory is gitignored
 - A pre-commit hook blocks accidental commits of private files
 

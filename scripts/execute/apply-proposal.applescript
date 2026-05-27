@@ -1,6 +1,7 @@
 (*
   apply-proposal.applescript
   Reads an approved proposal JSON and moves notes in Apple Notes.
+  Creates nested subfolders as needed.
 
   Usage:
     osascript scripts/execute/apply-proposal.applescript [--dry-run] <proposal.json>
@@ -29,7 +30,7 @@ on run argv
 	end if
 
 	-- Resolve to absolute path
-	set proposalFile to do shell script "cd " & quoted form of (do shell script "dirname " & quoted form of proposalFile) & " && pwd"  & "/" & do shell script "basename " & quoted form of proposalFile
+	set proposalFile to do shell script "cd " & quoted form of (do shell script "dirname " & quoted form of proposalFile) & " && pwd" & "/" & do shell script "basename " & quoted form of proposalFile
 
 	-- Verify file exists
 	try
@@ -39,13 +40,20 @@ on run argv
 	end try
 
 	-- ── Parse JSON via Python ────────────────────────────────────────────────
-	-- Emit one tab-separated line per move: id \t title \t current_folder \t proposed_folder
+	-- Emit one tab-separated line per move:
+	--   id \t title \t current_folder \t proposed_folder \t proposed_subfolder
 
 	set pyParse to "import json,sys
 with open(sys.argv[1]) as f:
     p=json.load(f)
 for m in p.get('moves',[]):
-    row=[m.get('id',''),m.get('title',''),m.get('current_folder',''),m.get('proposed_folder','')]
+    row=[
+        m.get('id',''),
+        m.get('title',''),
+        m.get('current_folder',''),
+        m.get('proposed_folder',''),
+        m.get('proposed_subfolder') or '',
+    ]
     print('\t'.join(str(v).replace('\t',' ') for v in row))"
 
 	set moveData to do shell script "python3 -c " & quoted form of pyParse & " " & quoted form of proposalFile
@@ -76,10 +84,20 @@ for m in p.get('moves',[]):
 				set noteId to item 1 of fields
 				set noteTitle to item 2 of fields
 				set currentFolder to item 3 of fields
-				set targetFolder to item 4 of fields
+				set targetFolderName to item 4 of fields
+				set subfolderName to ""
+				if (count fields) >= 5 then
+					set subfolderName to item 5 of fields
+				end if
+
+				-- Build display path for logging
+				set displayPath to targetFolderName
+				if subfolderName is not "" then
+					set displayPath to targetFolderName & "/" & subfolderName
+				end if
 
 				if dryRun then
-					log "[DRY RUN] \"" & noteTitle & "\" → " & targetFolder
+					log "[DRY RUN] \"" & noteTitle & "\" → " & displayPath
 					set moveCount to moveCount + 1
 				else
 					try
@@ -103,15 +121,24 @@ for m in p.get('moves',[]):
 								log "[SKIP]  Not found: \"" & noteTitle & "\""
 								set skipCount to skipCount + 1
 							else
-								-- Move within the same account as the note
 								set noteAccount to container of (container of targetNote)
 
-								if not (exists folder targetFolder of noteAccount) then
-									make new folder with properties {name: targetFolder} at noteAccount
+								-- Ensure top-level folder exists
+								if not (exists folder targetFolderName of noteAccount) then
+									make new folder with properties {name: targetFolderName} at noteAccount
 								end if
 
-								move targetNote to folder targetFolder of noteAccount
-								log "[MOVED] \"" & noteTitle & "\" → " & targetFolder
+								if subfolderName is not "" then
+									-- Ensure subfolder exists inside the top-level folder
+									if not (exists folder subfolderName of folder targetFolderName of noteAccount) then
+										make new folder at folder targetFolderName of noteAccount with properties {name: subfolderName}
+									end if
+									move targetNote to folder subfolderName of folder targetFolderName of noteAccount
+								else
+									move targetNote to folder targetFolderName of noteAccount
+								end if
+
+								log "[MOVED] \"" & noteTitle & "\" → " & displayPath
 								set moveCount to moveCount + 1
 							end if
 						end tell

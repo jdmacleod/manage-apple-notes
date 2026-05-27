@@ -1,4 +1,4 @@
-"""Classify Apple Notes from an export file using Claude."""
+"""Classify Apple Notes from an export file using the configured LLM provider."""
 
 from __future__ import annotations
 
@@ -6,10 +6,11 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-import anthropic
 import yaml
 from rich.console import Console
 from rich.progress import track
+
+from scripts.providers import LLMProvider, get_provider
 
 console = Console()
 
@@ -69,18 +70,42 @@ def load_prompt_template() -> str:
     return system_part.strip()
 
 
+def _folder_name(entry: dict | str) -> str:
+    """Extract the folder name from a taxonomy entry (nested dict or legacy string)."""
+    if isinstance(entry, dict):
+        return entry.get("folder", "")
+    return entry or ""
+
+
+def _subfolders(entry: dict | str) -> list[str]:
+    """Extract the subfolders list from a taxonomy entry."""
+    if isinstance(entry, dict):
+        return entry.get("subfolders", []) or []
+    return []
+
+
+def _subfolder_str(subfolders: list[str]) -> str:
+    return ", ".join(subfolders) if subfolders else "none"
+
+
 def inject_taxonomy(system_prompt: str, taxonomy: dict) -> str:
     fn = taxonomy.get("forever_notes", {})
     replacements = {
-        "{INBOX}": fn.get("inbox", "[INBOX]"),
-        "{FLEETING}": fn.get("fleeting", "[FLEETING]"),
-        "{LITERATURE}": fn.get("literature", "[LITERATURE]"),
-        "{PERMANENT}": fn.get("permanent", "[PERMANENT]"),
-        "{PROJECTS}": fn.get("projects", "[PROJECTS]"),
-        "{AREAS}": fn.get("areas", "[AREAS]"),
-        "{RESOURCES}": fn.get("resources", "[RESOURCES]"),
-        "{ARCHIVE}": fn.get("archive", "[ARCHIVE]"),
-        "{REVIEW}": fn.get("review", "[REVIEW]"),
+        "{INBOX}": _folder_name(fn.get("inbox", "[INBOX]")),
+        "{FLEETING}": _folder_name(fn.get("fleeting", "[FLEETING]")),
+        "{LITERATURE}": _folder_name(fn.get("literature", "[LITERATURE]")),
+        "{LITERATURE_SUBFOLDERS}": _subfolder_str(_subfolders(fn.get("literature", {}))),
+        "{PERMANENT}": _folder_name(fn.get("permanent", "[PERMANENT]")),
+        "{PERMANENT_SUBFOLDERS}": _subfolder_str(_subfolders(fn.get("permanent", {}))),
+        "{PROJECTS}": _folder_name(fn.get("projects", "[PROJECTS]")),
+        "{PROJECTS_SUBFOLDERS}": _subfolder_str(_subfolders(fn.get("projects", {}))),
+        "{AREAS}": _folder_name(fn.get("areas", "[AREAS]")),
+        "{AREAS_SUBFOLDERS}": _subfolder_str(_subfolders(fn.get("areas", {}))),
+        "{RESOURCES}": _folder_name(fn.get("resources", "[RESOURCES]")),
+        "{RESOURCES_SUBFOLDERS}": _subfolder_str(_subfolders(fn.get("resources", {}))),
+        "{ARCHIVE}": _folder_name(fn.get("archive", "[ARCHIVE]")),
+        "{ARCHIVE_SUBFOLDERS}": _subfolder_str(_subfolders(fn.get("archive", {}))),
+        "{REVIEW}": _folder_name(fn.get("review", "[REVIEW]")),
     }
     for placeholder, value in replacements.items():
         system_prompt = system_prompt.replace(placeholder, value)
@@ -88,8 +113,7 @@ def inject_taxonomy(system_prompt: str, taxonomy: dict) -> str:
 
 
 def _extract_json_array(text: str) -> list:
-    """Extract a JSON array from a Claude response that may include prose or fences."""
-    # Strip ```json ... ``` fences if present
+    """Extract a JSON array from an LLM response that may include prose or fences."""
     if "```" in text:
         start = text.find("[", text.find("```"))
     else:
@@ -101,12 +125,11 @@ def _extract_json_array(text: str) -> list:
 
 
 def classify_batch(
-    client: anthropic.Anthropic,
+    provider: LLMProvider,
     notes_batch: list[dict],
     system_prompt: str,
     settings: dict,
 ) -> list[dict]:
-    model = settings.get("claude", {}).get("model", "claude-opus-4-6")
     max_body = settings.get("export", {}).get("max_body_chars", 2000)
 
     batch_payload = [
@@ -119,32 +142,22 @@ def classify_batch(
         for n in notes_batch
     ]
 
-    response = client.messages.create(
-        model=model,
-        max_tokens=4096,
-        system=[
-            {
-                "type": "text",
-                "text": system_prompt,
-                "cache_control": {"type": "ephemeral"},
-            }
-        ],
-        messages=[
-            {
-                "role": "user",
-                "content": json.dumps(batch_payload, indent=2, ensure_ascii=False),
-            }
-        ],
+    text = provider.classify_messages(
+        system_prompt,
+        json.dumps(batch_payload, indent=2, ensure_ascii=False),
     )
+    return _extract_json_array(text)
 
-    return _extract_json_array(response.content[0].text)
 
-
-def price_per_million(model: str) -> float:
+def price_per_million(model: str) -> float | None:
     for prefix, price in _PRICE_PER_M.items():
         if model.startswith(prefix):
             return price
-    return 15.0  # conservative fallback
+    return None  # local / unknown model — no per-token cost
+
+
+def _build_folder_path(folder: str, subfolder: str | None) -> str:
+    return f"{folder}/{subfolder}" if subfolder else folder
 
 
 def run_classify(export_file: str | None, dry_run: bool) -> None:
@@ -166,30 +179,34 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
         else all_notes
     )
 
-    batch_size = settings.get("claude", {}).get("batch_size", 20)
-    model = settings.get("claude", {}).get("model", "claude-opus-4-6")
+    llm_cfg = settings.get("llm") or settings.get("claude", {})
+    batch_size = llm_cfg.get("batch_size", 20)
+    provider = get_provider(settings)
+    model = provider.model
     batches = [notes[i : i + batch_size] for i in range(0, len(notes), batch_size)]
 
     if dry_run:
-        est_tokens_per_note = 700  # ~700 input tokens per note (title + truncated body)
-        est_system_tokens = 1500   # system prompt, cached after first batch
+        est_tokens_per_note = 700
+        est_system_tokens = 1500
         est_total_tokens = len(notes) * est_tokens_per_note + len(batches) * est_system_tokens
         est_tokens_per_batch = batch_size * est_tokens_per_note + est_system_tokens
-        est_cost = (est_total_tokens / 1_000_000) * price_per_million(model)
+        ppm = price_per_million(model)
+        cost_str = f"~${(est_total_tokens / 1_000_000) * ppm:.2f}  (@ ${ppm:.2f}/M input tokens)" if ppm is not None else "$0.00 (local inference)"
         date_str = datetime.now().strftime("%Y-%m-%d")
 
         console.print("[bold]Dry run — no API calls will be made.[/bold]\n")
         console.print(f"Export:       {export_path}")
         console.print(f"Notes found:  {len(all_notes)}  ({len(notes)} after filtering)")
         console.print(f"Batches:      {len(batches)}  (batch size: {batch_size})\n")
+        console.print(f"Provider:     {provider.name}")
         console.print(f"Model:        {model}")
         console.print(f"Est. tokens:  ~{est_total_tokens:,}  (~{est_tokens_per_batch:,}/batch)")
-        console.print(f"Est. cost:    ~${est_cost:.2f}  (@ ${price_per_million(model):.2f}/M input tokens)")
+        console.print(f"Est. cost:    {cost_str}")
         console.print(f"\nOutput would be written to: {PROPOSALS_DIR}/proposal-{date_str}.json")
         return
 
-    client = anthropic.Anthropic()
-    review_folder = taxonomy.get("forever_notes", {}).get("review", "")
+    fn = taxonomy.get("forever_notes", {})
+    review_folder = _folder_name(fn.get("review", ""))
 
     moves: list[dict] = []
     needs_review: list[dict] = []
@@ -197,15 +214,17 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
     note_index = {n["id"]: n for n in notes}
 
     for batch in track(batches, description="Classifying..."):
-        results = classify_batch(client, batch, system_prompt, settings)
+        results = classify_batch(provider, batch, system_prompt, settings)
 
         for result in results:
             note_id = result.get("id", "")
             note = note_index.get(note_id, {})
             current_folder = note.get("folder", "")
             proposed_folder = result.get("proposed_folder", "")
+            proposed_subfolder = result.get("proposed_subfolder") or None
             confidence = result.get("confidence", "low")
             reason = result.get("reason", "")
+            proposed_folder_path = _build_folder_path(proposed_folder, proposed_subfolder)
 
             if confidence == "low" or proposed_folder == review_folder:
                 needs_review.append({
@@ -214,7 +233,7 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
                     "current_folder": current_folder,
                     "reason": reason,
                 })
-            elif proposed_folder == current_folder:
+            elif proposed_folder_path == current_folder or proposed_folder == current_folder:
                 no_change.append({
                     "id": note_id,
                     "title": note.get("title", ""),
@@ -226,6 +245,8 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
                     "title": note.get("title", ""),
                     "current_folder": current_folder,
                     "proposed_folder": proposed_folder,
+                    "proposed_subfolder": proposed_subfolder,
+                    "proposed_folder_path": proposed_folder_path,
                     "confidence": confidence,
                     "reason": reason,
                 })

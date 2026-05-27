@@ -15,3 +15,6 @@ PRIVATE*.md
 __pycache__/
 *.pyc
 .venv/
+
+# Environment variables — may contain API keys
+.env

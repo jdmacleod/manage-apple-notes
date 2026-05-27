@@ -6,12 +6,12 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-import anthropic
 from rich.console import Console
 from rich.progress import track
 
 from scripts.classify.classify_notes import (
     PROPOSALS_DIR,
+    _folder_name,
     classify_batch,
     find_latest_export,
     inject_taxonomy,
@@ -20,6 +20,7 @@ from scripts.classify.classify_notes import (
     load_taxonomy,
     price_per_million,
 )
+from scripts.providers import get_provider
 
 console = Console()
 
@@ -29,7 +30,7 @@ def run_inbox(dry_run: bool) -> None:
     taxonomy = load_taxonomy()
     system_prompt = inject_taxonomy(load_prompt_template(), taxonomy)
 
-    inbox_folder = taxonomy.get("forever_notes", {}).get("inbox", "")
+    inbox_folder = _folder_name(taxonomy.get("forever_notes", {}).get("inbox", ""))
     if not inbox_folder or inbox_folder.startswith("["):
         console.print(
             "[red]Inbox folder not configured.[/red] "
@@ -46,29 +47,32 @@ def run_inbox(dry_run: bool) -> None:
         console.print(f"(Export: {export_path})")
         return
 
-    batch_size = settings.get("claude", {}).get("batch_size", 20)
-    model = settings.get("claude", {}).get("model", "claude-opus-4-6")
+    llm_cfg = settings.get("llm") or settings.get("claude", {})
+    batch_size = llm_cfg.get("batch_size", 20)
+    provider = get_provider(settings)
+    model = provider.model
     batches = [notes[i : i + batch_size] for i in range(0, len(notes), batch_size)]
 
     if dry_run:
         est_tokens_per_note = 700
         est_system_tokens = 1500
         est_total_tokens = len(notes) * est_tokens_per_note + len(batches) * est_system_tokens
-        est_cost = (est_total_tokens / 1_000_000) * price_per_million(model)
+        ppm = price_per_million(model)
+        cost_str = f"~${(est_total_tokens / 1_000_000) * ppm:.2f}  (@ ${ppm:.2f}/M input tokens)" if ppm is not None else "$0.00 (local inference)"
         date_str = datetime.now().strftime("%Y-%m-%d")
 
         console.print("[bold]Dry run — no API calls will be made.[/bold]\n")
         console.print(f"Inbox folder: {inbox_folder!r}  (from taxonomy config)")
         console.print(f"Notes found:  {len(notes)}")
         console.print(f"Batches:      {len(batches)}  (batch size: {batch_size})\n")
+        console.print(f"Provider:     {provider.name}")
         console.print(f"Model:        {model}")
         console.print(f"Est. tokens:  ~{est_total_tokens:,}")
-        console.print(f"Est. cost:    ~${est_cost:.2f}  (@ ${price_per_million(model):.2f}/M input tokens)")
+        console.print(f"Est. cost:    {cost_str}")
         console.print(f"\nOutput would be written to: {PROPOSALS_DIR}/inbox-{date_str}.json")
         return
 
-    client = anthropic.Anthropic()
-    review_folder = taxonomy.get("forever_notes", {}).get("review", "")
+    review_folder = _folder_name(taxonomy.get("forever_notes", {}).get("review", ""))
 
     moves: list[dict] = []
     needs_review: list[dict] = []
@@ -76,7 +80,7 @@ def run_inbox(dry_run: bool) -> None:
     note_index = {n["id"]: n for n in notes}
 
     for batch in track(batches, description="Processing inbox..."):
-        results = classify_batch(client, batch, system_prompt, settings)
+        results = classify_batch(provider, batch, system_prompt, settings)
 
         for result in results:
             note_id = result.get("id", "")

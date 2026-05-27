@@ -29,6 +29,14 @@ if git diff --cached --name-only | grep -q '\.local\.'; then
   ERRORS=$((ERRORS + 1))
 fi
 
+# Block .env files (may contain API keys) — .env.example is explicitly allowed
+while IFS= read -r file; do
+  if [[ "$file" =~ ^\.env ]] && [[ "$file" != ".env.example" ]]; then
+    echo "ERROR: .env file staged: $file — may contain API keys."
+    ERRORS=$((ERRORS + 1))
+  fi
+done < <(git diff --cached --name-only)
+
 if [ "$ERRORS" -gt 0 ]; then
   echo ""
   echo "Commit blocked. Review staged files with: git diff --cached --name-only"

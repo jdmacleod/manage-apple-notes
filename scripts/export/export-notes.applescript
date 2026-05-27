@@ -4,28 +4,13 @@
 
   Usage:
     osascript scripts/export/export-notes.applescript
+
+  Architecture: AppleScript collects note data and writes a delimited temp
+  file; Python converts it to properly-encoded UTF-8 JSON. This avoids
+  AppleScript's unreliable file encoding and manual JSON-escaping limitations.
 *)
 
 -- ── Utilities ───────────────────────────────────────────────────────────────
-
-on replaceText(theString, findStr, replaceStr)
-	set AppleScript's text item delimiters to findStr
-	set theItems to text items of theString
-	set AppleScript's text item delimiters to replaceStr
-	set theResult to theItems as text
-	set AppleScript's text item delimiters to ""
-	return theResult
-end replaceText
-
--- Escape a value for embedding in a JSON string (does not add surrounding quotes)
-on escapeJSON(val)
-	set val to my replaceText(val, "\\", "\\\\")
-	set val to my replaceText(val, "\"", "\\\"")
-	set val to my replaceText(val, return, "\\n")
-	set val to my replaceText(val, linefeed, "\\n")
-	set val to my replaceText(val, tab, "\\t")
-	return val
-end escapeJSON
 
 on pad2(n)
 	set ns to n as string
@@ -55,10 +40,16 @@ do shell script "mkdir -p " & quoted form of exportsDir
 
 set outputDate to do shell script "date +%Y-%m-%d"
 set outputFile to exportsDir & "/notes-" & outputDate & ".json"
+set tempFile to "/tmp/notes_export_" & outputDate & ".tmp"
+
+-- Field/record separators: ASCII 31 (Unit Sep) and 30 (Record Sep).
+-- These are non-printable control characters that will not appear in note text.
+set fieldSep to character id 31
+set recordSep to character id 30
 
 -- ── Collect notes ───────────────────────────────────────────────────────────
 
-set jsonObjects to {}
+set noteRecords to {}
 set exportedCount to 0
 set skippedCount to 0
 
@@ -76,6 +67,7 @@ tell application "Notes"
 			set skippedCount to skippedCount + 1
 		else
 			set noteId to id of aNote
+
 			set noteTitle to ""
 			try
 				set noteTitle to name of aNote
@@ -86,40 +78,54 @@ tell application "Notes"
 				set noteBody to plaintext of aNote
 			end try
 
-			set noteCreated to my formatISO(creation date of aNote)
-			set noteModified to my formatISO(modification date of aNote)
-			set wordCount to count words of noteBody
+			set createdStr to my formatISO(creation date of aNote)
+			set modifiedStr to my formatISO(modification date of aNote)
+			set wordCountStr to (count words of noteBody) as string
 
-			set jsonObj to "{" & ¬
-				"\"id\": \"" & my escapeJSON(noteId) & "\", " & ¬
-				"\"title\": \"" & my escapeJSON(noteTitle) & "\", " & ¬
-				"\"body\": \"" & my escapeJSON(noteBody) & "\", " & ¬
-				"\"folder\": \"" & my escapeJSON(folderName) & "\", " & ¬
-				"\"created\": \"" & noteCreated & "\", " & ¬
-				"\"modified\": \"" & noteModified & "\", " & ¬
-				"\"word_count\": " & wordCount & ¬
-				"}"
+			-- One record = fields joined by fieldSep
+			set end of noteRecords to noteId & fieldSep & noteTitle & fieldSep & noteBody & fieldSep & folderName & fieldSep & createdStr & fieldSep & modifiedStr & fieldSep & wordCountStr
 
-			set end of jsonObjects to jsonObj
 			set exportedCount to exportedCount + 1
 		end if
 	end repeat
 end tell
 
--- ── Write output ────────────────────────────────────────────────────────────
+-- ── Write temp file ─────────────────────────────────────────────────────────
 
-set AppleScript's text item delimiters to "," & linefeed
-set jsonBody to jsonObjects as text
+set AppleScript's text item delimiters to recordSep
+set rawData to noteRecords as text
 set AppleScript's text item delimiters to ""
 
-set jsonContent to "[" & linefeed & jsonBody & linefeed & "]"
+set tempRef to open for access (POSIX file tempFile) with write permission
+set eof of tempRef to 0
+write rawData to tempRef
+close access tempRef
 
--- Write via file I/O
-set outputPosix to POSIX file outputFile
-set fh to open for access outputPosix with write permission
-set eof of fh to 0
-write jsonContent to fh
-close access fh
+-- ── Convert to UTF-8 JSON via Python ────────────────────────────────────────
+-- Python handles all Unicode, control-character escaping, and file encoding.
+
+set pyScript to "import sys, json
+data = open(sys.argv[1], encoding='mac_roman', errors='replace').read()
+notes = []
+for rec in data.split(chr(30)):
+    f = rec.split(chr(31))
+    if len(f) < 7:
+        continue
+    nid, title, body, folder, created, modified, wc = f[0], f[1], f[2], f[3], f[4], f[5], f[6].strip()
+    notes.append({
+        'id': nid,
+        'title': title,
+        'body': body,
+        'folder': folder,
+        'created': created,
+        'modified': modified,
+        'word_count': int(wc) if wc.isdigit() else 0,
+    })
+with open(sys.argv[2], 'w', encoding='utf-8') as out:
+    json.dump(notes, out, indent=2, ensure_ascii=False)
+import os; os.unlink(sys.argv[1])"
+
+do shell script "python3 -c " & quoted form of pyScript & " " & quoted form of tempFile & " " & quoted form of outputFile
 
 -- ── Summary ─────────────────────────────────────────────────────────────────
 
