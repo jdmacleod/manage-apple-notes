@@ -11,8 +11,9 @@
 Build a set of scripts and workflows that:
 
 1. Perform a **one-time cleanup** of an existing Apple Notes library, reorganizing
-   notes according to the Forever Notes framework — including a nested folder
-   hierarchy where appropriate within top-level categories.
+   notes according to a user-defined folder taxonomy — the Zettelkasten-influenced
+   Forever Notes structure, the PARA method, or a custom variant — including a
+   nested folder hierarchy where appropriate within top-level categories.
 2. Support **ongoing maintenance passes** — inbox processing, library audits, and
    archiving — that can be run manually or on a schedule.
 
@@ -23,32 +24,44 @@ names, or identifying information should ever be committed.
 
 ## Design Philosophy: Two Dimensions of Organization
 
-The Forever Notes framework uses two orthogonal dimensions:
+The folder taxonomy uses two orthogonal dimensions:
 
 - **Top-level category** — the *nature* of a note (is it evergreen knowledge,
-  an active project reference, a captured source?). This maps to the standard
-  Forever Notes categories: Inbox, Fleeting, Literature, Permanent, Projects,
-  Areas, Resources, Archive.
+  an active project reference, a captured source?). This project supports two
+  ready-to-use top-level structures:
+  - **Forever Notes / Zettelkasten** — Inbox, Fleeting, Literature, Permanent,
+    Projects, Areas, Resources, Archive, Review. Distinguishes note *type* at
+    the top level (Literature for source-linked notes, Permanent for evergreen
+    concepts in your own words). See `config/taxonomy.example.yaml`.
+  - **PARA** — Inbox, Projects, Areas, Resources, Archive. Organises by
+    *actionability* rather than type; differentiation lives inside Resources
+    via subfolders (Ideas & Thinking, Learning & Reading, Reference).
+    See `config/taxonomy.para.yaml` and `docs/para-method.md`.
 
 - **Theme / domain** — the *subject matter* of a note (which area of life or
   work it belongs to). This maps to subfolders within a top-level category.
 
-A note about sleep science belongs in `Permanent/Health`. A book summary on the
-same topic belongs in `Literature/Health`. The theme is consistent; the nature
-differs. Both dimensions need to be discovered and applied during migration.
+In the Forever Notes structure, a note about sleep science belongs in
+`Permanent/Health` and a book summary on the same topic in `Literature/Health`.
+In a PARA structure, both land in `Resources/Ideas & Thinking` or
+`Resources/Learning & Reading` depending on form. The theme is consistent across
+both systems; only the top-level nature dimension differs.
 
 ### When subfolders are warranted
 
 A subfolder is worth creating when a theme has enough notes that scrolling
-through a flat list creates navigation friction (roughly 8–10+ notes), and when
-the theme is stable enough that notes will keep accumulating there. **Permanent**
-and **Resources** almost always develop meaningful subfolders. **Areas** maps
-naturally to one subfolder per ongoing responsibility. **Projects** gets one
-subfolder per active project.
+through a flat list creates navigation friction (roughly 8–10+ notes, matching
+the `min_notes_for_subfolder` default), and when the theme is stable enough that
+notes will keep accumulating there. In the Forever Notes structure, **Permanent**
+and **Resources** almost always develop meaningful subfolders. In a PARA
+structure, **Resources** carries the same differentiation internally (Ideas &
+Thinking, Learning & Reading, Reference). **Areas** maps naturally to one
+subfolder per ongoing responsibility in both systems. **Projects** gets one
+subfolder per active project in both.
 
-**Inbox** and **Fleeting** should remain flat — they are staging areas, not
-permanent homes. **Review** stays flat. **Archive** may preserve the subfolder
-structure of whatever it archives.
+Staging categories (**Inbox** in both systems; **Fleeting** in the Forever Notes
+structure) should remain flat. **Review** stays flat. **Archive** may preserve
+the subfolder structure of whatever it archives.
 
 ### Strict vs. Loose Forever Notes Mode
 
@@ -119,7 +132,8 @@ manage-apple-notes/
 │   └── audit.md                     # Prompt template: library audit
 │
 ├── config/
-│   ├── taxonomy.example.yaml        # Generic Forever Notes folder template
+│   ├── taxonomy.example.yaml        # Forever Notes / Zettelkasten taxonomy template
+│   ├── taxonomy.para.yaml           # PARA method taxonomy template (alternative)
 │   ├── settings.example.yaml        # Paths, model, batch size, etc.
 │   ├── taxonomy.local.yaml          # GITIGNORED — your actual folder names + subfolders
 │   └── settings.local.yaml          # GITIGNORED — your personal settings
@@ -182,13 +196,15 @@ git config core.hooksPath .git-hooks
 
 ## Config Files
 
-### config/taxonomy.example.yaml
+### config/taxonomy.example.yaml  *(Forever Notes / Zettelkasten)*
 
-The taxonomy supports nested subfolders. The top-level keys are fixed Forever
-Notes categories. The `subfolders` list under each category is populated after
-the theme discovery pass and lives in `taxonomy.local.yaml` only.
+The taxonomy supports nested subfolders. The `subfolders` list under each
+category is populated after the theme discovery pass and lives in
+`taxonomy.local.yaml` only. Categories without a `subfolders` key remain flat.
 
-Categories without a `subfolders` key (inbox, fleeting, review) remain flat.
+This template uses the full Zettelkasten-influenced set: Inbox, Fleeting,
+Literature, Permanent, Projects, Areas, Resources, Archive, Review. See
+`config/taxonomy.para.yaml` for the PARA alternative.
 
 ```yaml
 # Forever Notes folder taxonomy — generic template.
@@ -232,6 +248,18 @@ forever_notes:
   review:
     folder: "[YOUR_REVIEW_FOLDER]"         # keep flat
 ```
+
+### config/taxonomy.para.yaml  *(PARA method)*
+
+An alternative template using PARA's four actionability-based top-level
+categories. Omits Fleeting, Literature, Permanent, and Review — those
+note types are absorbed into Projects, Areas, and Resources via subfolders.
+See `docs/para-method.md` for guidance on minimalist vs. expanded PARA designs
+and how PARA maps to the default Forever Notes taxonomy.
+
+To use PARA: copy `taxonomy.para.yaml` to `taxonomy.local.yaml` and fill in
+your folder names. Forever Notes strict mode is compatible with PARA — Hub notes
+will be generated for any subfolders defined.
 
 ### config/settings.example.yaml
 
@@ -537,8 +565,9 @@ notes share (e.g. "Health & Fitness", "Side Project: App Redesign", "Cooking").
 
 For each theme, estimate:
 - How many notes likely belong to it
-- Which Forever Notes categories it might appear in (Permanent, Literature,
-  Projects, Areas, Resources)
+- Which top-level categories it might appear in (e.g. Permanent, Literature,
+  Projects, Areas, Resources in the default taxonomy; or Projects, Areas,
+  Resources in a PARA taxonomy)
 - A one-sentence description
 
 Also note any existing folder names from the input that suggest structural
@@ -568,8 +597,13 @@ Notes sample:
 
 ### prompts/classify-notes.md
 
+The category list in this prompt is dynamically injected from `taxonomy.local.yaml`
+at runtime — only the categories defined there appear. The example below reflects
+the default Forever Notes taxonomy. A PARA user would see Inbox, Projects, Areas,
+Resources, and Archive instead.
+
 ```markdown
-You are organizing notes in Apple Notes according to the Forever Notes framework.
+You are organizing notes in Apple Notes according to a configured folder taxonomy.
 The taxonomy has two levels: a top-level category (the nature of the note) and
 an optional subfolder (the subject domain).
 

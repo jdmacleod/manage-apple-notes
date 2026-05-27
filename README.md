@@ -21,6 +21,7 @@ cd manage-apple-notes
 git config core.hooksPath .git-hooks
 
 # 3. Copy and fill in personal config (these files are gitignored)
+# Use taxonomy.example.yaml (Forever Notes / Zettelkasten) or taxonomy.para.yaml (PARA method)
 cp config/taxonomy.example.yaml config/taxonomy.local.yaml
 cp config/settings.example.yaml config/settings.local.yaml
 # Edit both files with your actual Apple Notes folder names
@@ -64,6 +65,8 @@ All commands accept `--dry-run` to preview without making changes.
 | Document | Contents |
 |----------|----------|
 | [docs/runbooks/main-workflow.md](docs/runbooks/main-workflow.md) | Full step-by-step workflow |
+| [docs/para-method.md](docs/para-method.md) | PARA method overview, taxonomy designs, and guidance for generating taxonomy.local.yaml |
+| [docs/forever-notes-framework.md](docs/forever-notes-framework.md) | Forever Notes loose/strict modes, Hub notes, and sync-hubs usage |
 | [docs/security-considerations.md](docs/security-considerations.md) | Data flow, cloud vs. local LLM, Apple Notes MCP guidance |
 | [docs/technical-notes.md](docs/technical-notes.md) | Apple Notes platform behavior, LLM findings, local model recommendations |
 
@@ -76,7 +79,7 @@ This is a public repo. Your note content and folder names never leave your machi
 - The entire `data/` directory is gitignored
 - A pre-commit hook blocks accidental commits of private files
 
-See `config/taxonomy.example.yaml` and `config/settings.example.yaml` for the committed templates.
+See `config/taxonomy.example.yaml` (Forever Notes / Zettelkasten), `config/taxonomy.para.yaml` (PARA method), and `config/settings.example.yaml` for the committed templates.
 
 ## Folder Taxonomy
 

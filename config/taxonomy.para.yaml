@@ -1,0 +1,96 @@
+# PARA Method folder taxonomy — template.
+# Copy to taxonomy.local.yaml and fill in your actual Apple Notes folder names.
+#
+# This template uses the PARA method (Projects, Areas, Resources, Archive) as
+# the top-level structure. PARA organises by actionability rather than note type.
+# See docs/para-method.md for guidance on minimalist vs. expanded designs and
+# how PARA maps to the default Zettelkasten/Forever Notes taxonomy.
+#
+# Two designs are shown below. Choose one and delete the other before copying
+# to taxonomy.local.yaml:
+#
+#   Minimalist  — Projects and Resources stay flat; navigate by search and
+#                 disciplined note titling. Five top-level folders total.
+#
+#   Expanded    — Projects gets one subfolder per active project; Resources is
+#                 split into three lanes; Archive mirrors the top-level structure.
+#                 Better for larger libraries or when you prefer visual navigation.
+#
+# Subfolders are discovered during the theme discovery pass (notes discover).
+# Add them to taxonomy.local.yaml before running notes classify (Pass 2).
+#
+# STRICT MODE: When forever_notes_mode is "strict", each subfolder entry may
+# optionally use the dict form to override hub_title and hub_tag. If omitted,
+# hub_title is auto-derived as "✱ [SubfolderName]" and hub_tag as "#[lowercasename]".
+# The simple string list form is valid for loose mode and as a starting point.
+#
+# For the Zettelkasten-influenced alternative (Inbox, Fleeting, Literature,
+# Permanent, Projects, Areas, Resources, Archive, Review), see taxonomy.example.yaml.
+
+# ── MINIMALIST PARA ──────────────────────────────────────────────────────────
+# Five top-level folders. Projects and Resources are flat; navigate by search.
+# Recommended starting point when migrating a large existing library.
+
+forever_notes:
+  inbox:
+    folder: "[YOUR_INBOX_FOLDER]"         # keep flat — process regularly
+
+  projects:
+    folder: "[YOUR_PROJECTS_FOLDER]"
+    subfolders: []                        # keep flat; prefix note titles with project name
+    # e.g. "Home Renovation — Materials List", "Home Renovation — Contractor Notes"
+
+  areas:
+    folder: "[YOUR_AREAS_FOLDER]"
+    subfolders:                           # one subfolder per ongoing responsibility
+      - "Work"
+      - "Health"
+      - "Finance & Home"
+      - "Personal"
+
+  resources:
+    folder: "[YOUR_RESOURCES_FOLDER]"
+    subfolders: []                        # keep flat; navigate by search
+
+  archive:
+    folder: "[YOUR_ARCHIVE_FOLDER]"
+    subfolders: []                        # keep flat; project/area name in note title suffices
+
+
+# ── EXPANDED PARA ─────────────────────────────────────────────────────────────
+# Uncomment and use this block instead if you prefer per-project subfolders,
+# a differentiated Resources layer, and a mirrored Archive structure.
+# Delete the minimalist block above if using this one.
+#
+# forever_notes:
+#   inbox:
+#     folder: "[YOUR_INBOX_FOLDER]"       # keep flat
+#
+#   projects:
+#     folder: "[YOUR_PROJECTS_FOLDER]"
+#     subfolders: []                      # one subfolder per active project
+#     # Examples: ["Home Renovation", "Q3 Marketing Campaign", "Spanish Language Course"]
+#     # Retire completed project subfolders to Archive/Projects.
+#
+#   areas:
+#     folder: "[YOUR_AREAS_FOLDER]"
+#     subfolders:                         # one subfolder per ongoing responsibility
+#       - "Work"
+#       - "Health & Wellbeing"
+#       - "Finance"
+#       - "Home"
+#       - "Personal"
+#
+#   resources:
+#     folder: "[YOUR_RESOURCES_FOLDER]"
+#     subfolders:                         # three-lane differentiation
+#       - "Ideas & Thinking"              # half-formed thoughts; Zettelkasten "permanent" notes
+#       - "Learning & Reading"            # source-linked notes; Zettelkasten "literature" notes
+#       - "Reference"                     # how-tos, procedures, stable reference material
+#
+#   archive:
+#     folder: "[YOUR_ARCHIVE_FOLDER]"
+#     subfolders:                         # mirrors top-level structure
+#       - "Projects"
+#       - "Areas"
+#       - "Resources"
