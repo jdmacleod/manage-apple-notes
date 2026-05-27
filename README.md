@@ -1,6 +1,6 @@
 # manage-apple-notes
 
-Scripts and workflows for organizing Apple Notes using AI-powered classification into a user-defined, PARA-style folder taxonomy. Optional [Forever Notes](https://forevernotesframework.com) structural features (Hub notes, tags) are available in strict mode.
+Scripts and workflows for organizing Apple Notes using AI-powered classification into a user-defined folder taxonomy — PARA, Zettelkasten-influenced, or custom. Optional [Forever Notes](https://forevernotesframework.com) structural features (Hub notes, tags) are available in strict mode.
 
 The pipeline is: **export → discover themes → AI classify → human review → apply**. Nothing touches your notes until you approve a proposal.
 
@@ -81,7 +81,7 @@ This is a public repo. Your note content and folder names never leave your machi
 
 See `config/taxonomy.example.yaml` (Forever Notes / Zettelkasten), `config/taxonomy.para.yaml` (PARA method), and `config/settings.example.yaml` for the committed templates.
 
-## Folder Taxonomy
+## Default Folder Taxonomy
 
 | Folder | Purpose |
 |--------|---------|
@@ -95,9 +95,11 @@ See `config/taxonomy.example.yaml` (Forever Notes / Zettelkasten), `config/taxon
 | Archive | Inactive, completed, or outdated notes |
 | Review | Needs human triage (used during cleanup) |
 
+This is the default Zettelkasten-influenced taxonomy. For the PARA method (Inbox, Projects, Areas, Resources, Archive), see [`config/taxonomy.para.yaml`](config/taxonomy.para.yaml) and [`docs/para-method.md`](docs/para-method.md).
+
 ## Forever Notes
 
-This project implements the [Forever Notes framework](https://forevernotesframework.com).
+This project optionally supports the [Forever Notes framework](https://forevernotesframework.com).
 See [myforevernotes.com](https://www.myforevernotes.com/docs/home) for the full framework docs.
 
 Two operating modes are available, set via `forever_notes_mode` in `settings.local.yaml`:
