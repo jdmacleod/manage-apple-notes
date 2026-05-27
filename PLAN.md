@@ -81,9 +81,11 @@ manage-apple-notes/
 │   ├── classify/
 │   │   ├── __init__.py
 │   │   ├── discover_themes.py       # Pass 1: find natural clusters in the library
-│   │   └── classify_notes.py        # Pass 2: classify notes using approved theme map
+│   │   ├── classify_notes.py        # Pass 2: classify notes using approved theme map
+│   │   └── deduplicate_notes.py     # Pass 3: detect duplicates, write dedup proposal
 │   ├── execute/
-│   │   └── apply-proposal.applescript  # Read approved proposal, move notes
+│   │   ├── apply-proposal.applescript          # Read approved move proposal, move notes
+│   │   └── apply-dedup-proposal.applescript    # Read approved dedup proposal, delete notes
 │   └── maintenance/
 │       ├── __init__.py
 │       ├── process_inbox.py         # Classify and propose moves for Inbox notes
@@ -92,6 +94,7 @@ manage-apple-notes/
 ├── prompts/
 │   ├── discover-themes.md           # Prompt template: theme/cluster discovery
 │   ├── classify-notes.md            # Prompt template: bulk classification
+│   ├── deduplicate-notes.md         # Prompt template: duplicate pair review
 │   ├── process-inbox.md             # Prompt template: inbox triage
 │   └── audit.md                     # Prompt template: library audit
 │
@@ -112,6 +115,7 @@ manage-apple-notes/
     ├── exports/                     # Raw dumps from Apple Notes
     ├── theme-maps/                  # Theme discovery output (Pass 1)
     ├── proposals/                   # Classification proposals (Pass 2)
+    ├── dedup-proposals/             # Deduplication proposals (Pass 3)
     ├── reports/                     # Maintenance pass outputs
     └── archive/                     # Old proposals and reports
 ```
@@ -238,6 +242,13 @@ export:
   include_body: true
   max_body_chars: 2000              # truncate long notes for classification
   skip_empty: true
+
+deduplication:
+  fuzzy_title_threshold: 85         # thefuzz token_sort_ratio threshold (0–100)
+  jaccard_content_threshold: 80     # thefuzz token_set_ratio threshold (0–100)
+  content_preview_chars: 300        # characters of each note shown in the dedup proposal
+  semantic_sweep: false             # full LLM pass over theme clusters (expensive; off by default)
+  default_resolution: "review"      # conservative default: flag for human, don't auto-delete
 
 thresholds:
   min_notes_for_subfolder: 8       # themes with fewer notes stay flat in parent
@@ -380,6 +391,63 @@ note into its `top-level folder / subfolder` destination.
 - `proposed_subfolder` is null when no subfolders are defined or no match
 - LLM provider selected via `get_provider(settings)` from `scripts.providers`
 - Prompt caching applied for Anthropic; not for Ollama
+
+---
+
+### scripts/classify/deduplicate_notes.py  *(Pass 3)*
+
+**Purpose:** Detect duplicate notes using a three-pass funnel and write a dedup
+proposal to `data/dedup-proposals/` for human review before any deletions occur.
+Run after `classify_notes.py` so that `proposed_folder_path` can be used as a
+similarity signal (two notes heading to the same folder are more likely true
+duplicates than notes in different categories).
+
+**CLI:** `uv run notes dedup [export_file] [--proposal <file>] [--dry-run]`
+
+**Algorithm — three-pass funnel:**
+
+*Pass 1 — exact hash (free, instant):*
+- Normalize body: lowercase, collapse whitespace, strip punctuation
+- MD5 hash normalized content; group notes with identical hash
+- Auto-resolved as `delete` — no LLM review needed
+
+*Pass 2 — fuzzy candidates (free, fast):*
+- Group notes by `proposed_folder_path` (or current folder as fallback)
+- Within each group, flag pairs where:
+  - `thefuzz.fuzz.token_sort_ratio(title_a, title_b) >= fuzzy_title_threshold` (default 85)
+  - `thefuzz.fuzz.token_set_ratio(body_a[:500], body_b[:500]) >= jaccard_content_threshold` (default 80)
+- O(n) within clusters, not O(n²) across the whole library
+
+*Pass 3 — LLM review of fuzzy candidates:*
+- Send each candidate pair to the LLM via `provider.classify_messages()`
+- Prompt: `prompts/deduplicate-notes.md`
+- LLM returns: `is_duplicate`, `resolution` (`delete` or `review`), `keep_id`, `reason`
+- No `merge` resolution: pairs with unique content on both sides → `review`
+
+**Keep heuristics:** most complete content → already in correct folder → most recently
+modified → more descriptive title.
+
+**`dry_run` mode:** Runs Pass 1 and Pass 2 only; prints candidate counts; no LLM calls;
+no file written.
+
+---
+
+### scripts/execute/apply-dedup-proposal.applescript
+
+**Purpose:** Read an approved dedup proposal JSON and delete confirmed duplicate
+notes in Apple Notes (moves to Recently Deleted — recoverable for 30 days).
+
+**Usage:**
+```bash
+osascript scripts/execute/apply-dedup-proposal.applescript [--execute] <dedup-proposal.json>
+```
+
+**Implementation notes:**
+- Default is dry-run; requires `--execute` flag to make actual changes
+- Processes only groups with `resolution: "delete"`; skips `review`
+- Before deleting, verifies the keep note still exists
+- Log: `[DELETED] "Note Title" (duplicate of "Keep Note Title")`
+- Summary: N deleted, N skipped, N errors + recovery reminder
 
 ---
 
@@ -532,6 +600,15 @@ Directory structure, git, `.gitignore`, pre-commit hook, config examples, README
 
 `export-notes.applescript` with ASCII-delimited temp file → Python UTF-8 JSON conversion.
 
+### prompts/deduplicate-notes.md
+
+System prompt for Pass 3 LLM review of fuzzy candidate pairs. Key constraints:
+- Resolution must be `delete` or `review` only — no `merge`
+- `review` when either note contains content not present in the other
+- Returns a JSON array, one object per group
+
+---
+
 ### Phase 2a — Theme Discovery *(new)*
 
 1. Implement `discover_themes.py` with `notes discover` CLI command
@@ -555,6 +632,23 @@ subfolders → approve before proceeding to Phase 2b.
 
 1. Update `audit.py`: nested taxonomy reads + subfolder candidate detection
 2. Update runbooks for audit
+
+### Phase 3b — Deduplicate *(new)*
+
+Run after classification so that `proposed_folder_path` enriches the similarity signal.
+
+1. Implement `deduplicate_notes.py` (Pass 3) with three-pass funnel
+2. Implement `apply-dedup-proposal.applescript` with `--execute` flag requirement
+3. Implement `apply_dedup.py` Python wrapper with streaming colored output
+4. Write `prompts/deduplicate-notes.md` LLM review prompt
+5. Add `dedup` and `apply-dedup` commands to `scripts/cli.py`
+6. Update `docs/runbooks/main-workflow.md` to add dedup step after apply
+
+**Human checkpoints:**
+- Review dedup proposal JSON — confirm `keep_id` choices before approving
+- Run `uv run notes apply-dedup` (dry-run by default) to preview deletions
+- Run `uv run notes apply-dedup --execute` to apply
+- Note: deletions move notes to Recently Deleted (recoverable for 30 days)
 
 ### Phase 4 — Scheduling (optional)
 
@@ -638,3 +732,24 @@ touched in Notes.
 **Note ID caveat.** Apple Notes `x-coredata://` IDs can change across iCloud sync
 conflicts or device migrations. Scripts match on ID but fall back to title + folder,
 logging any ambiguities.
+
+**Why deduplicate after classification, not before.** Running dedup on the
+post-classification state provides a richer signal: two notes heading to the same
+`proposed_folder_path` are far more likely to be true duplicates than two notes in
+different categories that happen to share a theme. Running dedup before classification
+loses this placement context entirely.
+
+**Three-pass funnel, not a single LLM call.** Sending every note pair to the LLM
+would be O(n²) in cost and time. The algorithmic passes (exact hash, fuzzy title +
+content similarity) eliminate the vast majority of non-duplicates cheaply, so the LLM
+only reviews pairs that have already cleared two similarity thresholds. For a library of
+a few hundred notes this typically reduces the LLM review set to under 20 candidate pairs.
+
+**Why no merge resolution.** Merging note content via AppleScript would produce plain
+text — Apple Notes stores notes as HTML internally, and any merge would silently strip
+formatting, attachments, and links. Notes where both sides contain unique content are
+flagged as `review` so the user can merge manually in the Notes app with full fidelity.
+
+**Deletion safety: `--execute` required.** Deletions are harder to undo than moves.
+The apply-dedup script defaults to dry-run and requires an explicit `--execute` flag.
+Deleted notes land in Recently Deleted and are recoverable for 30 days.

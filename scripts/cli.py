@@ -6,7 +6,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from scripts.classify.classify_notes import run_classify
+from scripts.classify.deduplicate_notes import run_dedup
 from scripts.classify.discover_themes import run_discover
+from scripts.execute.apply_dedup import run_apply_dedup
 from scripts.execute.run_apply import run_apply
 from scripts.export.run_export import run_export
 from scripts.maintenance.audit import run_audit
@@ -96,6 +98,43 @@ def apply(
 ):
     """Apply an approved move proposal to Apple Notes."""
     run_apply(proposal_file=proposal_file, dry_run=dry_run)
+
+
+@app.command()
+def dedup(
+    export_file: Optional[str] = typer.Argument(
+        default=None,
+        help="Path to export JSON. Defaults to most recent file in data/exports/.",
+    ),
+    proposal: Optional[str] = typer.Option(
+        None,
+        "--proposal",
+        help="Path to a classify proposal JSON to use as folder placement signal.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Run algorithmic passes only; no LLM calls and no file written.",
+    ),
+):
+    """Detect duplicate notes and write a dedup proposal (Pass 3)."""
+    run_dedup(export_file=export_file, proposal_file=proposal, dry_run=dry_run)
+
+
+@app.command()
+def apply_dedup(
+    proposal_file: Optional[str] = typer.Argument(
+        default=None,
+        help="Dedup proposal JSON to apply. Defaults to most recent file in data/dedup-proposals/.",
+    ),
+    execute: bool = typer.Option(
+        False,
+        "--execute",
+        help="Actually delete notes. Without this flag the command is a dry-run.",
+    ),
+):
+    """Apply an approved dedup proposal — delete confirmed duplicates."""
+    run_apply_dedup(proposal_file=proposal_file, execute=execute)
 
 
 if __name__ == "__main__":

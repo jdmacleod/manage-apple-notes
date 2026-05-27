@@ -22,3 +22,10 @@ export:
   include_body: true
   max_body_chars: 2000        # Truncate long notes for classification
   skip_empty: true
+
+deduplication:
+  fuzzy_title_threshold: 85   # thefuzz token_sort_ratio threshold (0–100)
+  jaccard_content_threshold: 80  # thefuzz token_set_ratio threshold (0–100)
+  content_preview_chars: 300  # Characters of each note shown in the dedup proposal
+  semantic_sweep: false       # Full LLM pass over theme clusters (expensive; off by default)
+  default_resolution: "review"  # Conservative default: flag for human, don't auto-delete

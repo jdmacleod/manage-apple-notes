@@ -66,6 +66,28 @@ uv run notes apply             # apply approved moves to Apple Notes
 Each move is logged: `[MOVED]` (green), `[SKIP]` (yellow), `[ERROR]` (red).
 To apply a specific proposal file: `uv run notes apply data/proposals/proposal-YYYY-MM-DD.json`.
 
+### Step 5 — Deduplicate (Pass 3, optional)
+
+Run after applying moves so that `proposed_folder_path` can be used as a similarity signal.
+
+```bash
+uv run notes dedup --dry-run   # preview exact + fuzzy candidate counts (no LLM)
+uv run notes dedup             # → data/dedup-proposals/dedup-YYYY-MM-DD.json
+```
+
+Runs a three-pass funnel: exact content hash → fuzzy title/body similarity → LLM review.
+Exact duplicates are recommended for deletion automatically; fuzzy pairs are reviewed by the LLM.
+
+**→ HUMAN REVIEW:** Open `data/dedup-proposals/dedup-YYYY-MM-DD.json` and review each group.
+For `resolution: "delete"` groups, verify `keep_id` is the right note to keep. Remove any
+group you disagree with. Groups with `resolution: "review"` are flagged for manual triage in
+Apple Notes and are not touched by the apply script.
+
+```bash
+uv run notes apply-dedup             # dry-run by default — shows [DRY RUN] for each deletion
+uv run notes apply-dedup --execute   # actually delete; notes go to Recently Deleted (30-day recovery)
+```
+
 ### After setup
 
 - Run `uv run notes audit` to find remaining stale, stub, or duplicate notes
