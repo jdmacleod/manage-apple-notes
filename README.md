@@ -2,7 +2,7 @@
 
 Scripts and workflows for organizing Apple Notes using the [Forever Notes](https://forevernotesframework.com) framework (a PARA-style taxonomy).
 
-The pipeline is: **export → AI classify → human review → apply**. Nothing touches your notes until you approve a proposal.
+The pipeline is: **export → discover themes → AI classify → human review → apply**. Nothing touches your notes until you approve a proposal.
 
 ## Prerequisites
 
@@ -33,33 +33,26 @@ cp .env.example .env
 # Edit .env — add ANTHROPIC_API_KEY for cloud, or set OLLAMA_BASE_URL for local
 ```
 
-## One-Time Cleanup
+## Quick Reference
 
-See [docs/runbooks/one-time-cleanup.md](docs/runbooks/one-time-cleanup.md) for the full walkthrough. In brief:
-
-```bash
-# Step 1: Export all notes to data/exports/
-osascript scripts/export/export-notes.applescript
-
-# Step 2: Classify with Claude (writes data/proposals/proposal-YYYY-MM-DD.json)
-uv run notes classify
-
-# Step 3: Review and edit the proposal JSON, then dry-run
-osascript scripts/execute/apply-proposal.applescript --dry-run data/proposals/proposal-YYYY-MM-DD.json
-
-# Step 4: Apply approved moves
-osascript scripts/execute/apply-proposal.applescript data/proposals/proposal-YYYY-MM-DD.json
-```
-
-## Ongoing Maintenance
+See [docs/runbooks/main-workflow.md](docs/runbooks/main-workflow.md) for the full walkthrough.
 
 ```bash
-# Process Inbox — classify and propose moves for new captures
-uv run notes inbox
+# Initial library setup (one-time, two-pass)
+uv run notes export              # export from Apple Notes
+uv run notes discover            # map thematic clusters → data/theme-maps/
+# → HUMAN: review theme map, add subfolders to taxonomy.local.yaml
+uv run notes classify            # classify notes → data/proposals/
+# → HUMAN: review proposal JSON
+uv run notes apply --dry-run     # preview moves
+uv run notes apply               # apply approved moves
 
-# Audit — find stale, duplicate, and orphaned notes (report only, no changes)
-uv run notes audit
+# Ongoing
+uv run notes inbox               # triage Inbox captures
+uv run notes audit               # quality report (stale, stub, duplicate)
 ```
+
+All commands accept `--dry-run` to preview without making changes.
 
 ## Privacy
 
