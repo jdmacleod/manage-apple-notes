@@ -24,7 +24,10 @@ git config core.hooksPath .git-hooks
 # Use taxonomy.example.yaml (Forever Notes / Zettelkasten) or taxonomy.para.yaml (PARA method)
 cp config/taxonomy.example.yaml config/taxonomy.local.yaml
 cp config/settings.example.yaml config/settings.local.yaml
-# Edit both files with your actual Apple Notes folder names
+# Edit both files with your actual Apple Notes folder names.
+# If all your taxonomy folders live inside a single container folder in Apple Notes
+# (e.g. "All Notes"), set toplevel_folder.enabled: true and update toplevel_folder.name
+# in settings.local.yaml to match.
 
 # 4. Install Python dependencies and create virtual environment
 uv sync
