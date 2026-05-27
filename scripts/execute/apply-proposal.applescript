@@ -140,7 +140,14 @@ for m in p.get('moves',[]):
 								log "[SKIP]  Not found: \"" & noteTitle & "\""
 								set skipCount to skipCount + 1
 							else
-								set noteAccount to container of (container of targetNote)
+								-- Notes at the account root have the account as their direct container;
+							-- notes inside a folder have folder → account. Handle both.
+							set noteDirectContainer to container of targetNote
+							if class of noteDirectContainer is account then
+								set noteAccount to noteDirectContainer
+							else
+								set noteAccount to container of noteDirectContainer
+							end if
 
 								if containerName is not "" then
 									-- ── 3-level: container → folder → subfolder ──────────
