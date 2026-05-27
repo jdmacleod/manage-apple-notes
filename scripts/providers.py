@@ -40,11 +40,11 @@ class AnthropicProvider:
 
 
 class OllamaProvider:
-    def __init__(self, model: str) -> None:
+    def __init__(self, model: str, timeout: float = 1200.0) -> None:
         import openai
         raw = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
         base_url = raw if raw.endswith("/v1") else f"{raw}/v1"
-        self._client = openai.OpenAI(base_url=base_url, api_key="ollama")
+        self._client = openai.OpenAI(base_url=base_url, api_key="ollama", timeout=timeout)
         self._model = os.environ.get("OLLAMA_MODEL", model)
 
     @property
@@ -72,8 +72,12 @@ def get_provider(settings: dict) -> LLMProvider:
     # OLLAMA_BASE_URL in the environment takes precedence over settings.local.yaml
     if os.environ.get("OLLAMA_BASE_URL"):
         model = llm_cfg.get("model", "llama3")
-        return OllamaProvider(model)
+        timeout = float(llm_cfg.get("request_timeout", 1200))
+        return OllamaProvider(model, timeout=timeout)
     provider_name = llm_cfg.get("provider", "anthropic")
     default_model = "claude-opus-4-6" if provider_name == "anthropic" else "llama3"
     model = llm_cfg.get("model", default_model)
-    return OllamaProvider(model) if provider_name == "ollama" else AnthropicProvider(model)
+    if provider_name == "ollama":
+        timeout = float(llm_cfg.get("request_timeout", 1200))
+        return OllamaProvider(model, timeout=timeout)
+    return AnthropicProvider(model)

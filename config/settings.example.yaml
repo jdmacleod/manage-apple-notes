@@ -11,6 +11,7 @@ llm:
 #   provider: "ollama"
 #   model: "llama3"           # overridden by OLLAMA_MODEL env var if set
 #   batch_size: 5             # smaller batches work better for local models
+#   request_timeout: 1200     # seconds; default 1200 (20 min) for local inference
 
 paths:
   exports_dir: "data/exports"

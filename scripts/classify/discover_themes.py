@@ -40,6 +40,31 @@ def load_discover_prompt() -> str:
     return system_part.strip()
 
 
+def _is_context_overflow(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(k in msg for k in ("exceed_context", "context_length", "context size", "context window", "maximum context"))
+
+
+def _discover_batch(provider, system_prompt: str, batch: list) -> list:
+    """Send one batch to the LLM; on context overflow, split recursively and merge."""
+    try:
+        response = provider.classify_messages(
+            system_prompt,
+            json.dumps(batch, indent=2, ensure_ascii=False),
+        )
+        result = _extract_json_object(response)
+        return result.get("themes", [])
+    except (ValueError, json.JSONDecodeError) as exc:
+        console.print(f"[yellow]Warning:[/yellow] batch parse error — {exc}")
+        return []
+    except Exception as exc:
+        if _is_context_overflow(exc) and len(batch) > 1:
+            mid = len(batch) // 2
+            console.print(f"[yellow]Context overflow — splitting batch ({len(batch)} → {mid}+{len(batch)-mid})[/yellow]")
+            return _discover_batch(provider, system_prompt, batch[:mid]) + _discover_batch(provider, system_prompt, batch[mid:])
+        raise
+
+
 def _extract_json_object(text: str) -> dict:
     """Extract a JSON object from an LLM response that may include prose or fences."""
     if "```" in text:
@@ -116,17 +141,9 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
     raw_theme_lists: list[list] = []
 
     for batch in track(batches, description="Discovering themes..."):
-        response = provider.classify_messages(
-            system_prompt,
-            json.dumps(batch, indent=2, ensure_ascii=False),
-        )
-        try:
-            result = _extract_json_object(response)
-            themes = result.get("themes", [])
-            if themes:
-                raw_theme_lists.append(themes)
-        except (ValueError, json.JSONDecodeError) as exc:
-            console.print(f"[yellow]Warning:[/yellow] batch parse error — {exc}")
+        themes = _discover_batch(provider, system_prompt, batch)
+        if themes:
+            raw_theme_lists.append(themes)
 
     if not raw_theme_lists:
         console.print("[red]No themes found in any batch. Check the prompt template and LLM output.[/red]")
@@ -144,15 +161,18 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
     )
 
     all_raw = [theme for batch in raw_theme_lists for theme in batch]
-    synthesis_response = provider.classify_messages(
-        synthesis_prompt,
-        json.dumps(all_raw, indent=2, ensure_ascii=False),
-    )
     try:
+        synthesis_response = provider.classify_messages(
+            synthesis_prompt,
+            json.dumps(all_raw, indent=2, ensure_ascii=False),
+        )
         synthesized = _extract_json_object(synthesis_response)
         final_themes = synthesized.get("themes", all_raw)
-    except (ValueError, json.JSONDecodeError):
-        console.print("[yellow]Synthesis parse error — using raw theme list from batches.[/yellow]")
+    except Exception as exc:
+        if _is_context_overflow(exc):
+            console.print("[yellow]Synthesis context overflow — skipping dedup, using raw theme list.[/yellow]")
+        else:
+            console.print(f"[yellow]Synthesis error — using raw theme list. ({exc})[/yellow]")
         final_themes = all_raw
 
     # ── Build and write theme map ────────────────────────────────────────────
