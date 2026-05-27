@@ -114,6 +114,29 @@ This is relevant any time a script needs the account reference in order to creat
 folders or move notes. Unorganized libraries (notes never placed in a folder) will
 trigger this path for every note on the first apply run.
 
+### Bulk moves can send notes to Recently Deleted via iCloud conflict resolution
+
+When a large number of notes (hundreds) are moved in rapid succession via
+AppleScript, iCloud sync may treat some moves as write conflicts. The conflict
+resolution can move the "losing" copy to Recently Deleted rather than merging.
+This has been observed with notes stored in the iCloud default `Notes` folder,
+particularly older notes (pre-2015) with longer sync histories across many devices.
+
+**Symptoms:** Notes report `[MOVED]` in the apply log but are subsequently
+unfindable — `every note whose name is <title>` returns 0 matches and the notes
+are absent from all folders. Total visible note count equals exactly the number
+of confirmed moves, with no notes unaccounted for elsewhere.
+
+**Recovery:** Open the Notes app on Mac or iPhone, navigate to Recently Deleted
+(bottom of the iCloud sidebar), and restore the affected notes. The apply script
+can then be re-run against the same proposal to move them to their correct
+destinations — note IDs will have changed, but the title-search fallback will
+locate them.
+
+**AppleScript cannot read Recently Deleted.** `folder "Recently Deleted" of
+account` raises an error. There is no programmatic way to restore notes from
+Recently Deleted; it must be done through the Notes app UI.
+
 ### Folder depth supports up to five levels
 
 Apple Notes supports up to five levels of folder nesting (one top-level folder
