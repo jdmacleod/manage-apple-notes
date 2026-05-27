@@ -5,6 +5,13 @@
 # See docs/forever-notes-framework.md for details on strict mode.
 forever_notes_mode: "loose"
 
+# When enabled, all taxonomy folders are created inside a single top-level
+# container folder rather than at the account root. The export script strips
+# this prefix transparently so classification and all other tools are unaffected.
+toplevel_folder:
+  enabled: true          # set to false to place folders at the account root
+  name: "All Notes"      # name of the container folder in Apple Notes
+
 # provider: "anthropic" (default, cloud) or "ollama" (local)
 llm:
   provider: "anthropic"

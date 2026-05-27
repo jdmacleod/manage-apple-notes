@@ -172,7 +172,7 @@ def _generate_hub_body(
     )
 
 
-def _write_note_applescript(title: str, body: str, folder: str | None, dry_run: bool) -> str:
+def _write_note_applescript(title: str, body: str, folder: str | None, dry_run: bool, container: str = "") -> str:
     """
     Create or update a note in Apple Notes with the given title and body.
     Returns a status string: "created", "updated", or "[DRY RUN]".
@@ -180,13 +180,14 @@ def _write_note_applescript(title: str, body: str, folder: str | None, dry_run: 
     if dry_run:
         return "[DRY RUN]"
 
-    script = REPO_ROOT / "scripts" / "forever-notes" / "sync-hubs.applescript"
+    script = REPO_ROOT / "scripts" / "forever_notes" / "sync-hubs.applescript"
     cmd = [
         "osascript",
         str(script),
         title,
         body,
         folder or "",
+        container,
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     output = result.stdout.strip()
@@ -213,6 +214,9 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
     home_title = strict.get("home_note_title", f"{HEAVY_ASTERISK} Home")
     home_folder = strict.get("home_note_folder") or None
     hub_folder = strict.get("hub_note_folder") or None
+
+    tl_cfg = settings.get("toplevel_folder", {})
+    container = tl_cfg.get("name", "") if tl_cfg.get("enabled", False) else ""
 
     thresholds = settings.get("thresholds", {})
     min_count = int(thresholds.get("min_notes_for_subfolder", 8))
@@ -263,7 +267,7 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
         console.print(f"  [bold]{h_title}[/bold] — {total} notes across {len(categories)} categor{'y' if len(categories) == 1 else 'ies'}")
 
         body = _generate_hub_body(theme_name, categories, provider, prompt_template, dry_run)
-        status = _write_note_applescript(h_title, body, hub_folder, dry_run)
+        status = _write_note_applescript(h_title, body, hub_folder, dry_run, container=container)
 
         if status == "created":
             console.print(f"    [green][CREATED][/green]")
@@ -283,7 +287,7 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
     home_body_lines += ["", "#ForeverNotes"]
     home_body = "\n".join(home_body_lines)
 
-    home_status = _write_note_applescript(home_title, home_body, home_folder, dry_run)
+    home_status = _write_note_applescript(home_title, home_body, home_folder, dry_run, container=container)
     if home_status == "created":
         console.print(f"    [green][CREATED][/green]")
     elif home_status == "[DRY RUN]":

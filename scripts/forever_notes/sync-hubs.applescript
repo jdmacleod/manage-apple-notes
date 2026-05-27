@@ -4,12 +4,16 @@
   Called by sync_hubs.py for each Hub note and for ✱ Home.
 
   Usage (called by Python):
-    osascript scripts/forever-notes/sync-hubs.applescript <title> <body> <folder>
+    osascript scripts/forever_notes/sync-hubs.applescript <title> <body> <folder> [<container>]
 
   Arguments:
-    title   — Note title to find or create
-    body    — Full body text to set
-    folder  — Folder name to create the note in (empty string = iCloud root)
+    title      — Note title to find or create
+    body       — Full body text to set
+    folder     — Folder name to create the note in (empty string = iCloud root)
+    container  — Optional top-level container folder name (empty string = disabled)
+
+  When container is provided, the folder is looked up inside the container
+  rather than at the account root.
 
   Output (stdout):
     "created" if a new note was made
@@ -18,27 +22,44 @@
 
 on run argv
 	if (count of argv) < 3 then
-		error "Usage: sync-hubs.applescript <title> <body> <folder>"
+		error "Usage: sync-hubs.applescript <title> <body> <folder> [<container>]"
 	end if
 
 	set noteTitle to item 1 of argv as string
 	set noteBody to item 2 of argv as string
 	set folderName to item 3 of argv as string
+	set containerName to ""
+	if (count of argv) >= 4 then
+		set containerName to item 4 of argv as string
+	end if
 
 	tell application "Notes"
 		-- Locate or create the target note
 		set targetNote to missing value
 		set targetFolder to missing value
 
-		-- Find the folder if specified
+		-- Find the folder, optionally inside a container
 		if folderName is not "" then
 			repeat with acct in accounts
-				repeat with f in folders of acct
-					if name of f is folderName then
-						set targetFolder to f
-						exit repeat
+				if containerName is not "" then
+					-- Look for folder inside the container
+					if exists folder containerName of acct then
+						repeat with f in folders of folder containerName of acct
+							if name of f is folderName then
+								set targetFolder to f
+								exit repeat
+							end if
+						end repeat
 					end if
-				end repeat
+				else
+					-- Look for folder at account root
+					repeat with f in folders of acct
+						if name of f is folderName then
+							set targetFolder to f
+							exit repeat
+						end if
+					end repeat
+				end if
 				if targetFolder is not missing value then exit repeat
 			end repeat
 		end if

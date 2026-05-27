@@ -92,14 +92,16 @@ Notes app (select the folder, then right-click → "Recover").
 `apply-dedup-proposal.applescript` uses `delete` for all removals specifically to preserve
 this recovery window. The `--execute` confirmation output reminds users of this.
 
-### Folder depth is limited to two levels
+### Folder depth supports up to five levels
 
-The Apple Notes UI supports at most two levels of folder nesting:
-- Top-level folder (e.g. "Permanent")
-- Subfolder inside a top-level folder (e.g. "Health")
+Apple Notes supports up to five levels of folder nesting (one top-level folder
+plus four subfolder levels), confirmed on iPhone 16e running current iOS. The
+same structure is accessible and navigable on macOS.
 
-Deeper nesting is not supported in the UI, though it may be technically writable. This
-project's `Category/Theme` taxonomy is designed around this two-level constraint.
+This project's taxonomy uses at most three levels when `toplevel_folder` is
+enabled: the container (e.g. "All Notes") at level 1, PARA categories
+(e.g. "Areas") at level 2, and theme subfolders (e.g. "Finance") at level 3.
+Without a container, the taxonomy remains two levels deep.
 
 ---
 

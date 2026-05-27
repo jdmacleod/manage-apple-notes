@@ -4,24 +4,38 @@
   Creates nested subfolders as needed.
 
   Usage:
-    osascript scripts/execute/apply-proposal.applescript [--dry-run] <proposal.json>
+    osascript scripts/execute/apply-proposal.applescript [--dry-run] [--container <name>] <proposal.json>
 
   Only the 'moves' array in the proposal is processed.
   'needs_review' and 'no_change' entries are ignored.
+
+  When --container is given, all folders are created/found inside that
+  top-level container folder (3-level nesting: container → folder → subfolder).
 *)
 
 on run argv
 	-- ── Parse arguments ─────────────────────────────────────────────────────
 
 	set dryRun to false
+	set containerName to ""
 	set proposalFile to ""
+	set skipNext to false
 
-	repeat with arg in argv
-		set argStr to arg as string
-		if argStr is "--dry-run" then
-			set dryRun to true
-		else if argStr is not "" then
-			set proposalFile to argStr
+	repeat with i from 1 to count of argv
+		if skipNext then
+			set skipNext to false
+		else
+			set argStr to item i of argv as string
+			if argStr is "--dry-run" then
+				set dryRun to true
+			else if argStr is "--container" then
+				if i < count of argv then
+					set containerName to item (i + 1) of argv as string
+					set skipNext to true
+				end if
+			else if argStr is not "" then
+				set proposalFile to argStr
+			end if
 		end if
 	end repeat
 
@@ -94,8 +108,11 @@ for m in p.get('moves',[]):
 
 				-- Build display path for logging
 				set displayPath to targetFolderName
+				if containerName is not "" then
+					set displayPath to containerName & "/" & targetFolderName
+				end if
 				if subfolderName is not "" then
-					set displayPath to targetFolderName & "/" & subfolderName
+					set displayPath to displayPath & "/" & subfolderName
 				end if
 
 				if dryRun then
@@ -125,19 +142,35 @@ for m in p.get('moves',[]):
 							else
 								set noteAccount to container of (container of targetNote)
 
-								-- Ensure top-level folder exists
-								if not (exists folder targetFolderName of noteAccount) then
-									make new folder with properties {name: targetFolderName} at noteAccount
-								end if
-
-								if subfolderName is not "" then
-									-- Ensure subfolder exists inside the top-level folder
-									if not (exists folder subfolderName of folder targetFolderName of noteAccount) then
-										make new folder at folder targetFolderName of noteAccount with properties {name: subfolderName}
+								if containerName is not "" then
+									-- ── 3-level: container → folder → subfolder ──────────
+									if not (exists folder containerName of noteAccount) then
+										make new folder with properties {name: containerName} at noteAccount
 									end if
-									move targetNote to folder subfolderName of folder targetFolderName of noteAccount
+									if not (exists folder targetFolderName of folder containerName of noteAccount) then
+										make new folder at folder containerName of noteAccount with properties {name: targetFolderName}
+									end if
+									if subfolderName is not "" then
+										if not (exists folder subfolderName of folder targetFolderName of folder containerName of noteAccount) then
+											make new folder at folder targetFolderName of folder containerName of noteAccount with properties {name: subfolderName}
+										end if
+										move targetNote to folder subfolderName of folder targetFolderName of folder containerName of noteAccount
+									else
+										move targetNote to folder targetFolderName of folder containerName of noteAccount
+									end if
 								else
-									move targetNote to folder targetFolderName of noteAccount
+									-- ── 2-level: folder → subfolder (no container) ───────
+									if not (exists folder targetFolderName of noteAccount) then
+										make new folder with properties {name: targetFolderName} at noteAccount
+									end if
+									if subfolderName is not "" then
+										if not (exists folder subfolderName of folder targetFolderName of noteAccount) then
+											make new folder at folder targetFolderName of noteAccount with properties {name: subfolderName}
+										end if
+										move targetNote to folder subfolderName of folder targetFolderName of noteAccount
+									else
+										move targetNote to folder targetFolderName of noteAccount
+									end if
 								end if
 
 								log "[MOVED] \"" & noteTitle & "\" → " & displayPath

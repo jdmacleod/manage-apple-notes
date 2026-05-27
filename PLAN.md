@@ -63,6 +63,10 @@ Staging categories (**Inbox** in both systems; **Fleeting** in the Forever Notes
 structure) should remain flat. **Review** stays flat. **Archive** may preserve
 the subfolder structure of whatever it archives.
 
+Apple Notes supports up to five levels of folder nesting (one top-level folder
+plus four subfolder levels), confirmed on iPhone 16e. With `toplevel_folder`
+enabled, this project uses three levels: container → category → subfolder.
+
 ### Strict vs. Loose Forever Notes Mode
 
 This project supports two operating modes, controlled by `forever_notes_mode` in settings:
@@ -134,7 +138,7 @@ manage-apple-notes/
 ├── config/
 │   ├── taxonomy.example.yaml        # Forever Notes / Zettelkasten taxonomy template
 │   ├── taxonomy.para.yaml           # PARA method taxonomy template (alternative)
-│   ├── settings.example.yaml        # Paths, model, batch size, etc.
+│   ├── settings.example.yaml        # Paths, model, batch size, toplevel_folder, etc.
 │   ├── taxonomy.local.yaml          # GITIGNORED — your actual folder names + subfolders
 │   └── settings.local.yaml          # GITIGNORED — your personal settings
 │
@@ -850,3 +854,9 @@ iCloud sync events.
 **Tags are appended, never removed.** Strict-mode tag application only adds tags not
 already present. It never removes existing tags, even if a note is reclassified. This
 preserves manually applied tags and avoids unexpected data loss.
+
+**Top-level container is transparent to classification.** When `toplevel_folder.enabled`
+is true, the export post-processor strips the container prefix from `folder_path` so all
+downstream tools (classify, dedup, discover, audit, inbox, sync-hubs) see clean paths
+that match the taxonomy. Only the export (strip) and apply (prepend) scripts are
+container-aware. Disabling the setting requires no changes to any other component.

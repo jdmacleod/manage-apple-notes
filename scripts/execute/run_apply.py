@@ -7,6 +7,8 @@ from pathlib import Path
 
 from rich.console import Console
 
+from scripts.classify.classify_notes import load_settings
+
 console = Console()
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -34,10 +36,15 @@ def run_apply(proposal_file: str | None, dry_run: bool) -> None:
         console.print(f"[red]Proposal not found:[/red] {path}")
         raise SystemExit(1)
 
+    settings = load_settings()
+    cfg = settings.get("toplevel_folder", {})
+
     script = REPO_ROOT / "scripts" / "execute" / "apply-proposal.applescript"
     cmd = ["osascript", str(script)]
     if dry_run:
         cmd.append("--dry-run")
+    if cfg.get("enabled", False):
+        cmd += ["--container", cfg.get("name", "All Notes")]
     cmd.append(str(path.resolve()))
 
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
