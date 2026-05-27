@@ -131,7 +131,19 @@ for m in p.get('moves',[]):
 
 							if targetNote is missing value then
 								try
-									set matches to (every note of folder currentFolder whose name is noteTitle)
+									if currentFolder is not "" then
+										set matches to (every note of folder currentFolder whose name is noteTitle)
+										if (count matches) > 0 then set targetNote to item 1 of matches
+									end if
+								end try
+							end if
+
+							-- Broadest fallback: search all notes by title.
+							-- Needed when current_folder is empty (note was at account root)
+							-- or when the folder no longer exists after a previous move run.
+							if targetNote is missing value then
+								try
+									set matches to (every note whose name is noteTitle)
 									if (count matches) > 0 then set targetNote to item 1 of matches
 								end try
 							end if
@@ -140,14 +152,12 @@ for m in p.get('moves',[]):
 								log "[SKIP]  Not found: \"" & noteTitle & "\""
 								set skipCount to skipCount + 1
 							else
-								-- Notes at the account root have the account as their direct container;
-							-- notes inside a folder have folder → account. Handle both.
-							set noteDirectContainer to container of targetNote
-							if class of noteDirectContainer is account then
-								set noteAccount to noteDirectContainer
-							else
-								set noteAccount to container of noteDirectContainer
-							end if
+								-- Walk up the container chain to find the account.
+							-- Handles notes at any depth (root, 1 folder, or already in a subfolder).
+							set noteAccount to container of targetNote
+							repeat while class of noteAccount is not account
+								set noteAccount to container of noteAccount
+							end repeat
 
 								if containerName is not "" then
 									-- ── 3-level: container → folder → subfolder ──────────
