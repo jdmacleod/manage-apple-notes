@@ -100,4 +100,14 @@ See `PLAN.md` for the full spec. Implementation phases:
 1. **Phase 1** — Scaffold, `.gitignore`, pre-commit hook, config examples, README
 2. **Phase 2** — `export-notes.applescript`, `classify-notes.py`, `apply-proposal.applescript`
 3. **Phase 3** — `process-inbox.py`, `audit.py`, runbooks
-4. **Phase 4** — Scheduling via cron or launchd (optional)
+4. **Phase 3b** — `deduplicate_notes.py`, `apply-dedup-proposal.applescript`
+5. **Phase 4** — Scheduling via cron or launchd (optional)
+
+## Documentation Update Pass
+
+At the end of any work turn that modifies code, review and update as needed:
+
+- **`docs/security-considerations.md`** — if changes affect data flow, LLM provider handling, new external dependencies, or how note content is transmitted or stored.
+- **`docs/technical-notes.md`** — if changes introduce new Apple Notes/macOS platform behavior findings, changes to batch/context handling, or model compatibility updates.
+
+If neither file needs updating, note that explicitly before closing the turn.

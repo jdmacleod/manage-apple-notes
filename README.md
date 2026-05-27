@@ -38,7 +38,7 @@ cp .env.example .env
 See [docs/runbooks/main-workflow.md](docs/runbooks/main-workflow.md) for the full walkthrough.
 
 ```bash
-# Initial library setup (one-time, two-pass)
+# Initial library setup (one-time)
 uv run notes export              # export from Apple Notes
 uv run notes discover            # map thematic clusters → data/theme-maps/
 # → HUMAN: review theme map, add subfolders to taxonomy.local.yaml
@@ -46,6 +46,10 @@ uv run notes classify            # classify notes → data/proposals/
 # → HUMAN: review proposal JSON
 uv run notes apply --dry-run     # preview moves
 uv run notes apply               # apply approved moves
+uv run notes dedup               # detect duplicates → data/dedup-proposals/
+# → HUMAN: review dedup proposal
+uv run notes apply-dedup         # dry-run preview (default)
+uv run notes apply-dedup --execute  # delete confirmed duplicates
 
 # Ongoing
 uv run notes inbox               # triage Inbox captures
@@ -53,6 +57,14 @@ uv run notes audit               # quality report (stale, stub, duplicate)
 ```
 
 All commands accept `--dry-run` to preview without making changes.
+
+## Documentation
+
+| Document | Contents |
+|----------|----------|
+| [docs/runbooks/main-workflow.md](docs/runbooks/main-workflow.md) | Full step-by-step workflow |
+| [docs/security-considerations.md](docs/security-considerations.md) | Data flow, cloud vs. local LLM, Apple Notes MCP guidance |
+| [docs/technical-notes.md](docs/technical-notes.md) | Apple Notes platform behavior, LLM findings, local model recommendations |
 
 ## Privacy
 
