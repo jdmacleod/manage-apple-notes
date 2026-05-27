@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This repo contains scripts and workflows for organizing Apple Notes using the **Forever Notes framework** (a PARA-style taxonomy with Inbox, Fleeting, Literature, Permanent, Projects, Areas, Resources, Archive, and Review folders). The implementation plan lives in `PLAN.md`.
+This repo contains scripts and workflows for organizing Apple Notes using AI-powered classification into a user-defined, PARA-style folder taxonomy (Inbox, Fleeting, Literature, Permanent, Projects, Areas, Resources, Archive, and Review). Optional [Forever Notes](https://forevernotesframework.com) structural features (Hub notes, ✱ Home, tags) are available when `forever_notes_mode: strict` is set. The implementation plan lives in `PLAN.md`.
 
 ## Privacy — Hard Constraints
 

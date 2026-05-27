@@ -7,7 +7,7 @@ marked explicitly — no notes are modified without your approval.
 
 ## Initial Library Setup (one-time)
 
-Run this once to organize an existing library into the Forever Notes taxonomy.
+Run this once to organize an existing library into the configured folder taxonomy.
 
 **Time estimate:** 30–60 min (plus review time for large libraries).
 

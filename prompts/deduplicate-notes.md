@@ -22,7 +22,7 @@ Resolution guidelines:
 
 When choosing which note to keep for a "delete" resolution, prefer in this order:
 1. The note with more complete or detailed content (superset wins)
-2. The note already in (or proposed for) the correct Forever Notes folder
+2. The note already in (or proposed for) the correct destination folder
 3. The more recently modified note
 4. The note with a more specific, descriptive title
 

@@ -9,7 +9,7 @@ that multiple notes share (e.g. "Health & Fitness", "Side Project: App Redesign"
 
 For each theme, estimate:
 - How many notes likely belong to it
-- Which Forever Notes categories it might appear in (Permanent, Literature,
+- Which categories it might appear in (Permanent, Literature,
   Projects, Areas, Resources)
 - A one-sentence description
 

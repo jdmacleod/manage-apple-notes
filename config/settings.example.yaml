@@ -1,5 +1,10 @@
 # General settings — copy to settings.local.yaml and customize.
 
+# Operating mode: "loose" (folders + classification only) or
+# "strict" (loose + Forever Notes Hub/Home/tag layer).
+# See docs/forever-notes-framework.md for details on strict mode.
+forever_notes_mode: "loose"
+
 # provider: "anthropic" (default, cloud) or "ollama" (local)
 llm:
   provider: "anthropic"
@@ -15,7 +20,9 @@ llm:
 
 paths:
   exports_dir: "data/exports"
+  theme_maps_dir: "data/theme-maps"
   proposals_dir: "data/proposals"
+  dedup_proposals_dir: "data/dedup-proposals"
   reports_dir: "data/reports"
 
 export:
@@ -24,8 +31,30 @@ export:
   skip_empty: true
 
 deduplication:
-  fuzzy_title_threshold: 85   # thefuzz token_sort_ratio threshold (0–100)
+  fuzzy_title_threshold: 85      # thefuzz token_sort_ratio threshold (0–100)
   jaccard_content_threshold: 80  # thefuzz token_set_ratio threshold (0–100)
-  content_preview_chars: 300  # Characters of each note shown in the dedup proposal
-  semantic_sweep: false       # Full LLM pass over theme clusters (expensive; off by default)
-  default_resolution: "review"  # Conservative default: flag for human, don't auto-delete
+  content_preview_chars: 300     # characters of each note shown in the dedup proposal
+  semantic_sweep: false          # full LLM pass over theme clusters (expensive; off by default)
+  default_resolution: "review"   # conservative default: flag for human, don't auto-delete
+
+thresholds:
+  min_notes_for_subfolder: 8     # themes with fewer notes stay flat in parent
+  stale_days: 180                # notes unmodified longer than this → flag for archive
+  stub_chars: 50                 # notes shorter than this → flag as stub
+  inbox_stale_days: 7            # inbox notes older than this → stale
+  fleeting_stale_days: 30        # fleeting notes older than this → stale
+
+# Settings below apply only when forever_notes_mode is "strict".
+strict_mode:
+  heavy_asterisk: "✱"            # Unicode U+2731 — do not change
+  home_note_title: "✱ Home"
+  home_note_folder: null         # null = iCloud root; or specify a folder name
+  hub_title_prefix: "✱ "
+  hub_note_folder: null          # null = same folder as home note
+  tag_all_notes: true            # append #ForeverNotes to every classified note
+  tag_theme_notes: true          # append #[theme] tag to notes on classification
+  tag_hub_notes: true            # append #hub tag to all hub notes
+  update_hubs_after_classify: true
+  internal_links: "text"         # "text" = plain title list (safe, default)
+                                  # "html" = applenotes:// links (experimental — may break
+                                  #          after iCloud sync; see docs/forever-notes-framework.md)

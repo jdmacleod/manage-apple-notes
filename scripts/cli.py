@@ -11,10 +11,11 @@ from scripts.classify.discover_themes import run_discover
 from scripts.execute.apply_dedup import run_apply_dedup
 from scripts.execute.run_apply import run_apply
 from scripts.export.run_export import run_export
+from scripts.forever_notes.sync_hubs import run_sync_hubs
 from scripts.maintenance.audit import run_audit
 from scripts.maintenance.process_inbox import run_inbox
 
-app = typer.Typer(help="Manage Apple Notes using the Forever Notes framework.")
+app = typer.Typer(help="Organize Apple Notes using AI classification into a user-defined folder taxonomy.")
 
 
 @app.command()
@@ -135,6 +136,22 @@ def apply_dedup(
 ):
     """Apply an approved dedup proposal — delete confirmed duplicates."""
     run_apply_dedup(proposal_file=proposal_file, execute=execute)
+
+
+@app.command()
+def sync_hubs(
+    export_file: Optional[str] = typer.Argument(
+        default=None,
+        help="Path to export JSON. Defaults to most recent file in data/exports/.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Preview hub content without writing to Apple Notes.",
+    ),
+):
+    """Create or update ✱ Home and ✱ Hub notes (strict mode only)."""
+    run_sync_hubs(export_file=export_file, dry_run=dry_run)
 
 
 if __name__ == "__main__":

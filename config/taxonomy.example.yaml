@@ -1,9 +1,14 @@
-# Forever Notes folder taxonomy — generic template.
+# Folder taxonomy — generic template.
 # Copy to taxonomy.local.yaml and fill in your actual folder names and subfolders.
 #
 # Subfolders are discovered during the theme discovery pass (notes discover).
 # Add them to taxonomy.local.yaml before running notes classify (Pass 2).
 # Categories without a subfolders key remain flat.
+#
+# STRICT MODE: When forever_notes_mode is "strict", each subfolder entry may
+# optionally use the dict form to override hub_title and hub_tag. If omitted,
+# hub_title is auto-derived as "✱ [SubfolderName]" and hub_tag as "#[lowercasename]".
+# The simple string list form is still valid and preferred for loose mode.
 
 forever_notes:
   inbox:
@@ -15,6 +20,12 @@ forever_notes:
   literature:
     folder: "[YOUR_LITERATURE_FOLDER]"
     subfolders: []                         # e.g. ["Health", "Technology", "History"]
+    # Strict mode with hub overrides (optional — only needed if auto-derived names are wrong):
+    # subfolders:
+    #   - name: "Health"
+    #     hub_title: "✱ Health"            # defaults to "✱ Health" if omitted
+    #     hub_tag: "#health"               # defaults to "#health" if omitted
+    #   - name: "Technology"               # hub_title/hub_tag auto-derived
 
   permanent:
     folder: "[YOUR_PERMANENT_FOLDER]"

@@ -50,6 +50,22 @@ subfolder per active project.
 permanent homes. **Review** stays flat. **Archive** may preserve the subfolder
 structure of whatever it archives.
 
+### Strict vs. Loose Forever Notes Mode
+
+This project supports two operating modes, controlled by `forever_notes_mode` in settings:
+
+- **Loose mode (default)** — Folders, subfolders, classification, deduplication.
+  A clean, well-organised library. No structural notes required.
+
+- **Strict mode** — Everything in loose mode, plus the Forever Notes structural
+  layer: the **heavy asterisk (✱)** prefix on system notes, a **✱ Home** hub note
+  as the root entry point, **✱ Hub** notes for each theme that serve as navigable
+  cross-category indices, and **tags** applied to notes on classification. Follows
+  the framework as documented at [myforevernotes.com](https://www.myforevernotes.com/docs/home).
+
+Strict mode is **additive** — it does not change the folder structure or
+classification behaviour. All loose-mode functionality is unchanged.
+
 ### Why theme discovery must come before classification
 
 If you classify each note individually and then try to invent subfolders, you
@@ -86,6 +102,9 @@ manage-apple-notes/
 │   ├── execute/
 │   │   ├── apply-proposal.applescript          # Read approved move proposal, move notes
 │   │   └── apply-dedup-proposal.applescript    # Read approved dedup proposal, delete notes
+│   ├── forever_notes/               # Strict mode only
+│   │   ├── sync_hubs.py             # Create/update ✱ Home and ✱ Hub notes
+│   │   └── sync-hubs.applescript    # AppleScript writer called by sync_hubs.py
 │   └── maintenance/
 │       ├── __init__.py
 │       ├── process_inbox.py         # Classify and propose moves for Inbox notes
@@ -95,6 +114,7 @@ manage-apple-notes/
 │   ├── discover-themes.md           # Prompt template: theme/cluster discovery
 │   ├── classify-notes.md            # Prompt template: bulk classification
 │   ├── deduplicate-notes.md         # Prompt template: duplicate pair review
+│   ├── sync-hubs.md                 # Prompt template: Hub note content generation (strict)
 │   ├── process-inbox.md             # Prompt template: inbox triage
 │   └── audit.md                     # Prompt template: library audit
 │
@@ -650,6 +670,25 @@ Run after classification so that `proposed_folder_path` enriches the similarity 
 - Run `uv run notes apply-dedup --execute` to apply
 - Note: deletions move notes to Recently Deleted (recoverable for 30 days)
 
+### Phase 3c — Hub Setup *(strict mode only)*
+
+Run after classification and deduplication, once the library is in a stable state.
+*Skip entirely if `forever_notes_mode: loose`.*
+
+1. Set `forever_notes_mode: strict` in `settings.local.yaml`
+2. Optionally populate `hub_title`/`hub_tag` overrides in `taxonomy.local.yaml` for
+   any subfolders where the auto-derived names are incorrect
+3. Run `uv run notes sync-hubs --dry-run` to preview Hub content
+4. Run `uv run notes sync-hubs` to create ✱ Home and all ✱ Hub notes in Apple Notes
+5. Open ✱ Home in Apple Notes; convert plain-text Hub references to internal links
+   using `>>` (one-time manual step, takes a few minutes)
+
+**Human checkpoint:** Review ✱ Home and a few Hub notes. Verify titles, fix any
+missing Hub coverage, and manually add `>>` internal links as desired.
+
+**Ongoing (after new notes are classified):** Re-run `uv run notes sync-hubs` to
+keep Hub contents current. Hub note bodies are fully regenerated on each run.
+
 ### Phase 4 — Scheduling (optional)
 
 Document scheduling via cron or launchd.
@@ -753,3 +792,27 @@ flagged as `review` so the user can merge manually in the Notes app with full fi
 **Deletion safety: `--execute` required.** Deletions are harder to undo than moves.
 The apply-dedup script defaults to dry-run and requires an explicit `--execute` flag.
 Deleted notes land in Recently Deleted and are recoverable for 30 days.
+
+**Strict mode is additive, never destructive.** Enabling `forever_notes_mode: strict`
+adds Hub notes, tags, and the ✱ Home note. It does not alter folder structure, rename
+existing notes, or change how classification works. A user can switch between modes
+without any risk to existing notes.
+
+**The heavy asterisk (✱, U+2731) sorts system notes to the top.** In Apple Notes with
+alphabetical sort, ✱ Hub notes and ✱ Home appear before all other notes in any folder.
+Scripts must use the exact Unicode character U+2731, not a standard asterisk `*`.
+
+**Hub notes are cross-category indices.** A "✱ Health" Hub aggregates notes from
+`Permanent/Health`, `Literature/Health`, and `Areas/Health` into one view. They cut
+across the nature/domain dimensions and provide a single entry point for a topic
+regardless of note type. `sync_hubs.py` queries all categories for each theme.
+
+**Internal links default to plain text.** Hub bodies contain plain note titles that the
+user converts to `applenotes://` links using Apple Notes' `>>` shortcut — a few minutes
+of one-time work that produces stable links. The experimental `internal_links: "html"`
+option attempts programmatic link construction but carries risk of broken links after
+iCloud sync events.
+
+**Tags are appended, never removed.** Strict-mode tag application only adds tags not
+already present. It never removes existing tags, even if a note is reclassified. This
+preserves manually applied tags and avoids unexpected data loss.

@@ -1,4 +1,4 @@
-You are organizing notes in Apple Notes according to the Forever Notes framework.
+You are organizing notes in Apple Notes according to a configured folder taxonomy.
 The taxonomy has two levels: a top-level category (the nature of the note) and
 an optional subfolder (the subject domain).
 

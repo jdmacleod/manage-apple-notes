@@ -1,6 +1,6 @@
 # manage-apple-notes
 
-Scripts and workflows for organizing Apple Notes using the [Forever Notes](https://forevernotesframework.com) framework (a PARA-style taxonomy).
+Scripts and workflows for organizing Apple Notes using AI-powered classification into a user-defined, PARA-style folder taxonomy. Optional [Forever Notes](https://forevernotesframework.com) structural features (Hub notes, tags) are available in strict mode.
 
 The pipeline is: **export → discover themes → AI classify → human review → apply**. Nothing touches your notes until you approve a proposal.
 
@@ -54,6 +54,7 @@ uv run notes apply-dedup --execute  # delete confirmed duplicates
 # Ongoing
 uv run notes inbox               # triage Inbox captures
 uv run notes audit               # quality report (stale, stub, duplicate)
+uv run notes sync-hubs           # update ✱ Home and ✱ Hub notes (strict mode only)
 ```
 
 All commands accept `--dry-run` to preview without making changes.
@@ -90,6 +91,21 @@ See `config/taxonomy.example.yaml` and `config/settings.example.yaml` for the co
 | Resources | Reference material, how-tos, collections |
 | Archive | Inactive, completed, or outdated notes |
 | Review | Needs human triage (used during cleanup) |
+
+## Forever Notes
+
+This project implements the [Forever Notes framework](https://forevernotesframework.com).
+See [myforevernotes.com](https://www.myforevernotes.com/docs/home) for the full framework docs.
+
+Two operating modes are available, set via `forever_notes_mode` in `settings.local.yaml`:
+
+| Mode | What it does |
+|------|-------------|
+| `loose` (default) | Folder taxonomy, theme discovery, classification, deduplication |
+| `strict` | Everything in loose, plus ✱ Hub notes per theme, a ✱ Home root note, and tags on classified notes |
+
+Strict mode is **additive** — it does not change folder structure or how classification works.
+See [`docs/forever-notes-framework.md`](docs/forever-notes-framework.md) for details.
 
 ## License
 
