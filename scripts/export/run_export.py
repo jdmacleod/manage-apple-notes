@@ -20,9 +20,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 def _strip_container_prefix(notes: list[dict], container_name: str) -> int:
     """Strip the toplevel container prefix from folder_path/parent_folder fields.
 
-    Notes whose immediate parent is the container (e.g. 'Areas' inside 'All Notes')
+    Notes whose immediate parent is the container (e.g. 'Areas' inside 'Library')
     have parent_folder set to the container name. Strip it so downstream tools see
-    clean paths that match the taxonomy (e.g. 'Areas', not 'All Notes/Areas').
+    clean paths that match the taxonomy (e.g. 'Areas', not 'Library/Areas').
     Notes in subfolders (e.g. 'Areas/Finance') are unaffected.
     Returns the count of notes modified.
     """
@@ -49,7 +49,7 @@ def run_export() -> None:
     settings = load_settings()
     cfg = settings.get("toplevel_folder", {})
     if cfg.get("enabled", False):
-        container_name = cfg.get("name", "All Notes")
+        container_name = cfg.get("name", "Library")
         patched = _strip_container_prefix(notes, container_name)
         export_path.write_text(json.dumps(notes, indent=2, ensure_ascii=False))
         if patched:

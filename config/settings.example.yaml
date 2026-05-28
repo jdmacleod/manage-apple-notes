@@ -10,7 +10,7 @@ forever_notes_mode: "loose"
 # this prefix transparently so classification and all other tools are unaffected.
 toplevel_folder:
   enabled: true          # set to false to place folders at the account root
-  name: "All Notes"      # name of the container folder in Apple Notes
+  name: "Library"        # name of the container folder in Apple Notes
 
 # provider: "anthropic" (default, cloud) or "ollama" (local)
 llm:

@@ -144,7 +144,7 @@ plus four subfolder levels), confirmed on iPhone 16e running current iOS. The
 same structure is accessible and navigable on macOS.
 
 This project's taxonomy uses at most three levels when `toplevel_folder` is
-enabled: the container (e.g. "All Notes") at level 1, PARA categories
+enabled: the container (e.g. "Library") at level 1, PARA categories
 (e.g. "Areas") at level 2, and theme subfolders (e.g. "Finance") at level 3.
 Without a container, the taxonomy remains two levels deep.
 

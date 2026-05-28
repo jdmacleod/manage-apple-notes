@@ -44,7 +44,7 @@ def run_apply(proposal_file: str | None, dry_run: bool) -> None:
     if dry_run:
         cmd.append("--dry-run")
     if cfg.get("enabled", False):
-        cmd += ["--container", cfg.get("name", "All Notes")]
+        cmd += ["--container", cfg.get("name", "Library")]
     cmd.append(str(path.resolve()))
 
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
