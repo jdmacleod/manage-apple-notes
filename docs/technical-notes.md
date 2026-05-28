@@ -63,20 +63,72 @@ Scripts in this project match on ID first, then fall back to title + folder if t
 not found, logging any ambiguities. Never treat a stored `x-coredata://` ID as a permanent
 stable identifier.
 
-### `applenotes://` links in Hub notes
+### Note-to-note links: current status and limitations
 
-`sync-hubs` writes Hub note bodies as HTML, with each note title linked via
-`applenotes://showNote?identifier=NNNN`. The numeric identifier is derived by
-taking the last path component of the `x-coredata://` URI from the export and
-stripping the leading `p` (e.g. `x-coredata://UUID/ICNote/p123` → `123`).
+Clickable note-to-note links in Hub and Home notes are technically difficult to create
+programmatically. This section documents what has been investigated and what is required
+to make them work.
 
-**Important:** `applenotes://showNote?identifier=` requires the plain numeric
-form — passing the `p`-prefixed form (e.g. `p123`) is silently ignored and the
-link opens Notes without navigating to any note.
+#### How Apple Notes stores note links
 
-These links are subject to the same instability as `x-coredata://` IDs above.
-Re-running `sync-hubs` after a fresh export regenerates the links from current
-IDs, which is the recommended fix if links stop resolving.
+Apple Notes stores note-to-note links internally as `NSTextAttachment` objects, not as
+HTML `<a href>` elements. When read back via AppleScript's `body` property, real note
+links appear as `<u><br></u>` — the href and display text are both invisible. In the
+macOS Accessibility tree they appear as `UI element` nodes with an Object Replacement
+Character (U+FFFC) prefix in their description (e.g. `￼ ✱ Finance`).
+
+#### Why `set body` cannot create note links
+
+AppleScript's `set body` strips **all** `href` attributes from every `<a>` tag,
+regardless of URL scheme. This has been confirmed for `applenotes://showNote`,
+`applenotes:note/UUID`, `x-coredata://`, `https://`, and `notes://showNote` — all are
+silently stripped, leaving only the link text wrapped in `<u>` tags.
+
+#### The correct URL format
+
+The macOS URL scheme for opening a specific note is:
+
+```
+notes://showNote?identifier=<UUID>
+```
+
+where `<UUID>` is the note's stable iCloud identifier (e.g.
+`5F8F2E2B-C506-4EEA-BB1B-93DC68BDD670`). This is **not** the numeric `pNNN` component
+from the `x-coredata://` URI. The UUID must be obtained by querying NoteStore.sqlite:
+
+```sql
+-- Z_PK comes from stripping the leading 'p' off the x-coredata last path component
+SELECT ZIDENTIFIER FROM ZICCLOUDSYNCINGOBJECT WHERE Z_PK = <primary_key>;
+```
+
+#### Full Disk Access requirement
+
+NoteStore.sqlite lives in `~/Library/Group Containers/group.com.apple.notes/` and is
+protected by macOS Privacy controls. Reading it requires **Full Disk Access** for
+whichever shell or app runs the query. Scripts running as subprocesses of Claude Code
+do not inherit this grant; they fail with `PermissionError`.
+
+The recommended practice is:
+
+1. Open **System Settings → Privacy & Security → Full Disk Access**
+2. Grant access to Terminal (or iTerm2, etc.)
+3. Run the note-link operations from that terminal
+4. Revoke Full Disk Access when the session is complete
+
+Scripts in this project that require Full Disk Access should detect the permission
+failure and exit with a clear message explaining the above steps, rather than silently
+producing incorrect output.
+
+#### Note-to-note links as a user opt-in
+
+Because note-to-note links require Full Disk Access and must be run from a user
+terminal session (not as a background/automated task), this feature is treated as an
+opt-in operation. The `sync-hubs` command generates Hub and Home notes with plain
+text titles (no links) by default. A separate command will be provided to add links
+once the workflow is functioning and Full Disk Access is confirmed available.
+
+*This section will be updated once the complete link-insertion workflow is implemented
+and tested.*
 
 ### Notes are stored as HTML internally
 
