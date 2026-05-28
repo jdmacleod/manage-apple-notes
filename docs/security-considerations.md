@@ -9,13 +9,20 @@ how data flows through the pipeline and choose the workflow that matches your si
 
 | Step | What happens | Data leaves the machine? |
 |------|-------------|--------------------------|
-| `notes export` | AppleScript extracts plaintext from Notes app → local JSON in `data/exports/` | No |
+| `notes export` / `notes backup` | AppleScript extracts plaintext from Notes app → local JSON in `data/exports/` or `data/backups/` | No |
 | `notes discover` / `notes classify` (cloud) | Note title + body excerpt sent to Anthropic API per batch | Yes — see below |
 | `notes discover` / `notes classify` (local) | Same content sent to Ollama process on `localhost` | No |
 | `notes apply` / `notes apply-dedup` | AppleScript moves or deletes notes inside the Notes app | No |
+| `notes restore` / `notes repair-restored` | AppleScript creates or rewrites notes from local backup JSON | No |
+| `notes sync-hubs` | Reads `NoteStore.sqlite` locally (read-only, requires Full Disk Access) to resolve stable note UUIDs; writes Hub and Home notes via AppleScript | No |
 
 In cloud mode, each batch contains the note title and up to `max_body_chars` of body text
 (default: 2000 characters). Notes are truncated before transmission; raw exports stay local.
+
+`notes sync-hubs` reads `NoteStore.sqlite` directly as a read-only copy in a temp
+directory. This requires Full Disk Access for Terminal (grant in System Settings →
+Privacy & Security → Full Disk Access). Without it, the command falls back to numeric
+identifiers and prints a warning — no data is transmitted either way.
 
 ---
 
@@ -105,8 +112,12 @@ Before enabling any Apple Notes MCP:
 
 1. **Read the full source** — look for any `fetch()`, `axios`, `http`, `net`, `requests`,
    or socket calls that could transmit data externally
-2. **Verify Notes access is AppleScript-only** — direct SQLite access to `NoteStore.sqlite`
-   bypasses Notes app APIs and is both fragile and unaudited
+2. **Verify the scope of any SQLite access** — this project itself uses a read-only
+   `NoteStore.sqlite` query (copying the DB to a temp file first) solely to resolve
+   stable note UUIDs for Hub links. That is a disclosed, scoped, read-only use. What
+   to reject in an MCP: undisclosed database reads, write access, full-schema queries
+   that bulk-extract note content, or any access that bypasses the Notes app for reads
+   or writes beyond a narrow documented purpose
 3. **Check dependencies** for unexpected network-capable packages
    (`package.json` / `pyproject.toml` / `requirements.txt`)
 4. **Confirm env var access** — the MCP should not read `ANTHROPIC_API_KEY`, `AWS_*`,
