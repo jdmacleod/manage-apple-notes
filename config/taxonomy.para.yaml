@@ -45,7 +45,7 @@ forever_notes:
     subfolders:                           # one subfolder per ongoing responsibility
       - "Work"
       - "Health"
-      - "Finance & Home"
+      - "Finance & Household"
       - "Personal"
 
   resources:
@@ -78,7 +78,7 @@ forever_notes:
 #       - "Work"
 #       - "Health & Wellbeing"
 #       - "Finance"
-#       - "Home"
+#       - "Household"
 #       - "Personal"
 #
 #   resources:

@@ -129,7 +129,7 @@ Projects
 Areas
   └── Work
   └── Health
-  └── Finance & Home
+  └── Finance & Household
   └── Personal
 Resources
 Archive
@@ -189,7 +189,7 @@ Areas
   └── Work
   └── Health & Wellbeing
   └── Finance
-  └── Home
+  └── Household
   └── Personal
 
 Resources
@@ -215,7 +215,7 @@ Project subfolders should be named simply and clearly: `"Home Renovation"`,
 subfolder name (dates belong in note titles); the Archive date is implicit in
 when it was moved.
 
-**Areas** has five subfolders. Compared to the minimalist set, Finance and Home
+**Areas** has five subfolders. Compared to the minimalist set, Finance and Household
 are separated (they accumulate different types of notes), and Personal is added
 as a distinct domain. Add or remove Area subfolders to match your actual
 ongoing responsibilities — there is no correct number.

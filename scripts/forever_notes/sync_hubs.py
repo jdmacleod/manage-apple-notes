@@ -112,8 +112,10 @@ def _build_theme_index(
         cat_display = cat_key.capitalize()
         for sf in _subfolders(cat_val):
             sf_name = sf["name"]
-            path = f"{folder}/{sf_name}"
-            path_to_cat[path] = (cat_display, sf_name)
+            path_to_cat[f"{folder}/{sf_name}"] = (cat_display, sf_name)
+            # Also match bare subfolder name for flat Notes structures where
+            # parent folder detection returns empty (e.g. -1728 on container access).
+            path_to_cat.setdefault(sf_name, (cat_display, sf_name))
             subfolder_defs.setdefault(sf_name, sf)
 
     # Accumulate note titles per theme per category
