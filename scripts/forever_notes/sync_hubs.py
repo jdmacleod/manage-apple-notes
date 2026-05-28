@@ -232,6 +232,7 @@ def _build_home_body(
             continue
         heading = _folder_name(cat_val) or cat_key.capitalize()
         parts.append(f"<h2>{html.escape(heading)}</h2>")
+        parts.append("<br>")
         subfolders = _subfolders(cat_val)
         if subfolders:
             parts.append("<ul>")
