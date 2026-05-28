@@ -269,7 +269,7 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
     console.print(f"[green]Done.[/green] Report written to [bold]{report_path}[/bold]")
     console.print(f"  Stale:              {len(stale_notes)}")
     console.print(f"  Stubs:              {len(stub_notes)}")
-    console.print(f"  Duplicate groups:   {len(duplicate_groups)}")
+    console.print(f"  Duplicate titles:   {len(duplicate_groups)}")
     console.print(f"  Stale inbox:        {len(stale_inbox)}")
     console.print(f"  Stale fleeting:     {len(stale_fleeting)}")
     console.print(f"  Subfolder candid.:  {len(subfolder_candidates)}")
