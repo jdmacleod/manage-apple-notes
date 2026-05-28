@@ -21,7 +21,6 @@ PROMPTS_DIR = REPO_ROOT / "prompts"
 EXPORTS_DIR = REPO_ROOT / "data" / "exports"
 
 HEAVY_ASTERISK = "✱"
-PARA_CATEGORIES = ["inbox", "projects", "areas", "resources", "archive"]
 
 
 def _load_yaml(local_path: Path, example_path: Path) -> dict:
@@ -202,21 +201,25 @@ def _write_note_applescript(title: str, body: str, folder: str | None, dry_run: 
 
 
 def _build_home_body(taxonomy: dict, theme_index: dict[str, dict], hub_prefix: str) -> str:
-    """Build the PARA-structured ✱ Home note body."""
+    """Build the taxonomy-driven ✱ Home note body.
+
+    Categories appear in taxonomy file order; headings use the folder: value.
+    """
     hub_eligible: set[str] = set(theme_index.keys())
     cats = taxonomy.get("forever_notes", {})
     lines: list[str] = [f"[ {HEAVY_ASTERISK} Home ]", ""]
 
-    for cat_key in PARA_CATEGORIES:
-        lines.append(cat_key.capitalize())
-        cat_val = cats.get(cat_key)
-        if cat_val is not None:
-            for sf in _subfolders(cat_val):
-                sf_name = sf["name"]
-                if sf_name in hub_eligible:
-                    lines.append(_hub_title(theme_index[sf_name]["_sf_def"], hub_prefix))
-                else:
-                    lines.append(sf_name)
+    for cat_key, cat_val in cats.items():
+        if not isinstance(cat_val, dict):
+            continue
+        heading = _folder_name(cat_val) or cat_key.capitalize()
+        lines.append(heading)
+        for sf in _subfolders(cat_val):
+            sf_name = sf["name"]
+            if sf_name in hub_eligible:
+                lines.append(_hub_title(theme_index[sf_name]["_sf_def"], hub_prefix))
+            else:
+                lines.append(sf_name)
         lines.append("")
 
     lines.append("#ForeverNotes")
