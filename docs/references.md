@@ -9,7 +9,7 @@ Web references consulted during the development of this project, grouped by topi
 | Reference | Notes |
 |-----------|-------|
 | [Apple Developer Forums — AppleScript notes URL schemes (thread 701574)](https://developer.apple.com/forums/thread/701574) | Community investigation of `applenotes://` URL format and the stable UUID required for note-to-note links; established that `applenotes://showNote?identifier=<UUID>` is the correct scheme |
-| [Hookmark Community Forum — Apple Notes URL scheme and NoteStore.sqlite UUID lookup](https://forum.hookproductivity.com) | Independent investigation of obtaining stable iCloud UUIDs from NoteStore.sqlite; corroborated the `ZICCLOUDSYNCINGOBJECT.ZIDENTIFIER` query approach |
+| [Hookmark Community Forum — Using the built-in Notes URL scheme](https://discourse.hookproductivity.com/t/using-the-built-in-notes-url-scheme/6071) | Independent investigation of obtaining stable iCloud UUIDs from NoteStore.sqlite; corroborated the `ZICCLOUDSYNCINGOBJECT.ZIDENTIFIER` query approach |
 | [Apple Dispatch — Comprehensive Guide for Backing Up Apple Notes](https://appledispatch.substack.com/p/comprehensive-guide-for-backing-up-apple-notes) | Survey of Apple Notes backup options (iCloud, SQLite, export); informed the documented scope limitation of `notes backup` (text-only) and the recommendation to use Time Machine or a filesystem clone for full media backup |
 | [Apple — Privacy & Security, Full Disk Access (macOS)](https://support.apple.com/guide/mac-help/mh15217) | macOS system preference for granting shell access to protected directories including `~/Library/Group Containers/group.com.apple.notes/`; required for NoteStore.sqlite UUID lookup in `internal_links: "html"` mode |
 
