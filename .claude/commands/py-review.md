@@ -3,6 +3,19 @@
 Review the Python file(s) or diff provided. Apply the project's conventions from
 `CLAUDE.md` alongside general Python quality criteria.
 
+## Before manual review
+
+Run the automated checks first — they catch mechanical issues that don't need human
+attention:
+
+```bash
+uv run ruff check scripts/     # must pass clean
+uv run mypy scripts/           # address errors in files touched by the change
+```
+
+Fix any ruff errors before proceeding. Mypy errors in untouched files are pre-existing
+and out of scope for this review.
+
 ## What to check
 
 **Correctness and error handling**
@@ -23,9 +36,10 @@ Review the Python file(s) or diff provided. Apply the project's conventions from
 
 **Style (from CLAUDE.md)**
 - No comments that restate what the code does — only comments explaining non-obvious WHY
-- No multi-line docstrings; one short line max where needed
+- No multi-paragraph docstrings or multi-line comment blocks; one short line max where needed
 - No unused backwards-compatibility shims or `_renamed` variables
-- Type hints on all public function signatures
+- Type hints on all function signatures, public and private — mypy is configured with
+  `disallow_untyped_defs = true`
 
 **Data integrity**
 - Export functions must not silently truncate note content (truncation is only for LLM batches)

@@ -5,6 +5,12 @@ API and the known platform limitations documented in `docs/technical-notes.md`.
 
 ## What to check
 
+**Note iteration pattern**
+- Never iterate `every note` at the application level — `container of aNote` returns a
+  generic `item` reference on macOS Sequoia, not a `folder`, so folder names are silently
+  empty. The correct pattern is `accounts → folders of acct → notes of aFolder` with the
+  folder name captured from the outer loop. See `docs/technical-notes.md`.
+
 **Error handling**
 - Every `tell application "Notes"` block has an outer `try / on error errMsg number errNum`
 - Error -1728 (container object access for secondary-account folders) is caught and handled,

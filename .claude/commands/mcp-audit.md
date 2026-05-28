@@ -28,7 +28,11 @@ Review `package.json`, `pyproject.toml`, or `requirements.txt`:
 - List all runtime dependencies and their stated purpose
 - Flag any dependency that is network-capable but whose purpose is not obvious
   (e.g. a logging library that phones home, analytics packages)
-- Note whether dependencies are pinned to exact versions or ranges
+- For npm/Node projects: flag floating version specifiers (`@latest`, `*`, `^`, `~`) in
+  `dependencies` — these allow upstream code changes without a repo change; exact versions
+  or a locked `package-lock.json` / `yarn.lock` at a pinned commit are required
+- For Python projects: flag unpinned ranges in `dependencies`; check `uv.lock` or
+  `requirements.txt` is committed and covers all transitive dependencies
 
 ### 4. Credential and environment variable access
 Search for reads of environment variables:
@@ -42,7 +46,16 @@ If the tool reads or writes Apple Notes or the local filesystem:
 - Does it write notes or files without explicit user instruction?
 - Are there any patterns that could silently modify data during unrelated AI tasks?
 
-### 6. Commit hygiene
+### 6. Exposed tool schema
+Review what operations the MCP advertises to the AI assistant:
+- List every tool the MCP exposes (name, description, parameters)
+- Flag any tool with overly broad scope: "read all notes", "search all notes", "delete note"
+  are significantly higher risk than "read note by ID" or "append to note"
+- Flag tools that can write or delete without requiring explicit confirmation parameters
+- Check whether tool descriptions accurately reflect what the tool does — misleading
+  descriptions are a social-engineering risk in multi-agent contexts
+
+### 7. Commit hygiene
 - Note the most recent commit hash reviewed
 - Flag if the tool uses a floating `main` branch reference with no pinning
 - Recommend pinning to a specific commit hash in MCP config
@@ -56,7 +69,7 @@ Produce a structured report:
 [Pass / Requires review / Hard blocker] — one sentence verdict
 
 ## Findings by category
-[One section per audit step above; "No issues found" if clean]
+[One section per audit step (1–7); "No issues found" if clean]
 
 ## Recommended action
 [Safe to pin at <hash> / Fix required before use / Do not use]
