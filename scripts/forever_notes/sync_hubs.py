@@ -225,7 +225,7 @@ def _build_home_body(
     hub_eligible: set[str] = set(theme_index.keys())
     hub_ids = hub_ids or {}
     cats = taxonomy.get("forever_notes", {})
-    parts: list[str] = [f"<h1>{html.escape(home_title)}</h1>"]
+    parts: list[str] = [f"<h1>{html.escape(home_title)}</h1>", "<br>"]
 
     for cat_key, cat_val in cats.items():
         if not isinstance(cat_val, dict):
@@ -248,6 +248,7 @@ def _build_home_body(
                 else:
                     parts.append(f"<li>{html.escape(sf_name)}</li>")
             parts.append("</ul>")
+            parts.append("<br>")
 
     parts.append("<p>#ForeverNotes</p>")
     return "\n".join(parts)
