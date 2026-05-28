@@ -9,8 +9,7 @@ that multiple notes share (e.g. "Health & Fitness", "Side Project: App Redesign"
 
 For each theme, estimate:
 - How many notes likely belong to it
-- Which categories it might appear in (Permanent, Literature,
-  Projects, Areas, Resources)
+- Which categories it might appear in ({CATEGORIES})
 - A one-sentence description
 
 Also note any existing folder names from the input that suggest structural
@@ -22,7 +21,7 @@ Return a JSON object:
     {
       "name": "<short theme name>",
       "estimated_count": <integer>,
-      "appears_in_categories": ["Permanent", "Literature"],
+      "appears_in_categories": ["<category1>", "<category2>"],
       "description": "<one sentence>"
     }
   ],

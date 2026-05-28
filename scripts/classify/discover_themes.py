@@ -11,6 +11,8 @@ from rich.console import Console
 from rich.progress import track
 
 from scripts.classify.classify_notes import (
+    _CATEGORY_META,
+    _folder_name,
     find_latest_export,
     load_settings,
     load_taxonomy,
@@ -38,6 +40,17 @@ def load_discover_prompt() -> str:
         raise ValueError(f"Prompt template missing '{marker.strip()}' separator")
     system_part, _ = text.split(marker, 1)
     return system_part.strip()
+
+
+def inject_discover_taxonomy(system_prompt: str, taxonomy: dict) -> str:
+    """Replace {CATEGORIES} with the user's actual top-level folder names."""
+    fn = taxonomy.get("forever_notes", {})
+    folders = [
+        _folder_name(fn[key])
+        for key, _ in _CATEGORY_META
+        if key in fn and _folder_name(fn[key])
+    ]
+    return system_prompt.replace("{CATEGORIES}", ", ".join(folders))
 
 
 def _is_context_overflow(exc: Exception) -> bool:
@@ -80,7 +93,7 @@ def _extract_json_object(text: str) -> dict:
 def run_discover(export_file: str | None, dry_run: bool) -> None:
     settings = load_settings()
     taxonomy = load_taxonomy()
-    system_prompt = load_discover_prompt()
+    system_prompt = inject_discover_taxonomy(load_discover_prompt(), taxonomy)
 
     export_path = Path(export_file) if export_file else find_latest_export()
     if not export_path.exists():

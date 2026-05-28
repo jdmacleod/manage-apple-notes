@@ -88,28 +88,54 @@ def _subfolder_str(subfolders: list[str]) -> str:
     return ", ".join(subfolders) if subfolders else "none"
 
 
+# Canonical ordering and descriptions for all supported taxonomy categories.
+# Only categories present in the user's taxonomy are included in the prompt.
+_CATEGORY_META = [
+    ("inbox",      "temporary capture, no subfolders"),
+    ("fleeting",   "quick thoughts, no subfolders"),
+    ("literature", "notes tied to a specific source (book, article, talk)"),
+    ("permanent",  "atomic, evergreen concepts in your own words"),
+    ("projects",   "notes tied to a specific active project"),
+    ("areas",      "ongoing responsibilities and reference for areas of life/work"),
+    ("resources",  "reference material, how-tos, collections"),
+    ("archive",    "inactive, completed, or outdated notes"),
+    ("review",     "use when classification is genuinely unclear, no subfolders"),
+]
+
+
 def inject_taxonomy(system_prompt: str, taxonomy: dict) -> str:
+    """Inject the user's taxonomy into the classify prompt template.
+
+    Replaces {CATEGORY_LIST} with only the categories present in the taxonomy,
+    each with its description and subfolders. Replaces {CATCHALL} with the
+    review folder name if defined, or the inbox folder name as a fallback.
+    """
     fn = taxonomy.get("forever_notes", {})
-    replacements = {
-        "{INBOX}": _folder_name(fn.get("inbox", "[INBOX]")),
-        "{FLEETING}": _folder_name(fn.get("fleeting", "[FLEETING]")),
-        "{LITERATURE}": _folder_name(fn.get("literature", "[LITERATURE]")),
-        "{LITERATURE_SUBFOLDERS}": _subfolder_str(_subfolders(fn.get("literature", {}))),
-        "{PERMANENT}": _folder_name(fn.get("permanent", "[PERMANENT]")),
-        "{PERMANENT_SUBFOLDERS}": _subfolder_str(_subfolders(fn.get("permanent", {}))),
-        "{PROJECTS}": _folder_name(fn.get("projects", "[PROJECTS]")),
-        "{PROJECTS_SUBFOLDERS}": _subfolder_str(_subfolders(fn.get("projects", {}))),
-        "{AREAS}": _folder_name(fn.get("areas", "[AREAS]")),
-        "{AREAS_SUBFOLDERS}": _subfolder_str(_subfolders(fn.get("areas", {}))),
-        "{RESOURCES}": _folder_name(fn.get("resources", "[RESOURCES]")),
-        "{RESOURCES_SUBFOLDERS}": _subfolder_str(_subfolders(fn.get("resources", {}))),
-        "{ARCHIVE}": _folder_name(fn.get("archive", "[ARCHIVE]")),
-        "{ARCHIVE_SUBFOLDERS}": _subfolder_str(_subfolders(fn.get("archive", {}))),
-        "{REVIEW}": _folder_name(fn.get("review", "[REVIEW]")),
-    }
-    for placeholder, value in replacements.items():
-        system_prompt = system_prompt.replace(placeholder, value)
-    return system_prompt
+
+    lines: list[str] = []
+    for key, description in _CATEGORY_META:
+        entry = fn.get(key)
+        if not entry:
+            continue
+        folder = _folder_name(entry)
+        if not folder:
+            continue
+        subs = _subfolders(entry)
+        lines.append(f"{folder} — {description}")
+        if subs:
+            lines.append(f"  Subfolders: {_subfolder_str(subs)}")
+
+    catchall = (
+        _folder_name(fn.get("review"))
+        or _folder_name(fn.get("inbox"))
+        or "Inbox"
+    )
+
+    return (
+        system_prompt
+        .replace("{CATEGORY_LIST}", "\n".join(lines))
+        .replace("{CATCHALL}", catchall)
+    )
 
 
 def _extract_json_array(text: str) -> list:
