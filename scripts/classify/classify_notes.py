@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
@@ -307,11 +307,11 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
                 })
 
     PROPOSALS_DIR.mkdir(parents=True, exist_ok=True)
-    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    date_str = datetime.now(UTC).strftime("%Y-%m-%d")
     output_path = PROPOSALS_DIR / f"proposal-{date_str}.json"
 
     proposal = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "source_export": str(export_path),
         "moves": moves,
         "needs_review": needs_review,

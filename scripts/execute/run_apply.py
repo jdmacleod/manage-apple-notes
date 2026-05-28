@@ -30,7 +30,7 @@ def run_apply(proposal_file: str | None, dry_run: bool) -> None:
             path = find_latest_proposal()
         except FileNotFoundError as exc:
             console.print(f"[red]{exc}[/red]")
-            raise SystemExit(1)
+            raise SystemExit(1) from exc
 
     if not path.exists():
         console.print(f"[red]Proposal not found:[/red] {path}")

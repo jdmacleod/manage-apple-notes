@@ -35,6 +35,25 @@ cp .env.example .env
 uv sync
 ```
 
+## Code Quality
+
+Python formatting and linting use **ruff**; type checking uses **mypy**. Both are configured
+in `pyproject.toml` under `[tool.ruff]` and `[tool.mypy]` and installed as dev dependencies.
+
+```bash
+uv run ruff check scripts/        # lint — must pass with zero errors
+uv run ruff format scripts/       # format in place
+uv run mypy scripts/              # type check — address new errors introduced by your change
+```
+
+Run `ruff check` and fix any errors before committing. `ruff format` is non-negotiable for
+changed files. Mypy errors in files you haven't touched don't need to be fixed in the same
+PR, but errors introduced by new code should be resolved.
+
+Key rules in effect: `E`/`F` (pyflakes/pycodestyle), `I` (isort), `UP` (pyupgrade),
+`B` (bugbear), `SIM` (simplify). `E501` (line length) is enforced by the formatter, not
+the linter. `SIM108` (ternary) is suppressed — explicit `if/else` is preferred.
+
 ## Running Scripts
 
 The full workflow uses only `notes` commands:

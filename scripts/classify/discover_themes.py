@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-import yaml
 from rich.console import Console
 from rich.progress import track
 
@@ -137,7 +136,7 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
         console.print(f"Export:         {export_path}")
         console.print(f"Notes sampled:  {len(summaries)}")
         console.print(f"Batches:        {len(batches)}  (sample size: {sample_size})")
-        console.print(f"+ 1 synthesis call\n")
+        console.print("+ 1 synthesis call\n")
         console.print(f"Provider:       {provider.name}")
         console.print(f"Model:          {model}")
         console.print(f"Est. tokens:    ~{est_total_tokens:,}")
@@ -194,7 +193,7 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
     below_threshold = [t for t in final_themes if (t.get("estimated_count") or 0) < min_subfolder]
 
     theme_map = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "source_export": str(export_path),
         "total_notes": len(all_notes),
         "subfolder_threshold": min_subfolder,
@@ -204,7 +203,7 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
     }
 
     THEME_MAPS_DIR.mkdir(parents=True, exist_ok=True)
-    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    date_str = datetime.now(UTC).strftime("%Y-%m-%d")
     output_path = THEME_MAPS_DIR / f"themes-{date_str}.json"
     output_path.write_text(json.dumps(theme_map, indent=2, ensure_ascii=False))
 

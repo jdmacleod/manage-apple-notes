@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import UTC, datetime
 
 from rich.console import Console
 from rich.progress import track
@@ -114,11 +113,11 @@ def run_inbox(dry_run: bool) -> None:
                 })
 
     PROPOSALS_DIR.mkdir(parents=True, exist_ok=True)
-    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    date_str = datetime.now(UTC).strftime("%Y-%m-%d")
     output_path = PROPOSALS_DIR / f"inbox-{date_str}.json"
 
     proposal = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "source_export": str(export_path),
         "inbox_folder": inbox_folder,
         "moves": moves,

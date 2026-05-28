@@ -35,7 +35,7 @@ def _strip_container_prefix(notes: list[dict], container_name: str) -> int:
     return patched
 
 
-def run_export() -> None:
+def run_export() -> Path:
     script = REPO_ROOT / "scripts" / "export" / "export-notes.applescript"
     with console.status("Exporting notes from Apple Notes…"):
         result = subprocess.run(["osascript", str(script)], capture_output=True, text=True)

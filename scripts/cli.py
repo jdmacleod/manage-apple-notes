@@ -1,4 +1,3 @@
-from typing import Optional
 
 import typer
 from dotenv import load_dotenv
@@ -22,7 +21,7 @@ app = typer.Typer(help="Organize Apple Notes using AI classification into a user
 
 @app.command()
 def discover(
-    export_file: Optional[str] = typer.Argument(
+    export_file: str | None = typer.Argument(
         default=None,
         help="Path to export JSON. Defaults to most recent file in data/exports/.",
     ),
@@ -38,7 +37,7 @@ def discover(
 
 @app.command()
 def classify(
-    export_file: Optional[str] = typer.Argument(
+    export_file: str | None = typer.Argument(
         default=None,
         help="Path to export JSON. Defaults to most recent file in data/exports/.",
     ),
@@ -66,7 +65,7 @@ def inbox(
 
 @app.command()
 def audit(
-    output: Optional[str] = typer.Option(
+    output: str | None = typer.Option(
         None,
         "--output",
         help="Override the default report output path.",
@@ -95,12 +94,12 @@ def backup():
 
 @app.command()
 def restore(
-    backup_file: Optional[str] = typer.Option(
+    backup_file: str | None = typer.Option(
         None,
         "--from-backup",
         help="Backup or export JSON to restore from. Defaults to latest in data/backups/ then data/exports/.",
     ),
-    missing_file: Optional[str] = typer.Option(
+    missing_file: str | None = typer.Option(
         None,
         "--missing",
         help="missing-notes JSON listing notes to restore. Defaults to latest data/missing-notes-*.json.",
@@ -117,7 +116,7 @@ def restore(
 
 @app.command()
 def apply(
-    proposal_file: Optional[str] = typer.Argument(
+    proposal_file: str | None = typer.Argument(
         default=None,
         help="Proposal JSON to apply. Defaults to most recent file in data/proposals/.",
     ),
@@ -133,11 +132,11 @@ def apply(
 
 @app.command()
 def dedup(
-    export_file: Optional[str] = typer.Argument(
+    export_file: str | None = typer.Argument(
         default=None,
         help="Path to export JSON. Defaults to most recent file in data/exports/.",
     ),
-    proposal: Optional[str] = typer.Option(
+    proposal: str | None = typer.Option(
         None,
         "--proposal",
         help="Path to a classify proposal JSON to use as folder placement signal.",
@@ -154,7 +153,7 @@ def dedup(
 
 @app.command()
 def apply_dedup(
-    proposal_file: Optional[str] = typer.Argument(
+    proposal_file: str | None = typer.Argument(
         default=None,
         help="Dedup proposal JSON to apply. Defaults to most recent file in data/dedup-proposals/.",
     ),
@@ -170,7 +169,7 @@ def apply_dedup(
 
 @app.command()
 def sync_hubs(
-    export_file: Optional[str] = typer.Argument(
+    export_file: str | None = typer.Argument(
         default=None,
         help="Path to export JSON. Defaults to most recent file in data/exports/.",
     ),
@@ -186,12 +185,12 @@ def sync_hubs(
 
 @app.command()
 def repair_restored(
-    missing_file: Optional[str] = typer.Option(
+    missing_file: str | None = typer.Option(
         None,
         "--missing-file",
         help="missing-notes JSON listing notes to repair. Defaults to latest data/missing-notes-*.json.",
     ),
-    old_export: Optional[str] = typer.Option(
+    old_export: str | None = typer.Option(
         None,
         "--old-export",
         help="Export JSON containing the original note content. Defaults to the second most recent export.",

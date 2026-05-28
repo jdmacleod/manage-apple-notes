@@ -28,7 +28,7 @@ def run_apply_dedup(proposal_file: str | None, execute: bool) -> None:
             path = find_latest_dedup_proposal()
         except FileNotFoundError as exc:
             console.print(f"[red]{exc}[/red]")
-            raise SystemExit(1)
+            raise SystemExit(1) from exc
 
     if not path.exists():
         console.print(f"[red]Dedup proposal not found:[/red] {path}")

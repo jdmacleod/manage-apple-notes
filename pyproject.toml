@@ -21,3 +21,35 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["scripts"]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.1.0",
+    "ruff>=0.15.15",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = [
+    "E501",    # line length — enforced by formatter, not linter
+    "SIM108",  # ternary suggestions — explicit if/else is clearer here
+]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/test_*.py" = ["E402"]  # test scripts import after setup code
+"scripts/cli.py" = ["E402"]     # load_dotenv() must run before sub-module imports
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+disallow_untyped_defs = true
+warn_return_any = true
+warn_unused_ignores = true

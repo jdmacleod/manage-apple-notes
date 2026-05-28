@@ -81,10 +81,10 @@ def run_restore(
         except FileNotFoundError:
             try:
                 backup_path = _find_latest(EXPORTS_DIR, "notes-*.json")
-                console.print(f"[yellow]No backup found; using latest export as source.[/yellow]")
+                console.print("[yellow]No backup found; using latest export as source.[/yellow]")
             except FileNotFoundError:
                 console.print("[red]No backup or export file found. Run 'notes backup' first.[/red]")
-                raise SystemExit(1)
+                raise SystemExit(1) from None
 
     if not backup_path.exists():
         console.print(f"[red]Backup not found:[/red] {backup_path}")

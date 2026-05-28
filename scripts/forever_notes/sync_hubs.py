@@ -367,7 +367,7 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
             export_path = find_latest_export()
         except FileNotFoundError as exc:
             console.print(f"[red]{exc}[/red]")
-            raise SystemExit(1)
+            raise SystemExit(1) from exc
 
     console.print(f"Loading export: [dim]{export_path.name}[/dim]")
     with open(export_path) as f:
@@ -403,7 +403,7 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
     created = updated = errors = 0
     hub_ids: dict[str, str] = {}  # hub_title → local pNNN returned by AppleScript
 
-    for theme_name, theme_data in sorted(theme_index.items()):
+    for _theme_name, theme_data in sorted(theme_index.items()):
         sf_def = theme_data["_sf_def"]
         h_title = _hub_title(sf_def, hub_prefix)
         categories = theme_data["categories"]
@@ -417,14 +417,14 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
             hub_ids[h_title] = local_id
 
         if status == "created":
-            console.print(f"    [green][CREATED][/green]")
+            console.print("    [green][CREATED][/green]")
             created += 1
         elif status == "[DRY RUN]":
-            console.print(f"    [cyan][DRY RUN][/cyan]")
+            console.print("    [cyan][DRY RUN][/cyan]")
         elif status == "error":
             errors += 1
         else:
-            console.print(f"    [dim][UPDATED][/dim]")
+            console.print("    [dim][UPDATED][/dim]")
             updated += 1
 
     # Resolve stable UUIDs for hub notes themselves (for Home → Hub links).
@@ -450,13 +450,13 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
 
     home_status, _ = _write_note_applescript(home_title, home_body, home_folder, dry_run, container=container)
     if home_status == "created":
-        console.print(f"    [green][CREATED][/green]")
+        console.print("    [green][CREATED][/green]")
     elif home_status == "[DRY RUN]":
-        console.print(f"    [cyan][DRY RUN][/cyan]")
+        console.print("    [cyan][DRY RUN][/cyan]")
     elif home_status == "error":
         errors += 1
     else:
-        console.print(f"    [dim][UPDATED][/dim]")
+        console.print("    [dim][UPDATED][/dim]")
 
     console.print(f"\n[bold]Done.[/bold] Hubs: {created} created, {updated} updated" + (f", {errors} errors" if errors else "") + ".")
     if dry_run:

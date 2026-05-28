@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 import string
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from itertools import combinations
 from pathlib import Path
 
@@ -353,11 +353,11 @@ def run_dedup(export_file: str | None, proposal_file: str | None, dry_run: bool)
     }
 
     DEDUP_PROPOSALS_DIR.mkdir(parents=True, exist_ok=True)
-    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    date_str = datetime.now(UTC).strftime("%Y-%m-%d")
     output_path = DEDUP_PROPOSALS_DIR / f"dedup-{date_str}.json"
 
     output = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "source_export": str(export_path),
         "source_proposal": source_proposal,
         "summary": summary,
