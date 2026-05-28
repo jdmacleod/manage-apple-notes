@@ -80,6 +80,7 @@ Most commands accept `--dry-run` to preview without making changes. `apply-dedup
 | [docs/forever-notes-framework.md](docs/forever-notes-framework.md) | Forever Notes loose/strict modes, Hub notes, and sync-hubs usage |
 | [docs/security-considerations.md](docs/security-considerations.md) | Data flow, cloud vs. local LLM, Apple Notes MCP guidance |
 | [docs/technical-notes.md](docs/technical-notes.md) | Apple Notes platform behavior, LLM findings, local model recommendations |
+| [docs/references.md](docs/references.md) | Web references: Apple Notes platform, note organisation frameworks, security, LLM providers, Apple Notes MCP servers |
 
 ## Privacy
 
