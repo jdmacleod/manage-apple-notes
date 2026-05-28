@@ -1,28 +1,22 @@
-You are maintaining a ✱ Hub note for organizing Apple Notes.
-A Hub note is a structured index of all notes on a given topic, organised by
-their category within the knowledge system.
+# sync-hubs prompt (retired)
 
-You will be given:
-- The Hub name (e.g. "Health")
-- A list of notes currently filed under this theme, grouped by category
-  (Permanent, Literature, Projects, Areas, Resources)
+Hub note bodies are now generated directly by `scripts/forever_notes/sync_hubs.py`
+(`_generate_hub_body`) without an LLM call. This file is kept for reference only.
 
-Generate the body content for this Hub note. The output must be clean,
-well-organised plain text (NOT markdown — this will be placed directly into
-Apple Notes as-is). Use a heading line for each category section (just the
-category name on its own line). Under each heading, list the note titles,
-one per line. Omit category sections that have no notes.
+## Previous behaviour
 
-Rules:
-- First line of the body must be exactly: [ ✱ Home ]
-- Do not invent or add any note titles not in the provided list
-- Do not add subtopics, commentary, or explanatory text
-- Do not use markdown formatting (no #, **, -, etc.)
-- Last line must be the tag block: #hub #[themename] #ForeverNotes
-  where [themename] is the lowercase hub name with spaces replaced by hyphens
-  (e.g. Hub name "Health" → #health; "Side Projects" → #side-projects)
+The LLM was given the Hub name and a JSON list of note titles grouped by category,
+and asked to produce a plain-text body with category headings and note title lists.
+The prompt constrained the model to list only provided titles, add no commentary,
+and end with a `#hub #[theme] #ForeverNotes` tag block.
 
-Hub name: {HUB_NAME}
+## Current behaviour
 
-Notes by category:
-{NOTES_BY_CATEGORY_JSON}
+`_generate_hub_body` produces an HTML body directly from the theme index:
+- `<h2>` for each category heading
+- `<ul><li>` with `applenotes://showNote?identifier=pNNN` links for each note
+- `<p>` for the closing tag block
+
+The `applenotes://` local identifier is extracted from the note's `x-coredata://`
+ID in the export (last path component). See `docs/technical-notes.md` for
+stability caveats on these links.

@@ -2,22 +2,19 @@
 
 from __future__ import annotations
 
+import html
 import json
 import re
 import subprocess
-from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
 from rich.console import Console
 
-from scripts.providers import get_provider
-
 console = Console()
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 CONFIG_DIR = REPO_ROOT / "config"
-PROMPTS_DIR = REPO_ROOT / "prompts"
 EXPORTS_DIR = REPO_ROOT / "data" / "exports"
 
 HEAVY_ASTERISK = "✱"
@@ -82,6 +79,20 @@ def _hub_tag(subfolder_def: dict) -> str:
     return f"#{name}"
 
 
+def _note_link(title: str, nid: str) -> str:
+    """Return an HTML link to a note, or plain escaped text if no ID available.
+
+    Derives the applenotes:// local identifier from the x-coredata:// URI's
+    last path component (e.g. x-coredata://UUID/ICNote/p123 → p123).
+    Links may break after iCloud sync conflicts or device migrations.
+    """
+    escaped = html.escape(title)
+    local_id = nid.rpartition("/")[2] if nid else ""
+    if not local_id:
+        return escaped
+    return f'<a href="applenotes://showNote?identifier={local_id}">{escaped}</a>'
+
+
 def _build_theme_index(
     taxonomy: dict,
     notes: list[dict],
@@ -90,12 +101,11 @@ def _build_theme_index(
     """
     Returns a dict keyed by theme name. Each value:
       {
-        "hub_title": "✱ Health",
-        "hub_tag": "#health",
+        "_sf_def": {...},
         "categories": {
-            "Permanent": ["Note Title A", "Note Title B"],
-            "Literature": ["Note Title C"],
-        }
+            "Areas": [("Note Title A", "x-coredata://..."), ...],
+        },
+        "total": 26,
       }
     Only themes meeting min_count across ALL categories are included.
     """
@@ -118,23 +128,22 @@ def _build_theme_index(
             path_to_cat.setdefault(sf_name, (cat_display, sf_name))
             subfolder_defs.setdefault(sf_name, sf)
 
-    # Accumulate note titles per theme per category
-    theme_cats: dict[str, dict[str, list[str]]] = {}
+    # Accumulate (title, nid) pairs per theme per category
+    theme_cats: dict[str, dict[str, list[tuple[str, str]]]] = {}
     for note in notes:
         fp = note.get("folder_path", "")
         if fp in path_to_cat:
             cat_display, sf_name = path_to_cat[fp]
             theme_cats.setdefault(sf_name, {}).setdefault(cat_display, []).append(
-                note.get("title", "(untitled)")
+                (note.get("title", "(untitled)"), note.get("id", ""))
             )
 
     # Filter by min_count
     result: dict[str, dict] = {}
     for theme_name, cats_map in theme_cats.items():
-        total = sum(len(titles) for titles in cats_map.values())
+        total = sum(len(note_pairs) for note_pairs in cats_map.values())
         if total >= min_count:
             sf_def = subfolder_defs.get(theme_name, {"name": theme_name})
-            # We need the strict_mode prefix from settings — caller passes it
             result[theme_name] = {
                 "_sf_def": sf_def,
                 "categories": cats_map,
@@ -144,34 +153,23 @@ def _build_theme_index(
 
 
 def _generate_hub_body(
-    hub_name: str,
-    categories: dict[str, list[str]],
-    provider,
-    prompt_template: str,
-    dry_run: bool,
+    sf_def: dict,
+    categories: dict[str, list[tuple[str, str]]],
+    hub_prefix: str,
 ) -> str:
-    """Call the LLM to generate a Hub note body. Returns plain text."""
-    notes_by_cat = json.dumps(categories, ensure_ascii=False, indent=2)
-    user_content = (
-        prompt_template
-        .replace("{HUB_NAME}", hub_name)
-        .replace("{NOTES_BY_CATEGORY_JSON}", notes_by_cat)
-    )
-    if dry_run:
-        lines = [f"[ {HEAVY_ASTERISK} Home ]", ""]
-        for cat, titles in sorted(categories.items()):
-            lines.append(cat)
-            lines.extend(titles)
-            lines.append("")
-        tag = "#" + hub_name.lower().replace(" ", "-")
-        lines.append(f"#hub {tag} #ForeverNotes")
-        return "\n".join(lines)
+    """Generate HTML body for a Hub note directly from export data."""
+    tag = _hub_tag(sf_def)
+    parts: list[str] = []
 
-    return provider.classify_messages(
-        system_prompt="You generate plain-text Hub note bodies for Apple Notes.",
-        user_content=user_content,
-        max_tokens=2048,
-    )
+    for cat_display, note_pairs in sorted(categories.items()):
+        parts.append(f"<h2>{html.escape(cat_display)}</h2>")
+        parts.append("<ul>")
+        for title, nid in note_pairs:
+            parts.append(f"<li>{_note_link(title, nid)}</li>")
+        parts.append("</ul>")
+
+    parts.append(f"<p>#hub {tag} #ForeverNotes</p>")
+    return "\n".join(parts)
 
 
 def _write_note_applescript(title: str, body: str, folder: str | None, dry_run: bool, container: str = "") -> str:
@@ -201,29 +199,34 @@ def _write_note_applescript(title: str, body: str, folder: str | None, dry_run: 
 
 
 def _build_home_body(taxonomy: dict, theme_index: dict[str, dict], hub_prefix: str) -> str:
-    """Build the taxonomy-driven ✱ Home note body.
+    """Build the taxonomy-driven ✱ Home note body as HTML.
 
     Categories appear in taxonomy file order; headings use the folder: value.
+    Hub-eligible subfolders are prefixed with ✱; others appear as plain text.
     """
     hub_eligible: set[str] = set(theme_index.keys())
     cats = taxonomy.get("forever_notes", {})
-    lines: list[str] = [f"[ {HEAVY_ASTERISK} Home ]", ""]
+    parts: list[str] = [f"<h1>[ {HEAVY_ASTERISK} Home ]</h1>"]
 
     for cat_key, cat_val in cats.items():
         if not isinstance(cat_val, dict):
             continue
         heading = _folder_name(cat_val) or cat_key.capitalize()
-        lines.append(heading)
-        for sf in _subfolders(cat_val):
-            sf_name = sf["name"]
-            if sf_name in hub_eligible:
-                lines.append(_hub_title(theme_index[sf_name]["_sf_def"], hub_prefix))
-            else:
-                lines.append(sf_name)
-        lines.append("")
+        parts.append(f"<h2>{html.escape(heading)}</h2>")
+        subfolders = _subfolders(cat_val)
+        if subfolders:
+            parts.append("<ul>")
+            for sf in subfolders:
+                sf_name = sf["name"]
+                if sf_name in hub_eligible:
+                    title = _hub_title(theme_index[sf_name]["_sf_def"], hub_prefix)
+                else:
+                    title = sf_name
+                parts.append(f"<li>{html.escape(title)}</li>")
+            parts.append("</ul>")
 
-    lines.append("#ForeverNotes")
-    return "\n".join(lines)
+    parts.append("<p>#ForeverNotes</p>")
+    return "\n".join(parts)
 
 
 def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None:
@@ -265,8 +268,6 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
         notes: list[dict] = json.load(f)
     console.print(f"  {len(notes)} notes loaded")
 
-    prompt_template = (PROMPTS_DIR / "sync-hubs.md").read_text()
-
     theme_index = _build_theme_index(taxonomy, notes, min_count)
 
     if not theme_index:
@@ -274,15 +275,10 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
         return
 
     console.print(f"\nFound [bold]{len(theme_index)}[/bold] Hub-eligible theme(s).")
+    if dry_run:
+        console.print("[dim](dry-run — no writes)[/dim]\n")
 
-    if not dry_run:
-        provider = get_provider(settings)
-        console.print(f"Using provider: [dim]{provider.name} / {provider.model}[/dim]\n")
-    else:
-        provider = None
-        console.print("[dim](dry-run — no LLM calls, no writes)[/dim]\n")
-
-    created = updated = unchanged = errors = 0
+    created = updated = errors = 0
 
     for theme_name, theme_data in sorted(theme_index.items()):
         sf_def = theme_data["_sf_def"]
@@ -292,7 +288,7 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
 
         console.print(f"  [bold]{h_title}[/bold] — {total} notes across {len(categories)} categor{'y' if len(categories) == 1 else 'ies'}")
 
-        body = _generate_hub_body(theme_name, categories, provider, prompt_template, dry_run)
+        body = _generate_hub_body(sf_def, categories, hub_prefix)
         status = _write_note_applescript(h_title, body, hub_folder, dry_run, container=container)
 
         if status == "created":

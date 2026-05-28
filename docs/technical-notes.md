@@ -63,6 +63,17 @@ Scripts in this project match on ID first, then fall back to title + folder if t
 not found, logging any ambiguities. Never treat a stored `x-coredata://` ID as a permanent
 stable identifier.
 
+### `applenotes://` links in Hub notes
+
+`sync-hubs` writes Hub note bodies as HTML, with each note title linked via
+`applenotes://showNote?identifier=pNNNN`. The local identifier (`pNNNN`) is
+derived by taking the last path component of the `x-coredata://` URI from the
+export (e.g. `x-coredata://UUID/ICNote/p123` → `p123`).
+
+These links are subject to the same instability as `x-coredata://` IDs above.
+Re-running `sync-hubs` after a fresh export regenerates the links from current
+IDs, which is the recommended fix if links stop resolving.
+
 ### Notes are stored as HTML internally
 
 AppleScript exposes two body properties on each note:
