@@ -68,3 +68,8 @@ def run_backup() -> None:
     backup_path = backup_dir / f"backup-{timestamp}.json"
     shutil.copy2(export_path, backup_path)
     console.print(f"[green]Backup saved[/green] → {backup_path}")
+    console.print(
+        "[dim]Note: this backup captures text content only — images, attachments, "
+        "and formatting are not included. For full media backup use Time Machine or "
+        "a clone of ~/Library/Group Containers/group.com.apple.notes/[/dim]"
+    )

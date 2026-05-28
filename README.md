@@ -69,6 +69,8 @@ uv run notes repair-restored     # fix formatting after an iCloud Recently Delet
 
 Most commands accept `--dry-run` to preview without making changes. `apply-dedup` is a dry-run by default; pass `--execute` to apply deletions.
 
+> **Backup scope:** `notes backup` saves a text-only snapshot — note titles, plaintext body, and folder paths. Images, attachments, sketches, and formatting are not captured. For full media backup, use Time Machine or a clone utility (CCC, SuperDuper) to back up `~/Library/Group Containers/group.com.apple.notes/`.
+
 ## Documentation
 
 | Document | Contents |
