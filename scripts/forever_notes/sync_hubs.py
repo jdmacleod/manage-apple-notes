@@ -21,6 +21,7 @@ PROMPTS_DIR = REPO_ROOT / "prompts"
 EXPORTS_DIR = REPO_ROOT / "data" / "exports"
 
 HEAVY_ASTERISK = "✱"
+PARA_CATEGORIES = ["inbox", "projects", "areas", "resources", "archive"]
 
 
 def _load_yaml(local_path: Path, example_path: Path) -> dict:
@@ -200,6 +201,28 @@ def _write_note_applescript(title: str, body: str, folder: str | None, dry_run: 
     return output or "updated"
 
 
+def _build_home_body(taxonomy: dict, theme_index: dict[str, dict], hub_prefix: str) -> str:
+    """Build the PARA-structured ✱ Home note body."""
+    hub_eligible: set[str] = set(theme_index.keys())
+    cats = taxonomy.get("forever_notes", {})
+    lines: list[str] = [f"[ {HEAVY_ASTERISK} Home ]", ""]
+
+    for cat_key in PARA_CATEGORIES:
+        lines.append(cat_key.capitalize())
+        cat_val = cats.get(cat_key)
+        if cat_val is not None:
+            for sf in _subfolders(cat_val):
+                sf_name = sf["name"]
+                if sf_name in hub_eligible:
+                    lines.append(_hub_title(theme_index[sf_name]["_sf_def"], hub_prefix))
+                else:
+                    lines.append(sf_name)
+        lines.append("")
+
+    lines.append("#ForeverNotes")
+    return "\n".join(lines)
+
+
 def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None:
     settings = load_settings()
 
@@ -257,12 +280,10 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
         console.print("[dim](dry-run — no LLM calls, no writes)[/dim]\n")
 
     created = updated = unchanged = errors = 0
-    hub_titles: list[str] = []
 
     for theme_name, theme_data in sorted(theme_index.items()):
         sf_def = theme_data["_sf_def"]
         h_title = _hub_title(sf_def, hub_prefix)
-        hub_titles.append(h_title)
         categories = theme_data["categories"]
         total = theme_data["total"]
 
@@ -284,10 +305,7 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
 
     # ✱ Home
     console.print(f"\n  [bold]{home_title}[/bold] — root index")
-    home_body_lines = [f"[ {HEAVY_ASTERISK} Home ]", "", "## Hubs"]
-    home_body_lines.extend(hub_titles)
-    home_body_lines += ["", "#ForeverNotes"]
-    home_body = "\n".join(home_body_lines)
+    home_body = _build_home_body(taxonomy, theme_index, hub_prefix)
 
     home_status = _write_note_applescript(home_title, home_body, home_folder, dry_run, container=container)
     if home_status == "created":
