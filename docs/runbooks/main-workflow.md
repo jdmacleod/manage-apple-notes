@@ -36,9 +36,9 @@ Merge, rename, or discard as needed. Then add the approved subfolder names to
 `config/taxonomy.local.yaml` under the relevant categories:
 
 ```yaml
-permanent:
-  folder: "Resources"
-  subfolders: ["Health", "Technology", "Writing"]
+areas:
+  folder: "Areas"
+  subfolders: ["Finance", "Health", "Work"]
 ```
 
 ### Step 3 — Classify (Pass 2)
@@ -58,9 +58,11 @@ you know where they should go. Folder names in `proposed_folder` must exactly ma
 
 ### Step 4 — Backup and Apply
 
-**Always take a backup before applying moves.** The backup preserves full note
-body content so that any notes accidentally deleted by iCloud conflict resolution
-can be recreated exactly.
+**Always take a backup before applying moves.** The backup captures note titles,
+plaintext body content, and folder paths — sufficient to recreate text content if
+notes are accidentally moved or deleted. Images, attachments, and formatting are
+not included; for full media backup use Time Machine or a filesystem clone of
+`~/Library/Group Containers/group.com.apple.notes/`.
 
 ```bash
 uv run notes backup            # export + save timestamped copy to data/backups/
@@ -68,7 +70,7 @@ uv run notes apply --dry-run   # preview every move with colored output
 uv run notes apply             # apply approved moves to Apple Notes
 ```
 
-If notes go missing after an apply run, restore them:
+If notes go missing after an apply run:
 
 ```bash
 uv run notes restore --dry-run   # preview what would be recreated
@@ -77,6 +79,14 @@ uv run notes restore             # recreate missing notes from the backup
 
 `restore` uses `data/missing-notes-*.json` (if present) to target specific notes;
 without it, all notes in the backup that are absent from the current library are recreated.
+
+If restored notes have formatting corruption (title repeated, newlines collapsed —
+a known symptom of iCloud Recently Deleted restoration):
+
+```bash
+uv run notes repair-restored --dry-run   # preview what would be rewritten
+uv run notes repair-restored             # rebuild body HTML from backup content
+```
 
 Each move is logged: `[MOVED]` (green), `[SKIP]` (yellow), `[ERROR]` (red).
 To apply a specific proposal file: `uv run notes apply data/proposals/proposal-YYYY-MM-DD.json`.
@@ -107,6 +117,8 @@ uv run notes apply-dedup --execute   # actually delete; notes go to Recently Del
 
 - Run `uv run notes audit` to find remaining stale, stub, or duplicate notes
 - Set a recurring inbox-processing habit (see below)
+- If running in strict mode (`forever_notes_mode: strict`), run `uv run notes sync-hubs`
+  to create the ✱ Home and ✱ Hub notes
 
 ---
 
@@ -131,6 +143,12 @@ delete them as you see fit.
 uv run notes backup
 uv run notes apply --dry-run data/proposals/inbox-YYYY-MM-DD.json
 uv run notes apply data/proposals/inbox-YYYY-MM-DD.json
+```
+
+If using strict mode, re-sync Hub notes after applying inbox moves:
+
+```bash
+uv run notes sync-hubs
 ```
 
 ---
@@ -158,7 +176,7 @@ To specify a custom output path: `uv run notes audit --output /path/to/report.md
 | **Stub Notes** | Body <50 characters | Expand, merge with another note, or delete |
 | **Duplicate Titles** | Same or similar title in multiple notes | Merge or rename to clarify |
 | **Stale Inbox** | In Inbox >7 days | Process via `notes inbox` or delete |
-| **Stale Fleeting** | In Fleeting >30 days | Promote to Permanent/Literature or delete |
+| **Stale Fleeting** | In Fleeting >30 days (Forever Notes taxonomy only) | Promote to Permanent/Literature or delete |
 | **Subfolder Candidates** | Flat folders large enough for subfolders | Run `notes discover`, add subfolders to taxonomy |
 
 For bulk moves, create a proposal JSON manually (matching the `proposal-YYYY-MM-DD.json`
