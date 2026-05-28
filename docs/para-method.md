@@ -305,6 +305,17 @@ The generated file should be reviewed before use. Pay particular attention to:
 
 ---
 
+## Customisation
+
+Both PARA designs above are starting points. Copy `config/taxonomy.para.yaml` to
+`taxonomy.local.yaml`, rename folders to match your Apple Notes structure, and add or remove
+categories and subfolders as you see fit. The system honors taxonomy file order throughout —
+the order you define in `taxonomy.local.yaml` is the order categories appear in classification
+prompts, the ✱ Home note, and audit reports. No framework is enforced once you take ownership
+of your taxonomy file.
+
+---
+
 ## Further Reading
 
 - [The PARA Method — Tiago Forte](https://fortelabs.com/blog/para/)

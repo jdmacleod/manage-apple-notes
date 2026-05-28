@@ -14,15 +14,17 @@ how data flows through the pipeline and choose the workflow that matches your si
 | `notes discover` / `notes classify` (local) | Same content sent to Ollama process on `localhost` | No |
 | `notes apply` / `notes apply-dedup` | AppleScript moves or deletes notes inside the Notes app | No |
 | `notes restore` / `notes repair-restored` | AppleScript creates or rewrites notes from local backup JSON | No |
-| `notes sync-hubs` | Reads `NoteStore.sqlite` locally (read-only, requires Full Disk Access) to resolve stable note UUIDs; writes Hub and Home notes via AppleScript | No |
+| `notes sync-hubs` | Writes Hub and Home notes via AppleScript; when `internal_links: "html"` is set, also reads `NoteStore.sqlite` locally (read-only, requires Full Disk Access) to resolve stable note UUIDs | No |
 
 In cloud mode, each batch contains the note title and up to `max_body_chars` of body text
 (default: 2000 characters). Notes are truncated before transmission; raw exports stay local.
 
-`notes sync-hubs` reads `NoteStore.sqlite` directly as a read-only copy in a temp
-directory. This requires Full Disk Access for Terminal (grant in System Settings →
-Privacy & Security → Full Disk Access). Without it, the command falls back to numeric
-identifiers and prints a warning — no data is transmitted either way.
+`notes sync-hubs` reads `NoteStore.sqlite` only when `internal_links: "html"` is set
+in `strict_mode` settings (off by default). When active, it copies the database to a
+temp directory (read-only). This requires Full Disk Access for Terminal (grant in System
+Settings → Privacy & Security → Full Disk Access). Without it, hub links fall back to
+numeric identifiers and a warning is printed — no data is transmitted either way.
+With the default `internal_links: "text"`, no SQLite access occurs.
 
 ---
 

@@ -221,11 +221,13 @@ def _generate_hub_body(
     categories: dict[str, list[tuple[str, str]]],
     hub_prefix: str,
     uuid_map: dict[str, str] | None = None,
+    use_links: bool = False,
 ) -> str:
     """Generate HTML body for a Hub note directly from export data.
 
-    uuid_map maps numeric primary key string (e.g. "123") to stable UUID.
-    When provided, note links use notes://showNote?identifier=UUID.
+    When use_links=True (internal_links: "html" in settings), note titles are
+    rendered as applenotes:// links using UUIDs from uuid_map when available.
+    When use_links=False (default, internal_links: "text"), titles are plain text.
     """
     tag = _hub_tag(sf_def)
     h_title = _hub_title(sf_def, hub_prefix)
@@ -237,9 +239,12 @@ def _generate_hub_body(
             parts.append(f"<h2>{html.escape(cat_display)}</h2>")
         parts.append("<ul>")
         for title, nid in note_pairs:
-            pk = _url_id(nid)
-            uuid = uuid_map.get(pk, "") if uuid_map else ""
-            parts.append(f"<li>{_note_link(title, nid, uuid)}</li>")
+            if use_links:
+                pk = _url_id(nid)
+                uuid = uuid_map.get(pk, "") if uuid_map else ""
+                parts.append(f"<li>{_note_link(title, nid, uuid)}</li>")
+            else:
+                parts.append(f"<li>{html.escape(title)}</li>")
         parts.append("</ul>")
 
     parts.append("<br>")
@@ -286,13 +291,14 @@ def _build_home_body(
     home_title: str,
     hub_ids: dict[str, str] | None = None,
     hub_uuids: dict[str, str] | None = None,
+    use_links: bool = False,
 ) -> str:
     """Build the taxonomy-driven ✱ Home note body as HTML.
 
     Categories appear in taxonomy file order; headings use the folder: value.
-    Hub-eligible subfolders appear as links when identifiers are available:
-      - hub_uuids (hub_title → stable UUID) → applenotes://showNote?identifier=UUID
-      - hub_ids (hub_title → local pNNN) fallback → applenotes://showNote?identifier=NNN
+    When use_links=True, Hub-eligible subfolders are rendered as applenotes://
+    links using hub_uuids (stable) or hub_ids (local pNNN) as available.
+    When use_links=False (default), all subfolder entries are plain text.
     The home_title is placed first so Apple Notes uses it as the note title.
     """
     hub_eligible: set[str] = set(theme_index.keys())
@@ -313,9 +319,12 @@ def _build_home_body(
                 sf_name = sf["name"]
                 if sf_name in hub_eligible:
                     h_title = _hub_title(theme_index[sf_name]["_sf_def"], hub_prefix)
-                    uuid = hub_uuids.get(h_title, "")
-                    local_id = hub_ids.get(h_title, "")
-                    parts.append(f"<li>{_note_link(h_title, local_id, uuid)}</li>")
+                    if use_links:
+                        uuid = hub_uuids.get(h_title, "")
+                        local_id = hub_ids.get(h_title, "")
+                        parts.append(f"<li>{_note_link(h_title, local_id, uuid)}</li>")
+                    else:
+                        parts.append(f"<li>{html.escape(h_title)}</li>")
                 else:
                     parts.append(f"<li>{html.escape(sf_name)}</li>")
             parts.append("</ul>")
@@ -341,6 +350,7 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
     home_title = strict.get("home_note_title", f"{HEAVY_ASTERISK} Home")
     home_folder = strict.get("home_note_folder") or None
     hub_folder = strict.get("hub_note_folder") or None
+    use_links = strict.get("internal_links", "text") == "html"
 
     tl_cfg = settings.get("toplevel_folder", {})
     container = tl_cfg.get("name", "") if tl_cfg.get("enabled", False) else ""
@@ -374,18 +384,21 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
     if dry_run:
         console.print("[dim](dry-run — no writes)[/dim]\n")
 
-    # Bulk UUID lookup for all notes referenced inside Hub bodies (from export data).
-    # Collects every numeric PK across all theme categories before writing anything.
-    all_note_pks = [
-        _url_id(nid)
-        for theme_data in theme_index.values()
-        for note_pairs in theme_data["categories"].values()
-        for _, nid in note_pairs
-        if _url_id(nid)
-    ]
-    note_uuid_map = _lookup_uuids(all_note_pks)
-    if note_uuid_map:
-        console.print(f"  [dim]Resolved {len(note_uuid_map)} note UUID(s) from NoteStore.[/dim]")
+    # UUID lookups are only needed when internal_links: "html" is set.
+    # Skip them (and the Full Disk Access requirement) in the default "text" mode.
+    if use_links:
+        all_note_pks = [
+            _url_id(nid)
+            for theme_data in theme_index.values()
+            for note_pairs in theme_data["categories"].values()
+            for _, nid in note_pairs
+            if _url_id(nid)
+        ]
+        note_uuid_map = _lookup_uuids(all_note_pks)
+        if note_uuid_map:
+            console.print(f"  [dim]Resolved {len(note_uuid_map)} note UUID(s) from NoteStore.[/dim]")
+    else:
+        note_uuid_map = {}
 
     created = updated = errors = 0
     hub_ids: dict[str, str] = {}  # hub_title → local pNNN returned by AppleScript
@@ -398,7 +411,7 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
 
         console.print(f"  [bold]{h_title}[/bold] — {total} notes across {len(categories)} categor{'y' if len(categories) == 1 else 'ies'}")
 
-        body = _generate_hub_body(sf_def, categories, hub_prefix, uuid_map=note_uuid_map)
+        body = _generate_hub_body(sf_def, categories, hub_prefix, uuid_map=note_uuid_map, use_links=use_links)
         status, local_id = _write_note_applescript(h_title, body, hub_folder, dry_run, container=container)
         if local_id:
             hub_ids[h_title] = local_id
@@ -414,22 +427,25 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
             console.print(f"    [dim][UPDATED][/dim]")
             updated += 1
 
-    # Resolve stable UUIDs for the hub notes themselves (for Home → Hub links).
-    # hub_ids contains pNNN strings; strip the prefix to get the numeric PKs.
-    hub_pks = [_url_id(lid) for lid in hub_ids.values() if _url_id(lid)]
-    hub_pk_to_uuid = _lookup_uuids(hub_pks)
-    hub_uuids: dict[str, str] = {
-        title: hub_pk_to_uuid.get(_url_id(lid), "")
-        for title, lid in hub_ids.items()
-    }
-    resolved = sum(1 for v in hub_uuids.values() if v)
-    if resolved:
-        console.print(f"  [dim]Resolved {resolved} hub UUID(s) for Home note links.[/dim]")
+    # Resolve stable UUIDs for hub notes themselves (for Home → Hub links).
+    # Only needed when internal_links: "html"; skip otherwise.
+    if use_links and hub_ids:
+        hub_pks = [_url_id(lid) for lid in hub_ids.values() if _url_id(lid)]
+        hub_pk_to_uuid = _lookup_uuids(hub_pks)
+        hub_uuids: dict[str, str] = {
+            title: hub_pk_to_uuid.get(_url_id(lid), "")
+            for title, lid in hub_ids.items()
+        }
+        resolved = sum(1 for v in hub_uuids.values() if v)
+        if resolved:
+            console.print(f"  [dim]Resolved {resolved} hub UUID(s) for Home note links.[/dim]")
+    else:
+        hub_uuids = {}
 
     # ✱ Home — built after Hubs so hub_ids/hub_uuids contain fresh identifiers
     console.print(f"\n  [bold]{home_title}[/bold] — root index")
     home_body = _build_home_body(
-        taxonomy, theme_index, hub_prefix, home_title, hub_ids, hub_uuids
+        taxonomy, theme_index, hub_prefix, home_title, hub_ids, hub_uuids, use_links=use_links
     )
 
     home_status, _ = _write_note_applescript(home_title, home_body, home_folder, dry_run, container=container)

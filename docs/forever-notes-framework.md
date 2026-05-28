@@ -9,6 +9,34 @@ layer.
 
 ---
 
+## Default Taxonomy
+
+The Forever Notes framework uses a Zettelkasten-influenced taxonomy as its default starting point.
+This project ships with a template (`config/taxonomy.example.yaml`) based on that structure:
+
+| Category | Purpose |
+|----------|---------|
+| **Inbox** | Temporary capture, not yet processed — keep flat |
+| **Fleeting** | Quick thoughts to process or discard — keep flat |
+| **Literature** | Notes tied to a specific source (book, article, talk) |
+| **Permanent** | Atomic, evergreen concepts in your own words |
+| **Projects** | Notes for a specific active project |
+| **Areas** | Ongoing responsibilities and reference |
+| **Resources** | Reference material, how-tos, collections |
+| **Archive** | Inactive, completed, or outdated notes |
+| **Review** | Needs human triage; use when classification is unclear — keep flat |
+
+This is a starting framework. Copy `taxonomy.example.yaml` to `taxonomy.local.yaml`, rename each
+folder to match your actual Apple Notes folders, add subfolders after a discovery pass, and the
+system will honor exactly what you define. Category order in the file determines the order
+categories appear in your ✱ Home note.
+
+Users who prefer the PARA method (Projects, Areas, Resources, Archive) can start from
+`config/taxonomy.para.yaml` instead. See [`docs/para-method.md`](para-method.md) for PARA
+guidance and both minimalist and expanded designs.
+
+---
+
 ## Operating Modes
 
 Set `forever_notes_mode` in `settings.local.yaml`:
@@ -71,13 +99,18 @@ receive `#hub`, `#[theme]`, and `#ForeverNotes` tags in their body as part of
 
 ## Note-to-Note Links in Hub Notes
 
-`sync-hubs` writes `applenotes://showNote?identifier=UUID` HTML links into Hub and
-Home note bodies. The UUID is resolved from `NoteStore.sqlite` (requires Full Disk
-Access for Terminal; see `docs/technical-notes.md`). When Full Disk Access is not
-available the script falls back to a numeric identifier.
+The `internal_links` setting in `settings.local.yaml` (under `strict_mode`) controls
+how note titles appear in Hub and Home note bodies:
 
-**Current limitation:** Apple Notes' AppleScript `set body` API strips all `href`
-attributes from `<a>` tags regardless of URL scheme. Links therefore appear as
+- **`"text"` (default):** Note titles are written as plain text. Safe and reliable across
+  all setups; no special permissions or UUID resolution needed.
+- **`"html"` (experimental):** Note titles are written as `applenotes://showNote?identifier=UUID`
+  HTML links. UUIDs are resolved from `NoteStore.sqlite`, which requires Full Disk Access for
+  Terminal (see `docs/technical-notes.md`). Falls back to numeric identifiers when FDA is not
+  granted.
+
+**Current limitation with `"html"` mode:** Apple Notes' AppleScript `set body` API strips all
+`href` attributes from `<a>` tags regardless of URL scheme. Links therefore appear as
 underlined text in Hub notes but are **not clickable**. This is a platform constraint
 with no programmatic workaround via `set body`.
 
