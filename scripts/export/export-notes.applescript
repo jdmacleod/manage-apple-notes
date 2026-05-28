@@ -67,10 +67,13 @@ tell application "Notes"
 			else
 				-- Determine whether this folder has a parent folder (i.e. it is a subfolder).
 				-- If the container of the folder is an account, it is top-level.
+				-- Wrapped in try because some accounts/folders raise -1728 on container access.
 				set parentFolderName to ""
-				if class of container of aFolder is folder then
-					set parentFolderName to name of container of aFolder
-				end if
+				try
+					if class of container of aFolder is folder then
+						set parentFolderName to name of container of aFolder
+					end if
+				end try
 
 				repeat with aNote in notes of aFolder
 					set noteId to id of aNote
