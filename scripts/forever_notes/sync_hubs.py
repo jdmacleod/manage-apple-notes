@@ -5,7 +5,10 @@ from __future__ import annotations
 import html
 import json
 import re
+import shutil
+import sqlite3
 import subprocess
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -18,6 +21,10 @@ CONFIG_DIR = REPO_ROOT / "config"
 EXPORTS_DIR = REPO_ROOT / "data" / "exports"
 
 HEAVY_ASTERISK = "✱"
+
+NOTESTORE_DB = (
+    Path.home() / "Library" / "Group Containers" / "group.com.apple.notes" / "NoteStore.sqlite"
+)
 
 
 def _load_yaml(local_path: Path, example_path: Path) -> dict:
@@ -90,9 +97,60 @@ def _url_id(nid: str) -> str:
     return raw[1:] if raw.startswith("p") else raw
 
 
-def _note_link(title: str, nid: str) -> str:
-    """Return an HTML link to a note, or plain escaped text if no ID available."""
+def _lookup_uuids(primary_keys: list[str]) -> dict[str, str]:
+    """Query NoteStore.sqlite for stable note UUIDs given numeric primary keys.
+
+    Returns a dict mapping primary key string (e.g. "123") to UUID string.
+    Falls back gracefully when Full Disk Access is not granted or the DB is absent.
+    """
+    pks_int = [int(pk) for pk in primary_keys if pk.isdigit()]
+    if not pks_int or not NOTESTORE_DB.exists():
+        return {}
+
+    tmp_dir = tempfile.mkdtemp()
+    db_copy = Path(tmp_dir) / "NoteStore_copy.sqlite"
+    try:
+        shutil.copy2(NOTESTORE_DB, db_copy)
+        for ext in ("-wal", "-shm"):
+            src = Path(str(NOTESTORE_DB) + ext)
+            if src.exists():
+                shutil.copy2(src, Path(str(db_copy) + ext))
+    except PermissionError:
+        console.print(
+            "[yellow]Note UUIDs unavailable:[/yellow] Full Disk Access for Terminal is required "
+            "to read NoteStore.sqlite.\n"
+            "  Grant it in System Settings → Privacy & Security → Full Disk Access, then re-run.\n"
+            "  Hub links will fall back to numeric identifiers until access is granted."
+        )
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        return {}
+
+    try:
+        placeholders = ",".join("?" * len(pks_int))
+        con = sqlite3.connect(str(db_copy))
+        rows = con.execute(
+            f"SELECT Z_PK, ZIDENTIFIER FROM ZICCLOUDSYNCINGOBJECT "
+            f"WHERE Z_PK IN ({placeholders})",
+            pks_int,
+        ).fetchall()
+        con.close()
+        return {str(pk): uuid for pk, uuid in rows if uuid}
+    except Exception as exc:
+        console.print(f"[yellow]SQLite UUID lookup failed: {exc}[/yellow]")
+        return {}
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _note_link(title: str, nid: str, uuid: str = "") -> str:
+    """Return an HTML link to a note, or plain escaped text if no ID available.
+
+    Prefers notes://showNote?identifier=UUID (stable iCloud UUID from NoteStore.sqlite)
+    over the applenotes://showNote?identifier=NNN fallback (numeric x-coredata PK).
+    """
     escaped = html.escape(title)
+    if uuid:
+        return f'<a href="notes://showNote?identifier={uuid}">{escaped}</a>'
     uid = _url_id(nid)
     if not uid:
         return escaped
@@ -162,11 +220,15 @@ def _generate_hub_body(
     sf_def: dict,
     categories: dict[str, list[tuple[str, str]]],
     hub_prefix: str,
+    uuid_map: dict[str, str] | None = None,
 ) -> str:
-    """Generate HTML body for a Hub note directly from export data."""
+    """Generate HTML body for a Hub note directly from export data.
+
+    uuid_map maps numeric primary key string (e.g. "123") to stable UUID.
+    When provided, note links use notes://showNote?identifier=UUID.
+    """
     tag = _hub_tag(sf_def)
     h_title = _hub_title(sf_def, hub_prefix)
-    # Apple Notes uses the first element of the body as the note title.
     parts: list[str] = [f"<h1>{html.escape(h_title)}</h1>"]
 
     multi_cat = len(categories) > 1
@@ -175,7 +237,9 @@ def _generate_hub_body(
             parts.append(f"<h2>{html.escape(cat_display)}</h2>")
         parts.append("<ul>")
         for title, nid in note_pairs:
-            parts.append(f"<li>{_note_link(title, nid)}</li>")
+            pk = _url_id(nid)
+            uuid = uuid_map.get(pk, "") if uuid_map else ""
+            parts.append(f"<li>{_note_link(title, nid, uuid)}</li>")
         parts.append("</ul>")
 
     parts.append("<br>")
@@ -221,16 +285,19 @@ def _build_home_body(
     hub_prefix: str,
     home_title: str,
     hub_ids: dict[str, str] | None = None,
+    hub_uuids: dict[str, str] | None = None,
 ) -> str:
     """Build the taxonomy-driven ✱ Home note body as HTML.
 
     Categories appear in taxonomy file order; headings use the folder: value.
-    Hub-eligible subfolders appear as applenotes:// links when hub_ids provides
-    their local identifiers; otherwise as plain text.
+    Hub-eligible subfolders appear as links when identifiers are available:
+      - hub_uuids (hub_title → stable UUID) → notes://showNote?identifier=UUID
+      - hub_ids (hub_title → local pNNN) fallback → applenotes://showNote?identifier=NNN
     The home_title is placed first so Apple Notes uses it as the note title.
     """
     hub_eligible: set[str] = set(theme_index.keys())
     hub_ids = hub_ids or {}
+    hub_uuids = hub_uuids or {}
     cats = taxonomy.get("forever_notes", {})
     parts: list[str] = [f"<h1>{html.escape(home_title)}</h1>", "<br>"]
 
@@ -246,12 +313,9 @@ def _build_home_body(
                 sf_name = sf["name"]
                 if sf_name in hub_eligible:
                     h_title = _hub_title(theme_index[sf_name]["_sf_def"], hub_prefix)
+                    uuid = hub_uuids.get(h_title, "")
                     local_id = hub_ids.get(h_title, "")
-                    uid = _url_id(local_id) if local_id else ""
-                    if uid:
-                        parts.append(f'<li><a href="applenotes://showNote?identifier={uid}">{html.escape(h_title)}</a></li>')
-                    else:
-                        parts.append(f"<li>{html.escape(h_title)}</li>")
+                    parts.append(f"<li>{_note_link(h_title, local_id, uuid)}</li>")
                 else:
                     parts.append(f"<li>{html.escape(sf_name)}</li>")
             parts.append("</ul>")
@@ -310,8 +374,21 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
     if dry_run:
         console.print("[dim](dry-run — no writes)[/dim]\n")
 
+    # Bulk UUID lookup for all notes referenced inside Hub bodies (from export data).
+    # Collects every numeric PK across all theme categories before writing anything.
+    all_note_pks = [
+        _url_id(nid)
+        for theme_data in theme_index.values()
+        for note_pairs in theme_data["categories"].values()
+        for _, nid in note_pairs
+        if _url_id(nid)
+    ]
+    note_uuid_map = _lookup_uuids(all_note_pks)
+    if note_uuid_map:
+        console.print(f"  [dim]Resolved {len(note_uuid_map)} note UUID(s) from NoteStore.[/dim]")
+
     created = updated = errors = 0
-    hub_ids: dict[str, str] = {}  # hub_title → local_id for Home note links
+    hub_ids: dict[str, str] = {}  # hub_title → local pNNN returned by AppleScript
 
     for theme_name, theme_data in sorted(theme_index.items()):
         sf_def = theme_data["_sf_def"]
@@ -321,7 +398,7 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
 
         console.print(f"  [bold]{h_title}[/bold] — {total} notes across {len(categories)} categor{'y' if len(categories) == 1 else 'ies'}")
 
-        body = _generate_hub_body(sf_def, categories, hub_prefix)
+        body = _generate_hub_body(sf_def, categories, hub_prefix, uuid_map=note_uuid_map)
         status, local_id = _write_note_applescript(h_title, body, hub_folder, dry_run, container=container)
         if local_id:
             hub_ids[h_title] = local_id
@@ -337,9 +414,23 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
             console.print(f"    [dim][UPDATED][/dim]")
             updated += 1
 
-    # ✱ Home — built after Hubs so hub_ids contains their fresh local identifiers
+    # Resolve stable UUIDs for the hub notes themselves (for Home → Hub links).
+    # hub_ids contains pNNN strings; strip the prefix to get the numeric PKs.
+    hub_pks = [_url_id(lid) for lid in hub_ids.values() if _url_id(lid)]
+    hub_pk_to_uuid = _lookup_uuids(hub_pks)
+    hub_uuids: dict[str, str] = {
+        title: hub_pk_to_uuid.get(_url_id(lid), "")
+        for title, lid in hub_ids.items()
+    }
+    resolved = sum(1 for v in hub_uuids.values() if v)
+    if resolved:
+        console.print(f"  [dim]Resolved {resolved} hub UUID(s) for Home note links.[/dim]")
+
+    # ✱ Home — built after Hubs so hub_ids/hub_uuids contain fresh identifiers
     console.print(f"\n  [bold]{home_title}[/bold] — root index")
-    home_body = _build_home_body(taxonomy, theme_index, hub_prefix, home_title, hub_ids)
+    home_body = _build_home_body(
+        taxonomy, theme_index, hub_prefix, home_title, hub_ids, hub_uuids
+    )
 
     home_status, _ = _write_note_applescript(home_title, home_body, home_folder, dry_run, container=container)
     if home_status == "created":
