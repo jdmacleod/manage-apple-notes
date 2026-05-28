@@ -163,8 +163,10 @@ def _generate_hub_body(
     # Apple Notes uses the first element of the body as the note title.
     parts: list[str] = [f"<h1>{html.escape(h_title)}</h1>"]
 
+    multi_cat = len(categories) > 1
     for cat_display, note_pairs in sorted(categories.items()):
-        parts.append(f"<h2>{html.escape(cat_display)}</h2>")
+        if multi_cat:
+            parts.append(f"<h2>{html.escape(cat_display)}</h2>")
         parts.append("<ul>")
         for title, nid in note_pairs:
             parts.append(f"<li>{_note_link(title, nid)}</li>")
