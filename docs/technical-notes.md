@@ -323,7 +323,7 @@ approximately 4–6 GB for the OS and running apps, leaving the rest available t
 | 16 GB total | ~10–12 GB | 8B models fit comfortably |
 | 24 GB total | ~18 GB | 12B–14B models fit well |
 
-### Recommended models
+### Recommended models (May 2026, changes quickly)
 
 | Device RAM | Model | Ollama tag | Size on disk |
 |---|---|---|---|
