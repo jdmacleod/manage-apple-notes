@@ -56,12 +56,27 @@ you know where they should go. Folder names in `proposed_folder` must exactly ma
 `taxonomy.local.yaml`; `proposed_subfolder` must match a name in that category's
 `subfolders` list.
 
-### Step 4 — Apply
+### Step 4 — Backup and Apply
+
+**Always take a backup before applying moves.** The backup preserves full note
+body content so that any notes accidentally deleted by iCloud conflict resolution
+can be recreated exactly.
 
 ```bash
+uv run notes backup            # export + save timestamped copy to data/backups/
 uv run notes apply --dry-run   # preview every move with colored output
 uv run notes apply             # apply approved moves to Apple Notes
 ```
+
+If notes go missing after an apply run, restore them:
+
+```bash
+uv run notes restore --dry-run   # preview what would be recreated
+uv run notes restore             # recreate missing notes from the backup
+```
+
+`restore` uses `data/missing-notes-*.json` (if present) to target specific notes;
+without it, all notes in the backup that are absent from the current library are recreated.
 
 Each move is logged: `[MOVED]` (green), `[SKIP]` (yellow), `[ERROR]` (red).
 To apply a specific proposal file: `uv run notes apply data/proposals/proposal-YYYY-MM-DD.json`.
@@ -113,6 +128,7 @@ where they should go. Notes in `no_change` are flagged as inbox-appropriate — 
 delete them as you see fit.
 
 ```bash
+uv run notes backup
 uv run notes apply --dry-run data/proposals/inbox-YYYY-MM-DD.json
 uv run notes apply data/proposals/inbox-YYYY-MM-DD.json
 ```

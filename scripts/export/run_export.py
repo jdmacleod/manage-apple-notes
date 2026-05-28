@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
+from datetime import datetime
 from pathlib import Path
 
 from rich.console import Console
@@ -54,3 +56,15 @@ def run_export() -> None:
             console.print(f"  [dim]Stripped '{container_name}/' prefix from {patched} folder path(s)[/dim]")
 
     console.print(f"[green]Exported[/green] {len(notes)} notes → {export_path}")
+    return export_path
+
+
+def run_backup() -> None:
+    """Export notes and copy to data/backups/ with a timestamped filename."""
+    export_path = run_export()
+    backup_dir = REPO_ROOT / "data" / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    backup_path = backup_dir / f"backup-{timestamp}.json"
+    shutil.copy2(export_path, backup_path)
+    console.print(f"[green]Backup saved[/green] → {backup_path}")

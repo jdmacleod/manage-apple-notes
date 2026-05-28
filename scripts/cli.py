@@ -10,10 +10,11 @@ from scripts.classify.deduplicate_notes import run_dedup
 from scripts.classify.discover_themes import run_discover
 from scripts.execute.apply_dedup import run_apply_dedup
 from scripts.execute.run_apply import run_apply
-from scripts.export.run_export import run_export
+from scripts.export.run_export import run_backup, run_export
 from scripts.forever_notes.sync_hubs import run_sync_hubs
 from scripts.maintenance.audit import run_audit
 from scripts.maintenance.process_inbox import run_inbox
+from scripts.restore.run_restore import run_restore
 
 app = typer.Typer(help="Organize Apple Notes using AI classification into a user-defined folder taxonomy.")
 
@@ -83,6 +84,34 @@ def audit(
 def export():
     """Export all notes from Apple Notes to data/exports/."""
     run_export()
+
+
+@app.command()
+def backup():
+    """Export notes and save a timestamped backup to data/backups/."""
+    run_backup()
+
+
+@app.command()
+def restore(
+    backup_file: Optional[str] = typer.Option(
+        None,
+        "--from-backup",
+        help="Backup or export JSON to restore from. Defaults to latest in data/backups/ then data/exports/.",
+    ),
+    missing_file: Optional[str] = typer.Option(
+        None,
+        "--missing",
+        help="missing-notes JSON listing notes to restore. Defaults to latest data/missing-notes-*.json.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Preview what would be created without touching Notes.",
+    ),
+):
+    """Restore notes from a backup — recreates notes lost during apply operations."""
+    run_restore(backup_file=backup_file, missing_file=missing_file, dry_run=dry_run)
 
 
 @app.command()
