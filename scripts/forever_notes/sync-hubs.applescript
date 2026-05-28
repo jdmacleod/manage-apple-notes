@@ -8,12 +8,15 @@
 
   Arguments:
     title      — Note title to find or create
-    body       — Full body text to set
-    folder     — Folder name to create the note in (empty string = iCloud root)
+    body       — Full body HTML to set
+    folder     — Subfolder name to create the note in (empty string = use container root)
     container  — Optional top-level container folder name (empty string = disabled)
 
-  When container is provided, the folder is looked up inside the container
-  rather than at the account root.
+  Folder resolution rules:
+    - container set, folder empty or folder == container  → place in container itself
+    - container set, folder is a different name           → place in named subfolder of container
+    - container empty, folder set                         → place in named folder at account root
+    - both empty                                          → place at iCloud account root
 
   Output (stdout):
     "created" if a new note was made
@@ -38,11 +41,19 @@ on run argv
 		set targetNote to missing value
 		set targetFolder to missing value
 
-		-- Find the folder, optionally inside a container
-		if folderName is not "" then
+		-- Resolve the target folder
+		if containerName is not "" and (folderName is "" or folderName is containerName) then
+			-- Place directly in the container folder itself
+			repeat with acct in accounts
+				if exists folder containerName of acct then
+					set targetFolder to folder containerName of acct
+					exit repeat
+				end if
+			end repeat
+		else if folderName is not "" then
+			-- Place in a named folder, optionally inside a container
 			repeat with acct in accounts
 				if containerName is not "" then
-					-- Look for folder inside the container
 					if exists folder containerName of acct then
 						repeat with f in folders of folder containerName of acct
 							if name of f is folderName then
@@ -52,7 +63,6 @@ on run argv
 						end repeat
 					end if
 				else
-					-- Look for folder at account root
 					repeat with f in folders of acct
 						if name of f is folderName then
 							set targetFolder to f

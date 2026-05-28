@@ -159,7 +159,9 @@ def _generate_hub_body(
 ) -> str:
     """Generate HTML body for a Hub note directly from export data."""
     tag = _hub_tag(sf_def)
-    parts: list[str] = []
+    h_title = _hub_title(sf_def, hub_prefix)
+    # Apple Notes uses the first element of the body as the note title.
+    parts: list[str] = [f"<h1>{html.escape(h_title)}</h1>"]
 
     for cat_display, note_pairs in sorted(categories.items()):
         parts.append(f"<h2>{html.escape(cat_display)}</h2>")
@@ -198,15 +200,21 @@ def _write_note_applescript(title: str, body: str, folder: str | None, dry_run: 
     return output or "updated"
 
 
-def _build_home_body(taxonomy: dict, theme_index: dict[str, dict], hub_prefix: str) -> str:
+def _build_home_body(
+    taxonomy: dict,
+    theme_index: dict[str, dict],
+    hub_prefix: str,
+    home_title: str,
+) -> str:
     """Build the taxonomy-driven ✱ Home note body as HTML.
 
     Categories appear in taxonomy file order; headings use the folder: value.
     Hub-eligible subfolders are prefixed with ✱; others appear as plain text.
+    The home_title is placed first so Apple Notes uses it as the note title.
     """
     hub_eligible: set[str] = set(theme_index.keys())
     cats = taxonomy.get("forever_notes", {})
-    parts: list[str] = [f"<h1>[ {HEAVY_ASTERISK} Home ]</h1>"]
+    parts: list[str] = [f"<h1>{html.escape(home_title)}</h1>"]
 
     for cat_key, cat_val in cats.items():
         if not isinstance(cat_val, dict):
@@ -304,7 +312,7 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
 
     # ✱ Home
     console.print(f"\n  [bold]{home_title}[/bold] — root index")
-    home_body = _build_home_body(taxonomy, theme_index, hub_prefix)
+    home_body = _build_home_body(taxonomy, theme_index, hub_prefix, home_title)
 
     home_status = _write_note_applescript(home_title, home_body, home_folder, dry_run, container=container)
     if home_status == "created":
