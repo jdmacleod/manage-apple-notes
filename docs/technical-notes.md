@@ -89,7 +89,7 @@ silently stripped, leaving only the link text wrapped in `<u>` tags.
 The macOS URL scheme for opening a specific note is:
 
 ```
-notes://showNote?identifier=<UUID>
+applenotes://showNote?identifier=<UUID>
 ```
 
 where `<UUID>` is the note's stable iCloud identifier (e.g.

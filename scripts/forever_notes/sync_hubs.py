@@ -145,12 +145,12 @@ def _lookup_uuids(primary_keys: list[str]) -> dict[str, str]:
 def _note_link(title: str, nid: str, uuid: str = "") -> str:
     """Return an HTML link to a note, or plain escaped text if no ID available.
 
-    Prefers notes://showNote?identifier=UUID (stable iCloud UUID from NoteStore.sqlite)
+    Prefers applenotes://showNote?identifier=UUID (stable iCloud UUID from NoteStore.sqlite)
     over the applenotes://showNote?identifier=NNN fallback (numeric x-coredata PK).
     """
     escaped = html.escape(title)
     if uuid:
-        return f'<a href="notes://showNote?identifier={uuid}">{escaped}</a>'
+        return f'<a href="applenotes://showNote?identifier={uuid}">{escaped}</a>'
     uid = _url_id(nid)
     if not uid:
         return escaped
@@ -291,7 +291,7 @@ def _build_home_body(
 
     Categories appear in taxonomy file order; headings use the folder: value.
     Hub-eligible subfolders appear as links when identifiers are available:
-      - hub_uuids (hub_title → stable UUID) → notes://showNote?identifier=UUID
+      - hub_uuids (hub_title → stable UUID) → applenotes://showNote?identifier=UUID
       - hub_ids (hub_title → local pNNN) fallback → applenotes://showNote?identifier=NNN
     The home_title is placed first so Apple Notes uses it as the note title.
     """
