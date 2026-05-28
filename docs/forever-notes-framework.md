@@ -61,35 +61,37 @@ Hub notes are created and updated by `uv run notes sync-hubs`.
 
 ### Tags
 
-When `tag_all_notes: true` (default in strict mode), every classified note gets
-`#ForeverNotes` appended if not already present. When `tag_theme_notes: true`, notes also
-get a `#[theme]` tag (e.g. `#health`). Tags are appended only — never removed, even if a
-note is reclassified.
+`settings.local.yaml` exposes `tag_all_notes` and `tag_theme_notes` flags under
+`strict_mode`, but **tag application to classified notes is not yet implemented** —
+the classification pipeline does not currently append tags. Hub notes themselves do
+receive `#hub`, `#[theme]`, and `#ForeverNotes` tags in their body as part of
+`sync-hubs`. This section will be updated when tag application is implemented.
 
 ---
 
-## Internal Links
+## Note-to-Note Links in Hub Notes
 
-Hub note bodies reference other notes by title. Two formats are available:
+`sync-hubs` writes `applenotes://showNote?identifier=UUID` HTML links into Hub and
+Home note bodies. The UUID is resolved from `NoteStore.sqlite` (requires Full Disk
+Access for Terminal; see `docs/technical-notes.md`). When Full Disk Access is not
+available the script falls back to a numeric identifier.
 
-**`internal_links: "text"` (default, safe)**
+**Current limitation:** Apple Notes' AppleScript `set body` API strips all `href`
+attributes from `<a>` tags regardless of URL scheme. Links therefore appear as
+underlined text in Hub notes but are **not clickable**. This is a platform constraint
+with no programmatic workaround via `set body`.
 
-Hub bodies contain plain note titles as a list. You can convert any title to an internal
-link at your own pace using Apple Notes' `>>` shortcut — type `>>` followed by the note
-title to create a live link. This produces stable `applenotes://` links that survive iCloud
-sync reliably. A few minutes of manual work after setup; never needs repeating unless you
-add notes.
+Creating clickable note-to-note links requires manual intervention: select the note
+title text in a Hub note, then use **Insert > Add Link** (⌘K) to replace it with a
+real note link. This must be done inside the Apple Notes app; it cannot be automated
+via the current AppleScript API.
 
-**`internal_links: "html"` (experimental)**
-
-The sync script attempts to construct `applenotes://` URLs from note IDs and write them as
-HTML anchor links directly. This is experimental: the URL-to-ID mapping may be unreliable
-after iCloud sync events, device migrations, or Notes app updates. Only enable if you
-understand the risk of broken links and have verified stability in your environment.
+See `docs/technical-notes.md` → "Note-to-note links: current status and limitations"
+for the full investigation.
 
 ---
 
-## sync-hubs.py Usage
+## sync-hubs Usage
 
 ```bash
 uv run notes sync-hubs              # update all hubs (reads latest export)
@@ -97,9 +99,10 @@ uv run notes sync-hubs --dry-run    # preview what would be created/updated
 uv run notes sync-hubs <export.json>  # use a specific export file
 ```
 
-The script reads the most recent export file (or the one you specify) plus your taxonomy,
-generates Hub note content via the LLM, and writes to Apple Notes via AppleScript. It is
-idempotent — safe to run repeatedly.
+The script reads the most recent export file (or the one you specify) plus your
+taxonomy, builds Hub and Home note content directly from the data (no LLM call),
+and writes to Apple Notes via AppleScript. It is idempotent — safe to run
+repeatedly.
 
 Exits with a clear message if `forever_notes_mode` is not `strict`.
 
