@@ -44,6 +44,7 @@ See [docs/runbooks/main-workflow.md](docs/runbooks/main-workflow.md) for the ful
 ```bash
 # Initial library setup (one-time)
 uv run notes export              # export from Apple Notes
+uv run notes backup              # safety backup before bulk changes → data/backups/
 uv run notes discover            # map thematic clusters → data/theme-maps/
 # → HUMAN: review theme map, add subfolders to taxonomy.local.yaml
 uv run notes classify            # classify notes → data/proposals/
@@ -52,16 +53,21 @@ uv run notes apply --dry-run     # preview moves
 uv run notes apply               # apply approved moves
 uv run notes dedup               # detect duplicates → data/dedup-proposals/
 # → HUMAN: review dedup proposal
-uv run notes apply-dedup         # dry-run preview (default)
+uv run notes apply-dedup         # preview deletions (dry-run by default)
 uv run notes apply-dedup --execute  # delete confirmed duplicates
 
 # Ongoing
+uv run notes backup              # timestamped backup to data/backups/
 uv run notes inbox               # triage Inbox captures
 uv run notes audit               # quality report (stale, stub, duplicate)
 uv run notes sync-hubs           # update ✱ Home and ✱ Hub notes (strict mode only)
+
+# Recovery
+uv run notes restore             # recreate notes lost during apply
+uv run notes repair-restored     # fix formatting after an iCloud Recently Deleted restore
 ```
 
-All commands accept `--dry-run` to preview without making changes.
+Most commands accept `--dry-run` to preview without making changes. `apply-dedup` is a dry-run by default; pass `--execute` to apply deletions.
 
 ## Documentation
 
