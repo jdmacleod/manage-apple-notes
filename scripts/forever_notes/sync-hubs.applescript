@@ -19,8 +19,9 @@
     - both empty                                          → place at iCloud account root
 
   Output (stdout):
-    "created" if a new note was made
-    "updated" if an existing note was found and updated
+    "created:<localId>" if a new note was made
+    "updated:<localId>" if an existing note was found and updated
+    where <localId> is the last path component of the note's x-coredata:// URI
 *)
 
 on run argv
@@ -37,7 +38,6 @@ on run argv
 	end if
 
 	tell application "Notes"
-		-- Locate or create the target note
 		set targetNote to missing value
 		set targetFolder to missing value
 
@@ -74,7 +74,7 @@ on run argv
 			end repeat
 		end if
 
-		-- Search for an existing note with this title
+		-- Search for an existing note with this title in the target folder
 		if targetFolder is not missing value then
 			set allNotes to notes of targetFolder
 		else
@@ -88,18 +88,31 @@ on run argv
 			end if
 		end repeat
 
-		if targetNote is not missing value then
-			-- Update existing note
+		-- Record whether the note already existed before we write
+		set wasExisting to (targetNote is not missing value)
+
+		-- Always use `set body` (not creation properties) so HTML is rendered correctly
+		if wasExisting then
 			set body of targetNote to noteBody
-			return "updated"
 		else
-			-- Create new note
 			if targetFolder is not missing value then
-				make new note at targetFolder with properties {name: noteTitle, body: noteBody}
+				set targetNote to make new note at targetFolder with properties {name: noteTitle}
 			else
-				make new note with properties {name: noteTitle, body: noteBody}
+				set targetNote to make new note with properties {name: noteTitle}
 			end if
-			return "created"
+			set body of targetNote to noteBody
+		end if
+
+		-- Extract local identifier from x-coredata:// URI (last path component)
+		set noteFullId to id of targetNote
+		set AppleScript's text item delimiters to "/"
+		set localId to item -1 of (every text item of noteFullId)
+		set AppleScript's text item delimiters to ""
+
+		if wasExisting then
+			return "updated:" & localId
+		else
+			return "created:" & localId
 		end if
 	end tell
 end run

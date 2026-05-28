@@ -174,13 +174,18 @@ def _generate_hub_body(
     return "\n".join(parts)
 
 
-def _write_note_applescript(title: str, body: str, folder: str | None, dry_run: bool, container: str = "") -> str:
-    """
-    Create or update a note in Apple Notes with the given title and body.
-    Returns a status string: "created", "updated", or "[DRY RUN]".
+def _write_note_applescript(
+    title: str, body: str, folder: str | None, dry_run: bool, container: str = ""
+) -> tuple[str, str]:
+    """Create or update a note in Apple Notes with the given title and body.
+
+    Returns (status, local_id).
+    status is one of: "created", "updated", "[DRY RUN]", "error".
+    local_id is the note's local identifier (e.g. "p123") for applenotes:// links,
+    or empty string for dry-run and error cases.
     """
     if dry_run:
-        return "[DRY RUN]"
+        return "[DRY RUN]", ""
 
     script = REPO_ROOT / "scripts" / "forever_notes" / "sync-hubs.applescript"
     cmd = [
@@ -196,8 +201,9 @@ def _write_note_applescript(title: str, body: str, folder: str | None, dry_run: 
     if result.returncode != 0 or result.stderr.strip():
         err = result.stderr.strip() or output
         console.print(f"[red][ERROR] {title}: {err}[/red]")
-        return "error"
-    return output or "updated"
+        return "error", ""
+    status, _, local_id = output.partition(":")
+    return status or "updated", local_id
 
 
 def _build_home_body(
@@ -205,14 +211,17 @@ def _build_home_body(
     theme_index: dict[str, dict],
     hub_prefix: str,
     home_title: str,
+    hub_ids: dict[str, str] | None = None,
 ) -> str:
     """Build the taxonomy-driven ✱ Home note body as HTML.
 
     Categories appear in taxonomy file order; headings use the folder: value.
-    Hub-eligible subfolders are prefixed with ✱; others appear as plain text.
+    Hub-eligible subfolders appear as applenotes:// links when hub_ids provides
+    their local identifiers; otherwise as plain text.
     The home_title is placed first so Apple Notes uses it as the note title.
     """
     hub_eligible: set[str] = set(theme_index.keys())
+    hub_ids = hub_ids or {}
     cats = taxonomy.get("forever_notes", {})
     parts: list[str] = [f"<h1>{html.escape(home_title)}</h1>"]
 
@@ -227,10 +236,14 @@ def _build_home_body(
             for sf in subfolders:
                 sf_name = sf["name"]
                 if sf_name in hub_eligible:
-                    title = _hub_title(theme_index[sf_name]["_sf_def"], hub_prefix)
+                    h_title = _hub_title(theme_index[sf_name]["_sf_def"], hub_prefix)
+                    local_id = hub_ids.get(h_title, "")
+                    if local_id:
+                        parts.append(f'<li><a href="applenotes://showNote?identifier={local_id}">{html.escape(h_title)}</a></li>')
+                    else:
+                        parts.append(f"<li>{html.escape(h_title)}</li>")
                 else:
-                    title = sf_name
-                parts.append(f"<li>{html.escape(title)}</li>")
+                    parts.append(f"<li>{html.escape(sf_name)}</li>")
             parts.append("</ul>")
 
     parts.append("<p>#ForeverNotes</p>")
@@ -287,6 +300,7 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
         console.print("[dim](dry-run — no writes)[/dim]\n")
 
     created = updated = errors = 0
+    hub_ids: dict[str, str] = {}  # hub_title → local_id for Home note links
 
     for theme_name, theme_data in sorted(theme_index.items()):
         sf_def = theme_data["_sf_def"]
@@ -297,7 +311,9 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
         console.print(f"  [bold]{h_title}[/bold] — {total} notes across {len(categories)} categor{'y' if len(categories) == 1 else 'ies'}")
 
         body = _generate_hub_body(sf_def, categories, hub_prefix)
-        status = _write_note_applescript(h_title, body, hub_folder, dry_run, container=container)
+        status, local_id = _write_note_applescript(h_title, body, hub_folder, dry_run, container=container)
+        if local_id:
+            hub_ids[h_title] = local_id
 
         if status == "created":
             console.print(f"    [green][CREATED][/green]")
@@ -310,11 +326,11 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
             console.print(f"    [dim][UPDATED][/dim]")
             updated += 1
 
-    # ✱ Home
+    # ✱ Home — built after Hubs so hub_ids contains their fresh local identifiers
     console.print(f"\n  [bold]{home_title}[/bold] — root index")
-    home_body = _build_home_body(taxonomy, theme_index, hub_prefix, home_title)
+    home_body = _build_home_body(taxonomy, theme_index, hub_prefix, home_title, hub_ids)
 
-    home_status = _write_note_applescript(home_title, home_body, home_folder, dry_run, container=container)
+    home_status, _ = _write_note_applescript(home_title, home_body, home_folder, dry_run, container=container)
     if home_status == "created":
         console.print(f"    [green][CREATED][/green]")
     elif home_status == "[DRY RUN]":
