@@ -79,18 +79,24 @@ def _hub_tag(subfolder_def: dict) -> str:
     return f"#{name}"
 
 
-def _note_link(title: str, nid: str) -> str:
-    """Return an HTML link to a note, or plain escaped text if no ID available.
+def _url_id(nid: str) -> str:
+    """Extract the numeric note identifier for use in applenotes:// URLs.
 
-    Derives the applenotes:// local identifier from the x-coredata:// URI's
-    last path component (e.g. x-coredata://UUID/ICNote/p123 → p123).
-    Links may break after iCloud sync conflicts or device migrations.
+    Apple Notes x-coredata:// URIs end in pNNN (e.g. x-coredata://UUID/ICNote/p123).
+    The applenotes://showNote?identifier= scheme requires the plain numeric part (123),
+    not the 'p'-prefixed form.
     """
+    raw = nid.rpartition("/")[2] if nid else ""
+    return raw[1:] if raw.startswith("p") else raw
+
+
+def _note_link(title: str, nid: str) -> str:
+    """Return an HTML link to a note, or plain escaped text if no ID available."""
     escaped = html.escape(title)
-    local_id = nid.rpartition("/")[2] if nid else ""
-    if not local_id:
+    uid = _url_id(nid)
+    if not uid:
         return escaped
-    return f'<a href="applenotes://showNote?identifier={local_id}">{escaped}</a>'
+    return f'<a href="applenotes://showNote?identifier={uid}">{escaped}</a>'
 
 
 def _build_theme_index(
@@ -172,6 +178,7 @@ def _generate_hub_body(
             parts.append(f"<li>{_note_link(title, nid)}</li>")
         parts.append("</ul>")
 
+    parts.append("<br>")
     parts.append(f"<p>#hub {tag} #ForeverNotes</p>")
     return "\n".join(parts)
 
@@ -232,7 +239,6 @@ def _build_home_body(
             continue
         heading = _folder_name(cat_val) or cat_key.capitalize()
         parts.append(f"<h2>{html.escape(heading)}</h2>")
-        parts.append("<br>")
         subfolders = _subfolders(cat_val)
         if subfolders:
             parts.append("<ul>")
@@ -241,14 +247,15 @@ def _build_home_body(
                 if sf_name in hub_eligible:
                     h_title = _hub_title(theme_index[sf_name]["_sf_def"], hub_prefix)
                     local_id = hub_ids.get(h_title, "")
-                    if local_id:
-                        parts.append(f'<li><a href="applenotes://showNote?identifier={local_id}">{html.escape(h_title)}</a></li>')
+                    uid = _url_id(local_id) if local_id else ""
+                    if uid:
+                        parts.append(f'<li><a href="applenotes://showNote?identifier={uid}">{html.escape(h_title)}</a></li>')
                     else:
                         parts.append(f"<li>{html.escape(h_title)}</li>")
                 else:
                     parts.append(f"<li>{html.escape(sf_name)}</li>")
             parts.append("</ul>")
-            parts.append("<br>")
+        parts.append("<br>")
 
     parts.append("<p>#ForeverNotes</p>")
     return "\n".join(parts)

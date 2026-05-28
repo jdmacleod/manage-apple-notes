@@ -66,9 +66,13 @@ stable identifier.
 ### `applenotes://` links in Hub notes
 
 `sync-hubs` writes Hub note bodies as HTML, with each note title linked via
-`applenotes://showNote?identifier=pNNNN`. The local identifier (`pNNNN`) is
-derived by taking the last path component of the `x-coredata://` URI from the
-export (e.g. `x-coredata://UUID/ICNote/p123` → `p123`).
+`applenotes://showNote?identifier=NNNN`. The numeric identifier is derived by
+taking the last path component of the `x-coredata://` URI from the export and
+stripping the leading `p` (e.g. `x-coredata://UUID/ICNote/p123` → `123`).
+
+**Important:** `applenotes://showNote?identifier=` requires the plain numeric
+form — passing the `p`-prefixed form (e.g. `p123`) is silently ignored and the
+link opens Notes without navigating to any note.
 
 These links are subject to the same instability as `x-coredata://` IDs above.
 Re-running `sync-hubs` after a fresh export regenerates the links from current
