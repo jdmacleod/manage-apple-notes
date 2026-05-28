@@ -21,9 +21,12 @@ tell application "Notes"
     repeat with acct in accounts
         repeat with aFolder in folders of acct
             set folderName to name of aFolder
-            if class of container of aFolder is folder then
-                set parentFolderName to name of container of aFolder
-            end if
+            set parentFolderName to ""
+            try
+                if class of container of aFolder is folder then
+                    set parentFolderName to name of container of aFolder
+                end if
+            end try
             repeat with aNote in notes of aFolder
                 -- folderName and parentFolderName are correct here
             end repeat
@@ -33,6 +36,10 @@ end tell
 ```
 
 This also avoids needing `container of aNote` entirely.
+
+**Caveat:** `container of aFolder` raises error -1728 ("Can't get container of…") for certain
+folders in secondary accounts (e.g. "On My Mac"). Always wrap the access in `try/end try` and
+default `parentFolderName` to `""` on error so the export continues rather than aborting.
 
 ### Why AppleScript, not SQLite
 
