@@ -5,6 +5,20 @@ use of this project.
 
 ---
 
+## Tested Platforms
+
+All behavior documented here has been observed on one or more of the following:
+
+| Device | Chip | OS |
+|---|---|---|
+| MacBook Pro (M4, 2024) | Apple M4 | macOS Tahoe 26.5 |
+| Mac mini (2018) | Intel Core i5 | macOS Sequoia 15.7.7 |
+| iPhone 16e | Apple A16 Bionic | iOS 26.4.2 |
+
+Platform-specific findings are noted where behavior differs between devices or OS versions.
+
+---
+
 ## Apple Notes Platform Behavior
 
 ### `every note` does not expose folder context on macOS Sequoia
