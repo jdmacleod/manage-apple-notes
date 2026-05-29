@@ -1,0 +1,19 @@
+{
+  "skill_name": "test-author",
+  "evals": [
+    {
+      "id": 1,
+      "name": "classify-notes-test-suite",
+      "prompt": "Write a pytest test file for test-author-workspace/fixtures/classify-notes/classify_notes.py. I need tests for call_api(), parse_classification(), and classify_all(). Make sure to cover the happy path, RateLimitError, malformed JSON from the model, and the dry-run flag.",
+      "expected_output": "Complete test file with: correct import of project functions, mock_anthropic fixture using pytest-mock not inline MagicMock, fixture JSON files for responses, test for RateLimitError re-raises, test for malformed JSON raises ValueError, test for dry_run=True making zero API calls, no real note content.",
+      "files": ["test-author-workspace/fixtures/classify-notes/classify_notes.py"]
+    },
+    {
+      "id": 2,
+      "name": "apply-proposals-dryrun-and-subprocess",
+      "prompt": "Write tests for test-author-workspace/fixtures/apply-proposals/apply_proposals.py. Focus on: (1) the dry-run flag suppresses all subprocess calls, (2) a CalledProcessError from osascript is not swallowed, (3) the move count return value is correct.",
+      "expected_output": "Test file with: subprocess.run mocked at subprocess level not wrapper level, dry_run=True test asserts subprocess.run called zero times, CalledProcessError test asserts it propagates, count return value assertion, fixture proposal JSON files with synthetic note IDs.",
+      "files": ["test-author-workspace/fixtures/apply-proposals/apply_proposals.py"]
+    }
+  ]
+}

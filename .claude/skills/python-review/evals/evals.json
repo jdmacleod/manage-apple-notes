@@ -1,0 +1,26 @@
+{
+  "skill_name": "python-review",
+  "evals": [
+    {
+      "id": 1,
+      "name": "bare-except-api-and-shell",
+      "prompt": "Review python-review-workspace/fixtures/bare-except/classify_notes.py before I run it against my notes library. I want to know if the API error handling and subprocess usage are safe.",
+      "expected_output": "Review catching: bare except in call_api(), shell=True in run_applescript(), os.path.join instead of pathlib, non-atomic write to proposals file, missing type annotations on public functions, no dry-run guard on classify_all(). Verdict SIGNIFICANT ISSUES.",
+      "files": ["python-review-workspace/fixtures/bare-except/classify_notes.py"]
+    },
+    {
+      "id": 2,
+      "name": "missing-dryrun-destructive-script",
+      "prompt": "Can you review python-review-workspace/fixtures/missing-dryrun/apply_proposals.py? This is the script that will actually delete and move notes, so I want to be sure it's safe.",
+      "expected_output": "Review catching: no --dry-run flag despite delete_note() and move_note() calls, apply_classifications and apply_dedup have no dry_run parameter, missing load_settings validation. Verdict SIGNIFICANT ISSUES because dry-run guard is absent on destructive operations.",
+      "files": ["python-review-workspace/fixtures/missing-dryrun/apply_proposals.py"]
+    },
+    {
+      "id": 3,
+      "name": "good-script-clean-review",
+      "prompt": "Please review python-review-workspace/fixtures/good-script/export_notes.py — this is a read-only export script I just wrote. Does it follow the project conventions?",
+      "expected_output": "Review finding no significant issues: load_settings validates required keys, subprocess uses check=True and shell=False, atomic write pattern used, type annotations present. Should note this is read-only so no dry-run guard needed. Verdict LOOKS GOOD.",
+      "files": ["python-review-workspace/fixtures/good-script/export_notes.py"]
+    }
+  ]
+}

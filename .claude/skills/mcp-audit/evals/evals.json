@@ -1,0 +1,26 @@
+{
+  "skill_name": "mcp-audit",
+  "evals": [
+    {
+      "id": 1,
+      "name": "clean-server-full-audit",
+      "prompt": "Audit the MCP server source code in mcp-audit-workspace/fixtures/clean-server/. This is version 1.4.1 of our local apple-notes-mcp fork. Check whether it is safe to use — look at network calls, file writes, dynamic execution, install hooks, and whether each tool does what it claims.",
+      "expected_output": "Structured audit report with PASS on all five categories and an APPROVED verdict. Should specifically note the clean package.json scripts block and that child_process is used only for osascript.",
+      "files": ["mcp-audit-workspace/fixtures/clean-server/"]
+    },
+    {
+      "id": 2,
+      "name": "network-calls-detected",
+      "prompt": "Review the MCP server in mcp-audit-workspace/fixtures/network-server/ before I upgrade from v1.4.1. It adds a search_notes tool. I want to know if anything in the new code raises security concerns.",
+      "expected_output": "Audit report that catches: (1) axios dependency in package.json, (2) TELEMETRY_ENDPOINT constant pointing to external URL, (3) trackEvent() calls in tool handlers sending folder names and search queries, (4) silent error swallowing hiding the exfiltration. Verdict should be REJECTED.",
+      "files": ["mcp-audit-workspace/fixtures/network-server/"]
+    },
+    {
+      "id": 3,
+      "name": "postinstall-hook-and-sqlite-cache",
+      "prompt": "I found a new Apple Notes MCP server on GitHub called 'apple-notes-mcp-hooky' v2.0.0. The files are in mcp-audit-workspace/fixtures/hooky-server/. Run a full audit before I consider installing it.",
+      "expected_output": "Audit report that catches: (1) postinstall hook in package.json running scripts/setup.js, (2) setup.js making an HTTPS POST to updates.notes-mcp.io with hostname and platform, (3) better-sqlite3 dependency, (4) SQLite database at ~/.cache/apple-notes-mcp/ persisting note body content, (5) scope creep: get_note is declared read-only but writes to a persistent cache outside the server directory. Verdict REJECTED.",
+      "files": ["mcp-audit-workspace/fixtures/hooky-server/"]
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "skill_name": "prompt-review",
+  "evals": [
+    {
+      "id": 1,
+      "name": "undelimited-injection-risk",
+      "prompt": "Review prompt-review-workspace/fixtures/undelimited/classify-notes.md — this is the prompt template I'm planning to use for note classification. Is it safe?",
+      "expected_output": "Review catching: note body undelimited (inline interpolation), no anti-injection instruction, output schema appears after note content, no worked example, no edge case rules for empty/short/non-English/code notes. Verdict INJECTION RISK.",
+      "files": ["prompt-review-workspace/fixtures/undelimited/classify-notes.md"]
+    },
+    {
+      "id": 2,
+      "name": "schema-after-content-partial",
+      "prompt": "Can you check prompt-review-workspace/fixtures/schema-after-content/classify-notes.md? I added delimiters and an anti-injection line but I'm not sure the structure is right.",
+      "expected_output": "Review catching: note content appears before taxonomy and output schema (schema placement wrong), no worked example, no edge case rules. Anti-injection instruction present (good). Verdict NEEDS FIXES.",
+      "files": ["prompt-review-workspace/fixtures/schema-after-content/classify-notes.md"]
+    },
+    {
+      "id": 3,
+      "name": "good-template-safe",
+      "prompt": "Review prompt-review-workspace/fixtures/good-template/classify-notes.md — I've tried to follow all the safety guidelines. Does this look correct?",
+      "expected_output": "Review finding: XML delimiters present, anti-injection instruction present, output schema before note content, worked examples including empty-note edge case, edge case rules for short/uncertain notes, taxonomy with descriptions. Verdict SAFE.",
+      "files": ["prompt-review-workspace/fixtures/good-template/classify-notes.md"]
+    }
+  ]
+}
