@@ -278,6 +278,22 @@ for the same theme (e.g. "Health", "Health & Fitness", "Fitness & Nutrition"). I
 run produces too many themes, increasing `theme_discovery_sample` or re-running often
 produces a cleaner consolidated result.
 
+### Anchored discovery — convergence across repeated runs
+
+By default (`theme_discovery_mode: "anchored"` in settings), `notes discover` injects all
+existing taxonomy subfolder paths into both the per-batch and synthesis prompts. The LLM is
+instructed to map themes to established paths before proposing new ones. This means:
+
+- Re-running discover on the same library after adding subfolders to `taxonomy.local.yaml`
+  produces the same `suggested_path` values for unchanged note clusters — theme names stabilise
+- The console output labels themes as "existing" or "new", and the theme map JSON includes
+  `established_paths` and `new_paths` keys for at-a-glance review
+- As the taxonomy matures, the "new proposals" count approaches zero — discover becomes a
+  validation pass rather than a re-invention pass
+
+Set `theme_discovery_mode: "full"` to ignore existing paths and get a fresh proposal (useful
+after a major library restructure or to reset the taxonomy entirely).
+
 ### Why deduplication runs after classification
 
 Running `notes dedup` after `notes classify` gives the dedup algorithm access to

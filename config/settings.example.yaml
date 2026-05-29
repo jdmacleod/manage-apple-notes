@@ -23,6 +23,8 @@ llm:
   provider: "anthropic"
   model: "claude-opus-4-6"   # or claude-sonnet-4-6 for cost/speed tradeoff
   batch_size: 20              # Notes per API call during bulk classification
+  theme_discovery_mode: "anchored"   # "anchored" = prefer existing taxonomy paths (default)
+                                     # "full" = ignore existing paths, propose from scratch
 
 # Ollama example:
 # llm:

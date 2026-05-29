@@ -24,7 +24,13 @@ from scripts.classify.classify_notes import (
     load_taxonomy,
     price_per_million,
 )
-from scripts.folder_utils import effective_max_depth, max_taxonomy_depth, nesting_mode
+from scripts.folder_utils import (
+    effective_max_depth,
+    enumerate_paths,
+    max_taxonomy_depth,
+    nesting_mode,
+    path_depth,
+)
 from scripts.providers import get_provider
 from scripts.run_logger import RunLogger, estimate_duration, logs_dir_path
 
@@ -50,19 +56,37 @@ def load_discover_prompt() -> str:
     return system_part.strip()
 
 
+def _established_paths(taxonomy: dict) -> list[str]:
+    """Return all subfolder paths (depth ≥ 2) currently defined in the taxonomy."""
+    fn = taxonomy.get("forever_notes", {})
+    return sorted(
+        {
+            p
+            for entry in fn.values()
+            for p in enumerate_paths(entry)
+            if path_depth(p) >= 2
+        }
+    )
+
+
 def inject_discover_taxonomy(
     system_prompt: str,
     taxonomy: dict,
     settings: dict | None = None,
 ) -> str:
-    """Replace {CATEGORIES} and {NESTING_GUIDANCE} in the discover prompt template."""
+    """Replace {CATEGORIES}, {ESTABLISHED_PATHS}, and {NESTING_GUIDANCE} in the discover prompt."""
     fn = taxonomy.get("forever_notes", {})
-    folders = [
-        _folder_name(fn[key]) for key, _ in _CATEGORY_META if key in fn and _folder_name(fn[key])
+    # Build "Folder — description" lines so the LLM knows each category's intent
+    category_lines = [
+        f"{_folder_name(fn[key])} — {desc}"
+        for key, desc in _CATEGORY_META
+        if key in fn and _folder_name(fn[key])
     ]
+
     mode = nesting_mode(settings)
     max_depth = effective_max_depth(settings)
     current_depth = max_taxonomy_depth(taxonomy)
+    discover_mode = (settings or {}).get("llm", {}).get("theme_discovery_mode", "anchored")
 
     if mode == "flat":
         guidance = "Do not suggest subfolders. All themes should map to top-level categories only."
@@ -79,8 +103,32 @@ def inject_discover_taxonomy(
             f"Add one additional tier only where a clear theme cluster warrants it."
         )
 
-    return system_prompt.replace("{CATEGORIES}", ", ".join(folders)).replace(
-        "{NESTING_GUIDANCE}", guidance
+    if mode == "flat" or discover_mode == "full":
+        established_block = (
+            "No subfolder paths are established yet. "
+            "Propose suggested_path values freely where theme clusters warrant them."
+        )
+    else:
+        paths = _established_paths(taxonomy)
+        if paths:
+            path_list = "\n".join(f"  - {p}" for p in paths)
+            established_block = (
+                "The following folder paths are already established in this taxonomy:\n"
+                f"{path_list}\n\n"
+                "For each theme, choose a suggested_path from this list wherever one fits. "
+                "Only propose a path NOT in this list when the theme has no adequate home "
+                "among the established paths. Prefer existing names over synonyms."
+            )
+        else:
+            established_block = (
+                "No subfolder paths are established yet. "
+                "Propose suggested_path values freely where theme clusters warrant them."
+            )
+
+    return (
+        system_prompt.replace("{CATEGORIES}", "\n".join(category_lines))
+        .replace("{ESTABLISHED_PATHS}", established_block)
+        .replace("{NESTING_GUIDANCE}", guidance)
     )
 
 
@@ -210,9 +258,12 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
 
     # ── Pre-compute synthesis prompt (no I/O) ────────────────────────────────
 
+    fn = taxonomy.get("forever_notes", {})
     mode = nesting_mode(settings)
     max_depth = effective_max_depth(settings)
     current_depth = max_taxonomy_depth(taxonomy)
+    discover_mode = (settings or {}).get("llm", {}).get("theme_discovery_mode", "anchored")
+
     if mode == "flat":
         nesting_guidance = "Do not suggest subfolders. All themes map to top-level categories only."
     elif mode == "deep":
@@ -229,6 +280,16 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
             f"e.g. 'Resources/Programming'."
         )
 
+    established = _established_paths(taxonomy)
+    if established and mode != "flat" and discover_mode != "full":
+        est_list = "\n".join(f"  - {p}" for p in established)
+        anchor_guidance = (
+            f"Established taxonomy paths — prefer these for suggested_path:\n{est_list}\n"
+            "Only propose a new path when no established path fits."
+        )
+    else:
+        anchor_guidance = "No established subfolder paths yet; propose freely."
+
     synthesis_prompt = (
         "You received theme lists from multiple batches of notes. "
         "Merge, deduplicate, and consolidate into a single ranked list. "
@@ -236,8 +297,9 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
         "Sum estimated_counts for merged themes. "
         f"Flag themes with estimated_count < {min_subfolder} as below the subfolder threshold. "
         f"{nesting_guidance} "
-        "Return a JSON object with a single 'themes' array using the same schema as before, "
-        "adding an optional 'suggested_path' field where appropriate."
+        f"{anchor_guidance} "
+        "Every theme must include a suggested_path field. "
+        "Return a JSON object with a single 'themes' array using the same schema as before."
     )
 
     # ── Discovery batches + synthesis (single progress bar) ──────────────────
@@ -253,6 +315,7 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
         TimeElapsedColumn(),
         TimeRemainingColumn(elapsed_when_finished=True),
         console=console,
+        speed_estimate_period=3600.0,
     ) as progress:
         # total=len(batches)+1 accounts for the synthesis call after discovery
         task = progress.add_task("Discovering themes...", total=len(batches) + 1)
@@ -300,12 +363,23 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
     above_threshold = [t for t in final_themes if (t.get("estimated_count") or 0) >= min_subfolder]
     below_threshold = [t for t in final_themes if (t.get("estimated_count") or 0) < min_subfolder]
 
+    established_set = set(established)
+    new_paths = sorted(
+        {
+            t["suggested_path"]
+            for t in final_themes
+            if t.get("suggested_path") and t["suggested_path"] not in established_set
+        }
+    )
+
     theme_map = {
         "generated_at": datetime.now(UTC).isoformat(),
         "source_export": str(export_path),
         "total_notes": len(all_notes),
         "subfolder_threshold": min_subfolder,
+        "established_paths": established,
         "themes": final_themes,
+        "new_paths": new_paths,
         "above_threshold": len(above_threshold),
         "below_threshold": len(below_threshold),
     }
@@ -315,10 +389,41 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
     output_path = THEME_MAPS_DIR / f"themes-{date_str}.json"
     output_path.write_text(json.dumps(theme_map, indent=2, ensure_ascii=False))
 
+    # ── Per-category breakdown ───────────────────────────────────────────────
+
+    top_level_folders = {
+        _folder_name(fn[key])
+        for key, _ in _CATEGORY_META
+        if key in fn and _folder_name(fn[key])
+    }
+    by_category: dict[str, list[dict]] = {}
+    for theme in final_themes:
+        sp = theme.get("suggested_path") or ""
+        top = sp.split("/")[0] if sp else ""
+        bucket = top if top in top_level_folders else "Uncategorised"
+        by_category.setdefault(bucket, []).append(theme)
+
+    existing_count = sum(
+        1 for t in final_themes if t.get("suggested_path") in established_set
+    )
+    new_count = len(final_themes) - existing_count
+
     console.print(f"\n[green]Done.[/green] Theme map written to [bold]{output_path}[/bold]")
-    console.print(f"  Themes found:        {len(final_themes)}")
+    new_label = f"  ({existing_count} existing paths, {new_count} new)" if established else ""
+    console.print(f"  Themes found:        {len(final_themes)}{new_label}")
     console.print(f"  Above threshold:     {len(above_threshold)}  (suggest subfolders)")
     console.print(f"  Below threshold:     {len(below_threshold)}  (keep flat)")
+
+    if by_category:
+        console.print("\n  [bold]By category:[/bold]")
+        for cat in sorted(by_category, key=lambda c: (c == "Uncategorised", c)):
+            themes_in_cat = by_category[cat]
+            new_in_cat = sum(
+                1 for t in themes_in_cat if t.get("suggested_path") not in established_set
+            )
+            new_suffix = f"  [dim]({new_in_cat} new)[/dim]" if new_in_cat else ""
+            console.print(f"    {cat + ':':<20} {len(themes_in_cat)} theme(s){new_suffix}")
+
     console.print("\n[bold]Next steps:[/bold]")
     console.print(f"  1. Review {output_path}")
     console.print("  2. Edit theme names, merge/split as needed")
@@ -329,6 +434,7 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
         summary={
             "notes_processed": len(summaries),
             "themes_found": len(final_themes),
+            "new_paths": len(new_paths),
             "above_threshold": len(above_threshold),
             "below_threshold": len(below_threshold),
             "batch_errors": batch_errors,

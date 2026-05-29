@@ -329,6 +329,7 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
         TimeElapsedColumn(),
         TimeRemainingColumn(elapsed_when_finished=True),
         console=console,
+        speed_estimate_period=3600.0,
     ) as progress:
         task = progress.add_task("Classifying...", total=len(batches))
         for i, batch in enumerate(batches):
