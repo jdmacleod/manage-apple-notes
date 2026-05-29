@@ -172,11 +172,14 @@ To specify a custom output path: `uv run notes audit --output /path/to/report.md
 
 | Section | What it means | Suggested action |
 |---|---|---|
-| **Stale Notes** | Not modified in >180 days, not in Archive | Move to Archive or delete |
-| **Stub Notes** | Body <50 characters | Expand, merge with another note, or delete |
+| **Library Statistics** | Note count by PARA category and age distribution | Orientation only — no action required |
+| **Inactive Projects** | In Projects, not modified in >90 days | Archive completed projects; reactivate stalled ones |
+| **Untitled Notes** | No meaningful title | Add a title so the note is findable |
+| **Stub Notes** | ≤5 combined title+body words, no attachments, not in Archive | Expand, merge with another note, or delete |
 | **Duplicate Titles** | Same or similar title in multiple notes | Merge or rename to clarify |
 | **Stale Inbox** | In Inbox >7 days | Process via `notes inbox` or delete |
 | **Stale Fleeting** | In Fleeting >30 days (Forever Notes taxonomy only) | Promote to Permanent/Literature or delete |
+| **Orphaned Notes** | Not in any taxonomy-defined folder | Run `notes classify` for move proposals, or add folder to taxonomy |
 | **Subfolder Candidates** | Flat folders large enough for subfolders | Run `notes discover`, add subfolders to taxonomy |
 
 For bulk moves, create a proposal JSON manually (matching the `proposal-YYYY-MM-DD.json`

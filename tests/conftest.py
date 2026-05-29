@@ -35,8 +35,8 @@ def minimal_settings() -> dict:
         "export": {"max_body_chars": 2000, "skip_empty": True},
         "folder_nesting": "natural",
         "thresholds": {
-            "stale_days": 180,
-            "stub_chars": 50,
+            "inactive_project_days": 90,
+            "stub_words": 5,
             "inbox_stale_days": 7,
             "fleeting_stale_days": 30,
             "min_notes_for_subfolder": 8,
