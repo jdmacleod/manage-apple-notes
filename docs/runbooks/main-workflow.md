@@ -77,8 +77,8 @@ uv run notes restore --dry-run   # preview what would be recreated
 uv run notes restore             # recreate missing notes from the backup
 ```
 
-`restore` uses `data/missing-notes-*.json` (if present) to target specific notes;
-without it, all notes in the backup that are absent from the current library are recreated.
+`restore` compares the backup against the current library (matched by title within
+each folder) and recreates every note that is absent. No manual list is needed.
 
 If restored notes have formatting corruption (title repeated, newlines collapsed —
 a known symptom of iCloud Recently Deleted restoration):
@@ -87,6 +87,10 @@ a known symptom of iCloud Recently Deleted restoration):
 uv run notes repair-restored --dry-run   # preview what would be rewritten
 uv run notes repair-restored             # rebuild body HTML from backup content
 ```
+
+For targeted restoration of a specific subset of notes, create a
+`data/missing-notes-YYYY-MM-DD.json` file manually and pass it with
+`uv run notes restore --missing data/missing-notes-YYYY-MM-DD.json`.
 
 Each move is logged: `[MOVED]` (green), `[SKIP]` (yellow), `[ERROR]` (red).
 To apply a specific proposal file: `uv run notes apply data/proposals/proposal-YYYY-MM-DD.json`.

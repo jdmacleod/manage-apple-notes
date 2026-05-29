@@ -77,7 +77,7 @@ def audit(
         help="Preview checks and note counts without writing a report.",
     ),
 ):
-    """Scan the library for stale, duplicate, and orphaned notes."""
+    """Scan the library for quality issues and write a Markdown report."""
     run_audit(export_file=None, output_override=output, dry_run=dry_run)
 
 
