@@ -33,7 +33,7 @@ def discover(
         help="Preview batches and estimated cost without calling the API.",
     ),
 ) -> None:
-    """Discover thematic clusters in the library for subfolder planning (Pass 1)."""
+    """Discover thematic clusters in the library for subfolder planning."""
     run_discover(export_file=export_file, dry_run=dry_run)
 
 
@@ -128,7 +128,7 @@ def restore(
         help="Preview what would be created without touching Notes.",
     ),
 ) -> None:
-    """Restore notes from a backup — recreates notes lost during apply operations."""
+    """Restore notes from a backup — recreates notes lost during move operations."""
     run_restore(backup_file=backup_file, missing_file=missing_file, dry_run=dry_run)
 
 
@@ -165,7 +165,7 @@ def dedup(
         help="Run algorithmic passes only; no LLM calls and no file written.",
     ),
 ) -> None:
-    """Detect duplicate notes and write a dedup proposal (Pass 3)."""
+    """Detect duplicate notes and write a dedup proposal."""
     run_dedup(export_file=export_file, proposal_file=proposal, dry_run=dry_run)
 
 
