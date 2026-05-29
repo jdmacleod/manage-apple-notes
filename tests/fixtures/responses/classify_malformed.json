@@ -1,0 +1,15 @@
+{
+  "id": "msg_02ABC",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "I think this note belongs in Resources/Reference because it contains technical reference material."
+    }
+  ],
+  "model": "claude-sonnet-4-6",
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {"input_tokens": 312, "output_tokens": 24}
+}

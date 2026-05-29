@@ -1,0 +1,42 @@
+[
+  {
+    "id": "x-coredata://test-uuid/ICNote/p1",
+    "title": "Router reset procedure",
+    "body": "Hold reset button for 10 seconds. Default login: admin/admin.",
+    "folder": "Inbox",
+    "folder_path": "Inbox",
+    "modified": "2026-05-01T10:00:00"
+  },
+  {
+    "id": "x-coredata://test-uuid/ICNote/p2",
+    "title": "Website redesign notes",
+    "body": "Meeting notes from 2026-03-01. Action items: wireframes by Friday.",
+    "folder": "Projects",
+    "folder_path": "Projects",
+    "modified": "2026-03-01T09:00:00"
+  },
+  {
+    "id": "x-coredata://test-uuid/ICNote/p3",
+    "title": "Python typing guide",
+    "body": "Use type hints on all functions. Run mypy before committing.",
+    "folder": "Resources",
+    "folder_path": "Resources/Reference",
+    "modified": "2026-04-15T14:00:00"
+  },
+  {
+    "id": "x-coredata://test-uuid/ICNote/p4",
+    "title": "",
+    "body": "",
+    "folder": "Inbox",
+    "folder_path": "Inbox",
+    "modified": "2026-05-20T08:00:00"
+  },
+  {
+    "id": "x-coredata://test-uuid/ICNote/p5",
+    "title": "Python typing guide",
+    "body": "Type hints help catch bugs early. Use mypy and ruff.",
+    "folder": "Resources",
+    "folder_path": "Resources/Reference",
+    "modified": "2026-05-10T11:00:00"
+  }
+]

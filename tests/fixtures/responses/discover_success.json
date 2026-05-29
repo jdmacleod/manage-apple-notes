@@ -1,0 +1,15 @@
+{
+  "id": "msg_03DEF",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"themes\": [{\"name\": \"Technology\", \"estimated_count\": 12, \"sample_titles\": [\"Router setup\", \"VPN config\"]}, {\"name\": \"Health\", \"estimated_count\": 3, \"sample_titles\": [\"Diet plan\"]}]}"
+    }
+  ],
+  "model": "claude-sonnet-4-6",
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {"input_tokens": 500, "output_tokens": 64}
+}

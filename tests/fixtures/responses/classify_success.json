@@ -1,0 +1,15 @@
+{
+  "id": "msg_01XFDUDYJgAACzvnptvVoYEL",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "[{\"id\": \"x-coredata://test-uuid/ICNote/p1\", \"proposed_folder\": \"Resources\", \"proposed_subfolder\": \"Reference\", \"confidence\": \"high\", \"reason\": \"Technical reference material\"}]"
+    }
+  ],
+  "model": "claude-sonnet-4-6",
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {"input_tokens": 312, "output_tokens": 32}
+}

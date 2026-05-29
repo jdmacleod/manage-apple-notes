@@ -1,0 +1,15 @@
+{
+  "id": "msg_04GHI",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "[{\"group_id\": 1, \"is_duplicate\": true, \"resolution\": \"delete\", \"keep_id\": \"x-coredata://test-uuid/ICNote/p3\", \"delete_ids\": [\"x-coredata://test-uuid/ICNote/p5\"], \"keep_reason\": \"More complete content\"}]"
+    }
+  ],
+  "model": "claude-sonnet-4-6",
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {"input_tokens": 400, "output_tokens": 48}
+}
