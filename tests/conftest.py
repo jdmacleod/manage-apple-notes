@@ -40,6 +40,7 @@ def minimal_settings() -> dict:
             "inbox_stale_days": 7,
             "fleeting_stale_days": 30,
             "min_notes_for_subfolder": 8,
+            "min_notes_for_hub": 3,
             "max_folder_depth": 3,
         },
         "deduplication": {

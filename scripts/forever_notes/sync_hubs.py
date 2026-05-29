@@ -341,21 +341,23 @@ def _build_home_body(
             continue
         heading = _folder_name(cat_val) or cat_key.capitalize()
         parts.append(f"<h2>{html.escape(heading)}</h2>")
-        subfolders = _subfolders(cat_val)
-        if subfolders:
+        deep_paths = [p for p in enumerate_paths(cat_val) if path_depth(p) >= 2]
+        if deep_paths:
             parts.append("<ul>")
-            for sf in subfolders:
-                sf_name = sf["name"]
-                if sf_name in hub_eligible:
-                    h_title = _hub_title(theme_index[sf_name]["_sf_def"], hub_prefix)
+            for path in deep_paths:
+                depth = path_depth(path)
+                leaf = path.split("/")[-1]
+                indent = "&nbsp;&nbsp;" * (depth - 2)
+                if leaf in hub_eligible:
+                    h_title = _hub_title(theme_index[leaf]["_sf_def"], hub_prefix)
                     if use_links:
                         uuid = hub_uuids.get(h_title, "")
                         local_id = hub_ids.get(h_title, "")
-                        parts.append(f"<li>{_note_link(h_title, local_id, uuid)}</li>")
+                        parts.append(f"<li>{indent}{_note_link(h_title, local_id, uuid)}</li>")
                     else:
-                        parts.append(f"<li>{html.escape(h_title)}</li>")
+                        parts.append(f"<li>{indent}{html.escape(h_title)}</li>")
                 else:
-                    parts.append(f"<li>{html.escape(sf_name)}</li>")
+                    parts.append(f"<li>{indent}{html.escape(leaf)}</li>")
             parts.append("</ul>")
         parts.append("<br>")
 
@@ -385,7 +387,7 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
     container = tl_cfg.get("name", "") if tl_cfg.get("enabled", False) else ""
 
     thresholds = settings.get("thresholds", {})
-    min_count = int(thresholds.get("min_notes_for_subfolder", 8))
+    min_count = int(thresholds.get("min_notes_for_hub", 3))
 
     taxonomy = load_taxonomy()
 

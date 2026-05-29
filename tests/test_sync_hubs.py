@@ -219,6 +219,36 @@ class TestBuildHomeBody:
         body = _build_home_body(minimal_taxonomy, theme_index, "✱ ", "✱ Home")
         assert "Reference" in body
 
+    def test_deep_subfolder_appears_in_home(self, deep_taxonomy: dict) -> None:
+        theme_index = {
+            "Python": {
+                "_sf_def": {"name": "Python", "hub_title": "✱ Python"},
+                "categories": {"Resources": [("Note", "p1")]},
+                "total": 4,
+            }
+        }
+        body = _build_home_body(deep_taxonomy, theme_index, "✱ ", "✱ Home")
+        assert "✱ Python" in body
+
+    def test_deep_subfolder_indented_after_parent(self, deep_taxonomy: dict) -> None:
+        theme_index = {
+            "Programming": {
+                "_sf_def": {"name": "Programming"},
+                "categories": {"Resources": [("Note", "p1")]},
+                "total": 4,
+            },
+            "Python": {
+                "_sf_def": {"name": "Python"},
+                "categories": {"Resources": [("Note", "p2")]},
+                "total": 4,
+            },
+        }
+        body = _build_home_body(deep_taxonomy, theme_index, "✱ ", "✱ Home")
+        prog_pos = body.index("Programming")
+        python_pos = body.index("Python")
+        assert python_pos > prog_pos
+        assert "&nbsp;" in body
+
 
 class TestLookupUuids:
     def test_empty_keys_returns_empty(self) -> None:
@@ -325,7 +355,7 @@ class TestRunSyncHubs:
         settings = {
             "forever_notes_mode": "strict",
             "strict_mode": {"hub_title_prefix": "✱ ", "home_note_title": "✱ Home"},
-            "thresholds": {"min_notes_for_subfolder": 5},
+            "thresholds": {"min_notes_for_hub": 5},
             "toplevel_folder": {"enabled": False},
         }
         mocker.patch("scripts.forever_notes.sync_hubs.load_settings", return_value=settings)
@@ -348,7 +378,7 @@ class TestRunSyncHubs:
         settings = {
             "forever_notes_mode": "strict",
             "strict_mode": {"hub_title_prefix": "✱ "},
-            "thresholds": {"min_notes_for_subfolder": 5},
+            "thresholds": {"min_notes_for_hub": 5},
             "toplevel_folder": {"enabled": False},
         }
         mocker.patch("scripts.forever_notes.sync_hubs.load_settings", return_value=settings)

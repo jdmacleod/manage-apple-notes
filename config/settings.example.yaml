@@ -51,7 +51,8 @@ deduplication:
   default_resolution: "review"   # conservative default: flag for human, don't auto-delete
 
 thresholds:
-  min_notes_for_subfolder: 8     # themes with fewer notes stay flat in parent
+  min_notes_for_subfolder: 8     # themes with fewer notes stay flat — used by discover/classify
+  min_notes_for_hub: 3           # subfolders with fewer notes don't get a Hub note in sync-hubs
   max_folder_depth: 3            # absolute ceiling on proposed nesting (Apple Notes max: 5)
   stale_days: 180                # notes unmodified longer than this → flag for archive
   stub_chars: 50                 # notes shorter than this → flag as stub
