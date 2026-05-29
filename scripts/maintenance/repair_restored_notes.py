@@ -83,7 +83,7 @@ def run_repair_restored(
     dry_run: bool = False,
 ) -> None:
     settings = load_settings()
-    logger = RunLogger("repair-restored", logs_dir_path(settings))
+    logger = RunLogger("repair", logs_dir_path(settings))
     # Resolve missing-notes file
     missing_path: Path | None
     if missing_file:

@@ -70,7 +70,7 @@ def classify(
 
 
 @app.command()
-def inbox(
+def triage(
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -133,7 +133,7 @@ def restore(
 
 
 @app.command()
-def apply(
+def move(
     proposal_file: str | None = typer.Argument(
         default=None,
         help="Proposal JSON to apply. Defaults to most recent file in data/proposals/.",
@@ -144,7 +144,7 @@ def apply(
         help="Preview moves without touching Notes.",
     ),
 ) -> None:
-    """Apply an approved move proposal to Apple Notes."""
+    """Move notes in Apple Notes according to an approved proposal."""
     run_apply(proposal_file=proposal_file, dry_run=dry_run)
 
 
@@ -170,7 +170,7 @@ def dedup(
 
 
 @app.command()
-def apply_dedup(
+def purge(
     proposal_file: str | None = typer.Argument(
         default=None,
         help="Dedup proposal JSON to apply. Defaults to most recent file in data/dedup-proposals/.",
@@ -181,7 +181,7 @@ def apply_dedup(
         help="Actually delete notes. Without this flag the command is a dry-run.",
     ),
 ) -> None:
-    """Apply an approved dedup proposal — delete confirmed duplicates."""
+    """Purge confirmed duplicates from an approved dedup proposal."""
     run_apply_dedup(proposal_file=proposal_file, execute=execute)
 
 
@@ -202,7 +202,7 @@ def sync_hubs(
 
 
 @app.command()
-def repair_restored(
+def repair(
     missing_file: str | None = typer.Option(
         None,
         "--missing-file",

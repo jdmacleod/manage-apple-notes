@@ -39,7 +39,7 @@ def run_apply(proposal_file: str | None, dry_run: bool) -> None:
 
     settings = load_settings()
     cfg = settings.get("toplevel_folder", {})
-    logger = RunLogger("apply", logs_dir_path(settings))
+    logger = RunLogger("move", logs_dir_path(settings))
 
     script = REPO_ROOT / "scripts" / "execute" / "apply-proposal.applescript"
     cmd = ["osascript", str(script)]

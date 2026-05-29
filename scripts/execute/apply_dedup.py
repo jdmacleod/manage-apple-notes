@@ -38,7 +38,7 @@ def run_apply_dedup(proposal_file: str | None, execute: bool) -> None:
         raise SystemExit(1)
 
     settings = load_settings()
-    logger = RunLogger("apply-dedup", logs_dir_path(settings))
+    logger = RunLogger("purge", logs_dir_path(settings))
 
     script = REPO_ROOT / "scripts" / "execute" / "apply-dedup-proposal.applescript"
     cmd = ["osascript", str(script)]

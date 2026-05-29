@@ -80,19 +80,19 @@ def run_inbox(dry_run: bool) -> None:
         console.print(f"Model:        {model}")
         console.print(f"Est. tokens:  ~{est_total_tokens:,}")
         console.print(f"Est. cost:    {cost_str}")
-        estimate = estimate_duration("inbox", len(notes), logs_dir_path(settings))
+        estimate = estimate_duration("triage", len(notes), logs_dir_path(settings))
         if estimate:
             console.print(f"Est. time:    {estimate}")
         console.print(f"\nOutput would be written to: {PROPOSALS_DIR}/inbox-{date_str}.json")
-        RunLogger("inbox", logs_dir_path(settings)).finish(
+        RunLogger("triage", logs_dir_path(settings)).finish(
             summary={"notes_processed": len(notes), "batches": len(batches)},
             dry_run=True,
             params={"model": model, "batch_size": batch_size},
         )
         return
 
-    logger = RunLogger("inbox", logs_dir_path(settings))
-    estimate = estimate_duration("inbox", len(notes), logs_dir_path(settings))
+    logger = RunLogger("triage", logs_dir_path(settings))
+    estimate = estimate_duration("triage", len(notes), logs_dir_path(settings))
     if estimate:
         console.print(f"[dim]Estimated duration: {estimate}[/dim]")
 

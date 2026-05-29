@@ -530,7 +530,7 @@ osascript scripts/execute/apply-proposal.applescript [--dry-run] <proposal.json>
 Same pipeline as `classify_notes.py` but scoped to the inbox folder. Subfolder-aware —
 uses the same taxonomy and prompt injection.
 
-**CLI:** `uv run notes inbox [--dry-run]`
+**CLI:** `uv run notes triage [--dry-run]`
 
 ---
 
@@ -699,13 +699,13 @@ Run after classification so that `proposed_folder_path` enriches the similarity 
 2. Implement `apply-dedup-proposal.applescript` with `--execute` flag requirement
 3. Implement `apply_dedup.py` Python wrapper with streaming colored output
 4. Write `prompts/deduplicate-notes.md` LLM review prompt
-5. Add `dedup` and `apply-dedup` commands to `scripts/cli.py`
-6. Update `docs/runbooks/main-workflow.md` to add dedup step after apply
+5. Add `dedup` and `purge` commands to `scripts/cli.py`
+6. Update `docs/runbooks/main-workflow.md` to add dedup step after move
 
 **Human checkpoints:**
 - Review dedup proposal JSON — confirm `keep_id` choices before approving
-- Run `uv run notes apply-dedup` (dry-run by default) to preview deletions
-- Run `uv run notes apply-dedup --execute` to apply
+- Run `uv run notes purge` (dry-run by default) to preview deletions
+- Run `uv run notes purge --execute` to apply
 - Note: deletions move notes to Recently Deleted (recoverable for 30 days)
 
 ### Phase 3c — Hub Setup *(strict mode only)*

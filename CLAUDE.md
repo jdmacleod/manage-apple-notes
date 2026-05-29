@@ -62,9 +62,9 @@ The full workflow uses only `notes` commands:
 uv run notes export              # export from Apple Notes
 uv run notes discover            # Pass 1: discover themes → data/theme-maps/
 uv run notes classify            # Pass 2: classify notes → data/proposals/
-uv run notes apply --dry-run     # preview moves (uses latest proposal)
-uv run notes apply               # apply approved proposal to Apple Notes
-uv run notes inbox               # inbox triage only
+uv run notes move --dry-run      # preview moves (uses latest proposal)
+uv run notes move                # move notes per approved proposal
+uv run notes triage              # triage Inbox notes only
 uv run notes audit               # quality report → data/reports/
 ```
 

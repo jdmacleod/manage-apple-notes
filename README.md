@@ -56,22 +56,22 @@ uv run notes draft               # generate editable taxonomy YAML → data/taxo
 # → HUMAN: review draft, copy to config/taxonomy.local.yaml
 uv run notes classify            # classify notes → data/proposals/
 # → HUMAN: review proposal JSON
-uv run notes apply --dry-run     # preview moves
-uv run notes apply               # apply approved moves
+uv run notes move --dry-run      # preview moves
+uv run notes move                # move notes per approved proposal
 uv run notes dedup               # detect duplicates → data/dedup-proposals/
 # → HUMAN: review dedup proposal
-uv run notes apply-dedup         # preview deletions (dry-run by default)
-uv run notes apply-dedup --execute  # delete confirmed duplicates
+uv run notes purge               # preview deletions (dry-run by default)
+uv run notes purge --execute     # delete confirmed duplicates
 
 # Ongoing
 uv run notes backup              # timestamped backup to data/backups/
-uv run notes inbox               # triage Inbox captures
+uv run notes triage              # triage Inbox captures
 uv run notes audit               # quality report (stale, stub, duplicate)
 uv run notes sync-hubs           # update ✱ Home and ✱ Hub notes (strict mode only)
 
 # Recovery
-uv run notes restore             # recreate notes lost during apply
-uv run notes repair-restored     # fix formatting after an iCloud Recently Deleted restore
+uv run notes restore             # recreate notes lost during move
+uv run notes repair              # fix formatting after an iCloud Recently Deleted restore
 ```
 
 Most commands accept `--dry-run` to preview without making changes. `apply-dedup` is a dry-run by default; pass `--execute` to apply deletions.

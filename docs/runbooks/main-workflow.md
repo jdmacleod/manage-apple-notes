@@ -74,11 +74,11 @@ not included; for full media backup use Time Machine or a filesystem clone of
 
 ```bash
 uv run notes backup            # export + save timestamped copy to data/backups/
-uv run notes apply --dry-run   # preview every move with colored output
-uv run notes apply             # apply approved moves to Apple Notes
+uv run notes move --dry-run    # preview every move with colored output
+uv run notes move              # move notes per approved proposal
 ```
 
-If notes go missing after an apply run:
+If notes go missing after a move run:
 
 ```bash
 uv run notes restore --dry-run   # preview what would be recreated
@@ -92,8 +92,8 @@ If restored notes have formatting corruption (title repeated, newlines collapsed
 a known symptom of iCloud Recently Deleted restoration):
 
 ```bash
-uv run notes repair-restored --dry-run   # preview what would be rewritten
-uv run notes repair-restored             # rebuild body HTML from backup content
+uv run notes repair --dry-run   # preview what would be rewritten
+uv run notes repair             # rebuild body HTML from backup content
 ```
 
 For targeted restoration of a specific subset of notes, create a
@@ -101,7 +101,7 @@ For targeted restoration of a specific subset of notes, create a
 `uv run notes restore --missing data/missing-notes-YYYY-MM-DD.json`.
 
 Each move is logged: `[MOVED]` (green), `[SKIP]` (yellow), `[ERROR]` (red).
-To apply a specific proposal file: `uv run notes apply data/proposals/proposal-YYYY-MM-DD.json`.
+To move from a specific proposal file: `uv run notes move data/proposals/proposal-YYYY-MM-DD.json`.
 
 ### Step 5 — Deduplicate (Pass 3, optional)
 
@@ -118,11 +118,11 @@ Exact duplicates are recommended for deletion automatically; fuzzy pairs are rev
 **→ HUMAN REVIEW:** Open `data/dedup-proposals/dedup-YYYY-MM-DD.json` and review each group.
 For `resolution: "delete"` groups, verify `keep_id` is the right note to keep. Remove any
 group you disagree with. Groups with `resolution: "review"` are flagged for manual triage in
-Apple Notes and are not touched by the apply script.
+Apple Notes and are not touched by the purge command.
 
 ```bash
-uv run notes apply-dedup             # dry-run by default — shows [DRY RUN] for each deletion
-uv run notes apply-dedup --execute   # actually delete; notes go to Recently Deleted (30-day recovery)
+uv run notes purge             # dry-run by default — shows [DRY RUN] for each deletion
+uv run notes purge --execute   # actually delete; notes go to Recently Deleted (30-day recovery)
 ```
 
 ### After setup
@@ -136,7 +136,7 @@ uv run notes apply-dedup --execute   # actually delete; notes go to Recently Del
   uv run notes sync-hubs
   ```
   `sync-hubs` builds hub content from the latest export, so the export must reflect the
-  current state of Apple Notes — including any manual moves made after `notes apply`.
+  current state of Apple Notes — including any manual moves made after `notes move`.
 
 ---
 
@@ -147,9 +147,9 @@ Run whenever your Inbox accumulates ~10+ unprocessed notes.
 **Time estimate:** 2–5 min (plus review time).
 
 ```bash
-uv run notes export               # re-export if you've captured new notes
-uv run notes inbox --dry-run      # preview cost
-uv run notes inbox                # → data/proposals/inbox-YYYY-MM-DD.json
+uv run notes export                # re-export if you've captured new notes
+uv run notes triage --dry-run      # preview cost
+uv run notes triage                # → data/proposals/inbox-YYYY-MM-DD.json
 ```
 
 **→ HUMAN REVIEW:** Open `data/proposals/inbox-YYYY-MM-DD.json`. Check the `moves` array;
@@ -159,8 +159,8 @@ delete them as you see fit.
 
 ```bash
 uv run notes backup
-uv run notes apply --dry-run data/proposals/inbox-YYYY-MM-DD.json
-uv run notes apply data/proposals/inbox-YYYY-MM-DD.json
+uv run notes move --dry-run data/proposals/inbox-YYYY-MM-DD.json
+uv run notes move data/proposals/inbox-YYYY-MM-DD.json
 ```
 
 If using strict mode, re-export then sync Hub notes after applying moves. This is also
@@ -197,11 +197,11 @@ To specify a custom output path: `uv run notes audit --output /path/to/report.md
 | **Untitled Notes** | No meaningful title | Add a title so the note is findable |
 | **Stub Notes** | ≤5 combined title+body words, no attachments, not in Archive | Expand, merge with another note, or delete |
 | **Duplicate Titles** | Same or similar title in multiple notes | Merge or rename to clarify |
-| **Stale Inbox** | In Inbox >7 days | Process via `notes inbox` or delete |
+| **Stale Inbox** | In Inbox >7 days | Process via `notes triage` or delete |
 | **Stale Fleeting** | In Fleeting >30 days (Forever Notes taxonomy only) | Promote to Permanent/Literature or delete |
 | **Orphaned Notes** | Not in any taxonomy-defined folder | Run `notes classify` for move proposals, or add folder to taxonomy |
 | **Subfolder Candidates** | Flat folders large enough for subfolders | Run `notes discover`, add subfolders to taxonomy |
 
 For bulk moves, create a proposal JSON manually (matching the `proposal-YYYY-MM-DD.json`
-schema) and apply it with `uv run notes apply`. For individual notes, it's often faster to
-act directly in Apple Notes.
+schema) and run `uv run notes move`. For individual notes, it's often faster to act
+directly in Apple Notes.

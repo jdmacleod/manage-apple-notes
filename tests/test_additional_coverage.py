@@ -54,9 +54,9 @@ class TestCliCommands:
         assert result.exit_code == 0
         mock.assert_called_once()
 
-    def test_inbox_invokes_run_inbox(self, mocker: MagicMock) -> None:
+    def test_triage_invokes_run_inbox(self, mocker: MagicMock) -> None:
         mock = mocker.patch("scripts.cli.run_inbox")
-        result = runner.invoke(app, ["inbox", "--dry-run"])
+        result = runner.invoke(app, ["triage", "--dry-run"])
         assert result.exit_code == 0
         mock.assert_called_once_with(dry_run=True)
 
@@ -72,25 +72,25 @@ class TestCliCommands:
         assert result.exit_code == 0
         mock.assert_called_once_with(export_file=None, proposal_file=None, dry_run=True)
 
-    def test_apply_invokes_run_apply(self, mocker: MagicMock, tmp_path: Path) -> None:
+    def test_move_invokes_run_apply(self, mocker: MagicMock, tmp_path: Path) -> None:
         mock = mocker.patch("scripts.cli.run_apply")
         proposal = tmp_path / "proposal.json"
         proposal.write_text("{}")
-        result = runner.invoke(app, ["apply", str(proposal)])
+        result = runner.invoke(app, ["move", str(proposal)])
         assert result.exit_code == 0
         mock.assert_called_once()
 
-    def test_apply_dedup_invokes_run_apply_dedup(self, mocker: MagicMock, tmp_path: Path) -> None:
+    def test_purge_invokes_run_apply_dedup(self, mocker: MagicMock, tmp_path: Path) -> None:
         mock = mocker.patch("scripts.cli.run_apply_dedup")
         proposal = tmp_path / "dedup.json"
         proposal.write_text("{}")
-        result = runner.invoke(app, ["apply-dedup", str(proposal)])
+        result = runner.invoke(app, ["purge", str(proposal)])
         assert result.exit_code == 0
         mock.assert_called_once()
 
-    def test_repair_restored_invokes_run_repair(self, mocker: MagicMock) -> None:
+    def test_repair_invokes_run_repair_restored(self, mocker: MagicMock) -> None:
         mock = mocker.patch("scripts.cli.run_repair_restored")
-        result = runner.invoke(app, ["repair-restored", "--dry-run"])
+        result = runner.invoke(app, ["repair", "--dry-run"])
         assert result.exit_code == 0
         mock.assert_called_once_with(missing_file=None, old_export_file=None, dry_run=True)
 
