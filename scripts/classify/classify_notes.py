@@ -18,6 +18,7 @@ from scripts.folder_utils import (
     path_depth,
 )
 from scripts.providers import LLMProvider, get_provider
+from scripts.run_logger import RunLogger, estimate_duration, logs_dir_path
 
 console = Console()
 
@@ -60,7 +61,9 @@ def load_taxonomy() -> dict:
 def find_latest_export() -> Path:
     files = sorted(EXPORTS_DIR.glob("notes-*.json"), reverse=True)
     if not files:
-        raise FileNotFoundError(f"No export files found in {EXPORTS_DIR}. Run export-notes.applescript first.")
+        raise FileNotFoundError(
+            f"No export files found in {EXPORTS_DIR}. Run export-notes.applescript first."
+        )
     return files[0]
 
 
@@ -98,15 +101,15 @@ def _subfolder_str(subfolders: list[str]) -> str:
 # Canonical ordering and descriptions for all supported taxonomy categories.
 # Only categories present in the user's taxonomy are included in the prompt.
 _CATEGORY_META = [
-    ("inbox",      "temporary capture, no subfolders"),
-    ("fleeting",   "quick thoughts, no subfolders"),
+    ("inbox", "temporary capture, no subfolders"),
+    ("fleeting", "quick thoughts, no subfolders"),
     ("literature", "notes tied to a specific source (book, article, talk)"),
-    ("permanent",  "atomic, evergreen concepts in your own words"),
-    ("projects",   "notes tied to a specific active project"),
-    ("areas",      "ongoing responsibilities and reference for areas of life/work"),
-    ("resources",  "reference material, how-tos, collections"),
-    ("archive",    "inactive, completed, or outdated notes"),
-    ("review",     "use when classification is genuinely unclear, no subfolders"),
+    ("permanent", "atomic, evergreen concepts in your own words"),
+    ("projects", "notes tied to a specific active project"),
+    ("areas", "ongoing responsibilities and reference for areas of life/work"),
+    ("resources", "reference material, how-tos, collections"),
+    ("archive", "inactive, completed, or outdated notes"),
+    ("review", "use when classification is genuinely unclear, no subfolders"),
 ]
 
 
@@ -145,16 +148,10 @@ def inject_taxonomy(
                 leaf = path.split("/")[-1]
                 lines.append(f"{indent}{leaf}  [{path}]")
 
-    catchall = (
-        _folder_name(fn.get("review"))
-        or _folder_name(fn.get("inbox"))
-        or "Inbox"
-    )
+    catchall = _folder_name(fn.get("review")) or _folder_name(fn.get("inbox")) or "Inbox"
 
-    return (
-        system_prompt
-        .replace("{CATEGORY_LIST}", "\n".join(lines))
-        .replace("{CATCHALL}", catchall)
+    return system_prompt.replace("{CATEGORY_LIST}", "\n".join(lines)).replace(
+        "{CATCHALL}", catchall
     )
 
 
@@ -172,7 +169,16 @@ def _extract_json_array(text: str) -> list:
 
 def _is_context_overflow(exc: Exception) -> bool:
     msg = str(exc).lower()
-    return any(k in msg for k in ("exceed_context", "context_length", "context size", "context window", "maximum context"))
+    return any(
+        k in msg
+        for k in (
+            "exceed_context",
+            "context_length",
+            "context size",
+            "context window",
+            "maximum context",
+        )
+    )
 
 
 def classify_batch(
@@ -212,14 +218,17 @@ def classify_batch_resilient(
     try:
         return classify_batch(provider, notes_batch, system_prompt, settings)
     except Exception as exc:
-        is_recoverable = _is_context_overflow(exc) or isinstance(exc, (ValueError, json.JSONDecodeError))
+        is_recoverable = _is_context_overflow(exc) or isinstance(
+            exc, (ValueError, json.JSONDecodeError)
+        )
         if is_recoverable and len(notes_batch) > 1:
             mid = len(notes_batch) // 2
-            console.print(f"[yellow]Batch failed ({type(exc).__name__}) — splitting ({len(notes_batch)} → {mid}+{len(notes_batch) - mid})[/yellow]")
-            return (
-                classify_batch_resilient(provider, notes_batch[:mid], system_prompt, settings)
-                + classify_batch_resilient(provider, notes_batch[mid:], system_prompt, settings)
+            console.print(
+                f"[yellow]Batch failed ({type(exc).__name__}) — splitting ({len(notes_batch)} → {mid}+{len(notes_batch) - mid})[/yellow]"
             )
+            return classify_batch_resilient(
+                provider, notes_batch[:mid], system_prompt, settings
+            ) + classify_batch_resilient(provider, notes_batch[mid:], system_prompt, settings)
         console.print(f"[yellow]Warning:[/yellow] skipping note — batch of 1 failed: {exc}")
         return []
 
@@ -266,7 +275,11 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
         est_total_tokens = len(notes) * est_tokens_per_note + len(batches) * est_system_tokens
         est_tokens_per_batch = batch_size * est_tokens_per_note + est_system_tokens
         ppm = price_per_million(model)
-        cost_str = f"~${(est_total_tokens / 1_000_000) * ppm:.2f}  (@ ${ppm:.2f}/M input tokens)" if ppm is not None else "$0.00 (local inference)"
+        cost_str = (
+            f"~${(est_total_tokens / 1_000_000) * ppm:.2f}  (@ ${ppm:.2f}/M input tokens)"
+            if ppm is not None
+            else "$0.00 (local inference)"
+        )
         date_str = datetime.now().strftime("%Y-%m-%d")
 
         console.print("[bold]Dry run — no API calls will be made.[/bold]\n")
@@ -277,8 +290,21 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
         console.print(f"Model:        {model}")
         console.print(f"Est. tokens:  ~{est_total_tokens:,}  (~{est_tokens_per_batch:,}/batch)")
         console.print(f"Est. cost:    {cost_str}")
+        estimate = estimate_duration("classify", len(notes), logs_dir_path(settings))
+        if estimate:
+            console.print(f"Est. time:    {estimate}")
         console.print(f"\nOutput would be written to: {PROPOSALS_DIR}/proposal-{date_str}.json")
+        RunLogger("classify", logs_dir_path(settings)).finish(
+            summary={"notes_processed": len(notes), "batches": len(batches)},
+            dry_run=True,
+            params={"export_file": str(export_path), "model": model, "batch_size": batch_size},
+        )
         return
+
+    logger = RunLogger("classify", logs_dir_path(settings))
+    estimate = estimate_duration("classify", len(notes), logs_dir_path(settings))
+    if estimate:
+        console.print(f"[dim]Estimated duration: {estimate}[/dim]")
 
     fn = taxonomy.get("forever_notes", {})
     review_folder = _folder_name(fn.get("review", ""))
@@ -287,9 +313,15 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
     needs_review: list[dict] = []
     no_change: list[dict] = []
     note_index = {n["id"]: n for n in notes}
+    batch_errors = 0
 
-    for batch in track(batches, description="Classifying..."):
+    for i, batch in enumerate(track(batches, description="Classifying...")):
         results = classify_batch_resilient(provider, batch, system_prompt, settings)
+        if not results:
+            logger.event("batch", batch=i + 1, count=len(batch), status="error")
+            batch_errors += 1
+        else:
+            logger.event("batch", batch=i + 1, count=len(batch), status="ok")
 
         for result in results:
             note_id = result.get("id", "")
@@ -304,35 +336,43 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
                 pf = result.get("proposed_folder", "")
                 ps = result.get("proposed_subfolder") or ""
                 proposed_folder_path_raw = f"{pf}/{ps}" if ps else pf
-            proposed_folder_path = clamp_path(proposed_folder_path_raw, effective_max_depth(settings))
+            proposed_folder_path = clamp_path(
+                proposed_folder_path_raw, effective_max_depth(settings)
+            )
             parts = proposed_folder_path.split("/", 1)
             proposed_folder = parts[0]
             proposed_subfolder = parts[1] if len(parts) > 1 else None
 
             if confidence == "low" or proposed_folder == review_folder:
-                needs_review.append({
-                    "id": note_id,
-                    "title": note.get("title", ""),
-                    "current_folder": current_folder,
-                    "reason": reason,
-                })
+                needs_review.append(
+                    {
+                        "id": note_id,
+                        "title": note.get("title", ""),
+                        "current_folder": current_folder,
+                        "reason": reason,
+                    }
+                )
             elif proposed_folder_path == current_folder or proposed_folder == current_folder:
-                no_change.append({
-                    "id": note_id,
-                    "title": note.get("title", ""),
-                    "current_folder": current_folder,
-                })
+                no_change.append(
+                    {
+                        "id": note_id,
+                        "title": note.get("title", ""),
+                        "current_folder": current_folder,
+                    }
+                )
             else:
-                moves.append({
-                    "id": note_id,
-                    "title": note.get("title", ""),
-                    "current_folder": current_folder,
-                    "proposed_folder": proposed_folder,
-                    "proposed_subfolder": proposed_subfolder,
-                    "proposed_folder_path": proposed_folder_path,
-                    "confidence": confidence,
-                    "reason": reason,
-                })
+                moves.append(
+                    {
+                        "id": note_id,
+                        "title": note.get("title", ""),
+                        "current_folder": current_folder,
+                        "proposed_folder": proposed_folder,
+                        "proposed_subfolder": proposed_subfolder,
+                        "proposed_folder_path": proposed_folder_path,
+                        "confidence": confidence,
+                        "reason": reason,
+                    }
+                )
 
     PROPOSALS_DIR.mkdir(parents=True, exist_ok=True)
     date_str = datetime.now(UTC).strftime("%Y-%m-%d")
@@ -351,3 +391,15 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
     console.print(f"  Moves:        {len(moves)}")
     console.print(f"  Needs review: {len(needs_review)}")
     console.print(f"  No change:    {len(no_change)}")
+
+    logger.finish(
+        summary={
+            "notes_processed": len(notes),
+            "moves": len(moves),
+            "needs_review": len(needs_review),
+            "no_change": len(no_change),
+            "batch_errors": batch_errors,
+        },
+        dry_run=False,
+        params={"export_file": str(export_path), "model": model, "batch_size": batch_size},
+    )

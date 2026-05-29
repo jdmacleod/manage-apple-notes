@@ -11,6 +11,7 @@ from pathlib import Path
 from rich.console import Console
 
 from scripts.classify.classify_notes import find_latest_export, load_settings
+from scripts.run_logger import RunLogger, logs_dir_path
 
 console = Console()
 
@@ -53,9 +54,15 @@ def run_export() -> Path:
         patched = _strip_container_prefix(notes, container_name)
         export_path.write_text(json.dumps(notes, indent=2, ensure_ascii=False))
         if patched:
-            console.print(f"  [dim]Stripped '{container_name}/' prefix from {patched} folder path(s)[/dim]")
+            console.print(
+                f"  [dim]Stripped '{container_name}/' prefix from {patched} folder path(s)[/dim]"
+            )
 
     console.print(f"[green]Exported[/green] {len(notes)} notes → {export_path}")
+    RunLogger("export", logs_dir_path(settings)).finish(
+        summary={"notes_exported": len(notes)},
+        params={"export_file": str(export_path)},
+    )
     return export_path
 
 
@@ -72,4 +79,10 @@ def run_backup() -> None:
         "[dim]Note: this backup captures text content only — images, attachments, "
         "and formatting are not included. For full media backup use Time Machine or "
         "a clone of ~/Library/Group Containers/group.com.apple.notes/[/dim]"
+    )
+    settings = load_settings()
+    notes = json.loads(backup_path.read_text())
+    RunLogger("backup", logs_dir_path(settings)).finish(
+        summary={"notes_exported": len(notes), "backup_path": str(backup_path)},
+        params={"export_file": str(export_path)},
     )

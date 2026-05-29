@@ -37,6 +37,7 @@ paths:
   proposals_dir: "data/proposals"
   dedup_proposals_dir: "data/dedup-proposals"
   reports_dir: "data/reports"
+  logs_dir: "data/logs"           # run logs — one JSON file per command execution
 
 export:
   include_body: true

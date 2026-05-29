@@ -18,6 +18,7 @@ from pathlib import Path
 from rich.console import Console
 
 from scripts.classify.classify_notes import load_settings
+from scripts.run_logger import RunLogger, logs_dir_path
 
 console = Console()
 
@@ -72,6 +73,7 @@ def run_restore(
     dry_run: bool = False,
 ) -> None:
     settings = load_settings()
+    logger = RunLogger("restore", logs_dir_path(settings))
     tl_cfg = settings.get("toplevel_folder", {})
     container = tl_cfg.get("name", "") if tl_cfg.get("enabled", False) else ""
 
@@ -87,7 +89,9 @@ def run_restore(
                 backup_path = _find_latest(EXPORTS_DIR, "notes-*.json")
                 console.print("[yellow]No backup found; using latest export as source.[/yellow]")
             except FileNotFoundError:
-                console.print("[red]No backup or export file found. Run 'notes backup' first.[/red]")
+                console.print(
+                    "[red]No backup or export file found. Run 'notes backup' first.[/red]"
+                )
                 raise SystemExit(1) from None
 
     if not backup_path.exists():
@@ -106,7 +110,9 @@ def run_restore(
     if missing_file:
         missing_path = Path(missing_file)
     else:
-        candidates = sorted(DATA_DIR.glob("missing-notes-*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        candidates = sorted(
+            DATA_DIR.glob("missing-notes-*.json"), key=lambda p: p.stat().st_mtime, reverse=True
+        )
         missing_path = candidates[0] if candidates else None
 
     if missing_path and missing_path.exists():
@@ -122,7 +128,9 @@ def run_restore(
                     proposal_destinations[title] = entry
         console.print(f"  {len(missing_titles or set())} missing note title(s) to restore")
     else:
-        console.print("[yellow]No missing-notes file found — restoring all notes in backup.[/yellow]")
+        console.print(
+            "[yellow]No missing-notes file found — restoring all notes in backup.[/yellow]"
+        )
         for n in backup_notes:
             title = n.get("title", "")
             folder_path = n.get("folder_path") or n.get("folder", "")
@@ -136,6 +144,7 @@ def run_restore(
         return
 
     console.print(f"\n[bold]{len(entries)}[/bold] note(s) queued for restore.")
+    logger.event("queued", count=len(entries))
     if dry_run:
         console.print("[dim](dry-run — no changes will be made)[/dim]")
 
@@ -154,24 +163,36 @@ def run_restore(
         cmd += ["--container", container]
     cmd.append(tmp_path)
 
+    created = exists = errors = 0
     try:
-        proc = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
-        )
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         assert proc.stdout is not None
         for line in iter(proc.stdout.readline, ""):
             line = line.rstrip()
             if line.startswith("[CREATED]"):
                 console.print(f"[green]{line}[/green]")
+                logger.event("note", line=line, status="CREATED")
+                created += 1
             elif line.startswith("[EXISTS]"):
                 console.print(f"[dim]{line}[/dim]")
+                logger.event("note", line=line, status="EXISTS")
+                exists += 1
             elif line.startswith("[DRY RUN]"):
                 console.print(f"[cyan]{line}[/cyan]")
+                logger.event("note", line=line, status="DRY_RUN")
             elif line.startswith("[ERROR]"):
                 console.print(f"[red]{line}[/red]")
+                logger.event("note", line=line, status="ERROR")
+                logger.error(line)
+                errors += 1
             elif line:
                 console.print(line)
         proc.wait()
+        logger.finish(
+            summary={"created": created, "exists": exists, "errors": errors},
+            dry_run=dry_run,
+            params={"backup_file": str(backup_path)},
+        )
         if proc.returncode != 0:
             raise SystemExit(proc.returncode)
     finally:

@@ -15,12 +15,15 @@ class LLMProvider(Protocol):
     def name(self) -> str: ...
     @property
     def model(self) -> str: ...
-    def classify_messages(self, system_prompt: str, user_content: str, max_tokens: int = 4096) -> str: ...
+    def classify_messages(
+        self, system_prompt: str, user_content: str, max_tokens: int = 4096
+    ) -> str: ...
 
 
 class AnthropicProvider:
     def __init__(self, model: str) -> None:
         import anthropic
+
         self._client = anthropic.Anthropic()
         self._model = model
 
@@ -32,11 +35,15 @@ class AnthropicProvider:
     def model(self) -> str:
         return self._model
 
-    def classify_messages(self, system_prompt: str, user_content: str, max_tokens: int = 4096) -> str:
+    def classify_messages(
+        self, system_prompt: str, user_content: str, max_tokens: int = 4096
+    ) -> str:
         response = self._client.messages.create(
             model=self._model,
             max_tokens=max_tokens,
-            system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
+            system=[
+                {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}
+            ],
             messages=[{"role": "user", "content": user_content}],
         )
         return response.content[0].text
@@ -45,6 +52,7 @@ class AnthropicProvider:
 class OllamaProvider:
     def __init__(self, model: str, timeout: float = 1200.0, dry_run: bool = False) -> None:
         import openai
+
         raw = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
         base_url = raw if raw.endswith("/v1") else f"{raw}/v1"
         self._client = openai.OpenAI(base_url=base_url, api_key="ollama", timeout=timeout)
@@ -59,10 +67,7 @@ class OllamaProvider:
         except urllib.error.HTTPError:
             pass  # server responded — Ollama is up
         except (urllib.error.URLError, OSError):
-            sys.exit(
-                f"Ollama is not responding at {raw}\n"
-                "Is Ollama running?  Try: ollama serve"
-            )
+            sys.exit(f"Ollama is not responding at {raw}\nIs Ollama running?  Try: ollama serve")
 
     @property
     def name(self) -> str:
@@ -72,7 +77,9 @@ class OllamaProvider:
     def model(self) -> str:
         return self._model
 
-    def classify_messages(self, system_prompt: str, user_content: str, max_tokens: int = 4096) -> str:
+    def classify_messages(
+        self, system_prompt: str, user_content: str, max_tokens: int = 4096
+    ) -> str:
         response = self._client.chat.completions.create(
             model=self._model,
             max_tokens=max_tokens,

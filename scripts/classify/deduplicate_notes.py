@@ -14,6 +14,7 @@ import yaml
 from rich.console import Console
 
 from scripts.providers import get_provider
+from scripts.run_logger import RunLogger, logs_dir_path
 
 console = Console()
 
@@ -90,18 +91,20 @@ def _build_entries(notes: list[dict], proposal_index: dict) -> list[dict]:
         )
         body = note.get("body", "") or ""
         normalized = _normalize_body(body)
-        entries.append({
-            "id": note_id,
-            "title": note.get("title", ""),
-            "folder": note.get("folder", ""),
-            "folder_path": note.get("folder_path") or note.get("folder", ""),
-            "proposed_folder_path": proposed_folder_path,
-            "modified": note.get("modified", ""),
-            "word_count": _word_count(body),
-            "body": body,
-            "_normalized": normalized,
-            "_hash": _md5(normalized) if normalized else None,
-        })
+        entries.append(
+            {
+                "id": note_id,
+                "title": note.get("title", ""),
+                "folder": note.get("folder", ""),
+                "folder_path": note.get("folder_path") or note.get("folder", ""),
+                "proposed_folder_path": proposed_folder_path,
+                "modified": note.get("modified", ""),
+                "word_count": _word_count(body),
+                "body": body,
+                "_normalized": normalized,
+                "_hash": _md5(normalized) if normalized else None,
+            }
+        )
     return entries
 
 
@@ -145,15 +148,17 @@ def pass1_exact(entries: list[dict], preview_chars: int) -> tuple[list[dict], se
         if len(group_notes) < 2:
             continue
         keep_id, keep_reason = _choose_keep(group_notes)
-        groups.append({
-            "duplicate_type": "exact",
-            "resolution": "delete",
-            "notes": [_note_summary(n, preview_chars) for n in group_notes],
-            "keep_id": keep_id,
-            "delete_ids": [n["id"] for n in group_notes if n["id"] != keep_id],
-            "keep_reason": keep_reason,
-            "review_note": None,
-        })
+        groups.append(
+            {
+                "duplicate_type": "exact",
+                "resolution": "delete",
+                "notes": [_note_summary(n, preview_chars) for n in group_notes],
+                "keep_id": keep_id,
+                "delete_ids": [n["id"] for n in group_notes if n["id"] != keep_id],
+                "keep_reason": keep_reason,
+                "review_note": None,
+            }
+        )
         for n in group_notes:
             consumed.add(n["id"])
     return groups, consumed
@@ -292,8 +297,23 @@ def run_dedup(export_file: str | None, proposal_file: str | None, dry_run: bool)
             f"\n[bold]Dry run complete.[/bold] "
             f"{len(exact_groups)} exact group(s), {len(candidates)} fuzzy pair(s) found."
         )
-        console.print("Run without --dry-run to review fuzzy candidates with the LLM and write a proposal.")
+        console.print(
+            "Run without --dry-run to review fuzzy candidates with the LLM and write a proposal."
+        )
+        RunLogger("dedup", logs_dir_path(settings)).finish(
+            summary={
+                "notes_processed": len(entries),
+                "exact_groups": len(exact_groups),
+                "fuzzy_candidates": len(candidates),
+            },
+            dry_run=True,
+            params={"export_file": str(export_path)},
+        )
         return
+
+    logger = RunLogger("dedup", logs_dir_path(settings))
+    logger.event("pass", n=1, count=len(exact_groups), status="ok")
+    logger.event("pass", n=2, count=len(candidates), status="ok")
 
     # Pass 3: LLM review of fuzzy candidates
     llm_groups: list[dict] = []
@@ -303,8 +323,10 @@ def run_dedup(export_file: str | None, proposal_file: str | None, dry_run: bool)
         console.print(f"Pass 3: reviewing {len(candidates)} pair(s) with {provider.model}…")
         try:
             llm_results = pass3_llm(candidates, system_prompt, provider, preview_chars)
+            logger.event("pass", n=3, count=len(candidates), status="ok")
         except Exception as exc:
             console.print(f"[yellow]Warning:[/yellow] LLM review failed: {exc}")
+            logger.error(f"pass3 LLM failed: {exc}")
             llm_results = []
 
         result_by_gid = {r.get("group_id"): r for r in llm_results}
@@ -318,7 +340,10 @@ def run_dedup(export_file: str | None, proposal_file: str | None, dry_run: bool)
                 "duplicate_type": "near_duplicate",
                 "similarity_score": round(score / 100, 2),
                 "resolution": resolution,
-                "notes": [_note_summary(note_a, preview_chars), _note_summary(note_b, preview_chars)],
+                "notes": [
+                    _note_summary(note_a, preview_chars),
+                    _note_summary(note_b, preview_chars),
+                ],
             }
             if resolution == "delete":
                 group["keep_id"] = result.get("keep_id")
@@ -371,3 +396,17 @@ def run_dedup(export_file: str | None, proposal_file: str | None, dry_run: bool)
     console.print(f"  Near duplicates:    {summary['near_duplicates']}")
     console.print(f"  Recommended delete: {summary['recommended_delete']}")
     console.print(f"  Needs review:       {summary['needs_review']}")
+
+    logger.finish(
+        summary={
+            "notes_processed": len(entries),
+            "total_groups": summary["total_groups"],
+            "exact_duplicates": summary["exact_duplicates"],
+            "near_duplicates": summary["near_duplicates"],
+            "llm_reviewed": summary["llm_reviewed"],
+            "recommended_delete": summary["recommended_delete"],
+            "needs_review": summary["needs_review"],
+        },
+        dry_run=False,
+        params={"export_file": str(export_path), "source_proposal": source_proposal},
+    )

@@ -112,7 +112,11 @@ class TestFindSubfolderCandidates:
 
     def test_depth_two_path_candidate_when_max_depth_three(self) -> None:
         notes = [
-            {"folder": "Resources", "folder_path": "Resources/Programming", "title": f"Python guide {i}"}
+            {
+                "folder": "Resources",
+                "folder_path": "Resources/Programming",
+                "title": f"Python guide {i}",
+            }
             for i in range(10)
         ]
         candidates = _find_subfolder_candidates(notes, {"Resources"}, min_notes=8, max_depth=3)
@@ -120,7 +124,11 @@ class TestFindSubfolderCandidates:
 
     def test_depth_two_path_excluded_when_at_max_depth(self) -> None:
         notes = [
-            {"folder": "Resources", "folder_path": "Resources/Programming", "title": f"Python guide {i}"}
+            {
+                "folder": "Resources",
+                "folder_path": "Resources/Programming",
+                "title": f"Python guide {i}",
+            }
             for i in range(10)
         ]
         candidates = _find_subfolder_candidates(notes, {"Resources"}, min_notes=3, max_depth=2)

@@ -19,6 +19,7 @@ from scripts.classify.classify_notes import (
 )
 from scripts.folder_utils import effective_max_depth, max_taxonomy_depth, nesting_mode
 from scripts.providers import get_provider
+from scripts.run_logger import RunLogger, estimate_duration, logs_dir_path
 
 console = Console()
 
@@ -50,9 +51,7 @@ def inject_discover_taxonomy(
     """Replace {CATEGORIES} and {NESTING_GUIDANCE} in the discover prompt template."""
     fn = taxonomy.get("forever_notes", {})
     folders = [
-        _folder_name(fn[key])
-        for key, _ in _CATEGORY_META
-        if key in fn and _folder_name(fn[key])
+        _folder_name(fn[key]) for key, _ in _CATEGORY_META if key in fn and _folder_name(fn[key])
     ]
     mode = nesting_mode(settings)
     max_depth = effective_max_depth(settings)
@@ -73,16 +72,23 @@ def inject_discover_taxonomy(
             f"Add one additional tier only where a clear theme cluster warrants it."
         )
 
-    return (
-        system_prompt
-        .replace("{CATEGORIES}", ", ".join(folders))
-        .replace("{NESTING_GUIDANCE}", guidance)
+    return system_prompt.replace("{CATEGORIES}", ", ".join(folders)).replace(
+        "{NESTING_GUIDANCE}", guidance
     )
 
 
 def _is_context_overflow(exc: Exception) -> bool:
     msg = str(exc).lower()
-    return any(k in msg for k in ("exceed_context", "context_length", "context size", "context window", "maximum context"))
+    return any(
+        k in msg
+        for k in (
+            "exceed_context",
+            "context_length",
+            "context size",
+            "context window",
+            "maximum context",
+        )
+    )
 
 
 def _discover_batch(provider, system_prompt: str, batch: list) -> list:
@@ -100,8 +106,12 @@ def _discover_batch(provider, system_prompt: str, batch: list) -> list:
     except Exception as exc:
         if _is_context_overflow(exc) and len(batch) > 1:
             mid = len(batch) // 2
-            console.print(f"[yellow]Context overflow — splitting batch ({len(batch)} → {mid}+{len(batch)-mid})[/yellow]")
-            return _discover_batch(provider, system_prompt, batch[:mid]) + _discover_batch(provider, system_prompt, batch[mid:])
+            console.print(
+                f"[yellow]Context overflow — splitting batch ({len(batch)} → {mid}+{len(batch) - mid})[/yellow]"
+            )
+            return _discover_batch(provider, system_prompt, batch[:mid]) + _discover_batch(
+                provider, system_prompt, batch[mid:]
+            )
         raise
 
 
@@ -131,7 +141,9 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
 
     llm_cfg = settings.get("llm") or settings.get("claude", {})
     sample_size = llm_cfg.get("theme_discovery_sample", _DEFAULT_SAMPLE)
-    min_subfolder = settings.get("thresholds", {}).get("min_notes_for_subfolder", _MIN_SUBFOLDER_DEFAULT)
+    min_subfolder = settings.get("thresholds", {}).get(
+        "min_notes_for_subfolder", _MIN_SUBFOLDER_DEFAULT
+    )
     provider = get_provider(settings, dry_run=dry_run)
     model = provider.model
 
@@ -169,24 +181,44 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
         console.print(f"Model:          {model}")
         console.print(f"Est. tokens:    ~{est_total_tokens:,}")
         console.print(f"Est. cost:      {cost_str}")
+        estimate = estimate_duration("discover", len(summaries), logs_dir_path(settings))
+        if estimate:
+            console.print(f"Est. time:      {estimate}")
         console.print(f"\nOutput would be written to: {THEME_MAPS_DIR}/themes-{date_str}.json")
         console.print("\nNext steps after reviewing the theme map:")
         console.print("  1. Edit theme names in the JSON (merge, split, rename as needed)")
         console.print("  2. Add approved subfolder names to config/taxonomy.local.yaml")
         console.print("  3. Run: uv run notes classify")
+        RunLogger("discover", logs_dir_path(settings)).finish(
+            summary={"notes_processed": len(summaries), "batches": len(batches)},
+            dry_run=True,
+            params={"export_file": str(export_path), "model": model, "sample_size": sample_size},
+        )
         return
+
+    logger = RunLogger("discover", logs_dir_path(settings))
+    estimate = estimate_duration("discover", len(summaries), logs_dir_path(settings))
+    if estimate:
+        console.print(f"[dim]Estimated duration: {estimate}[/dim]")
 
     # ── Discovery batches ────────────────────────────────────────────────────
 
     raw_theme_lists: list[list] = []
+    batch_errors = 0
 
-    for batch in track(batches, description="Discovering themes..."):
+    for i, batch in enumerate(track(batches, description="Discovering themes...")):
         themes = _discover_batch(provider, system_prompt, batch)
         if themes:
             raw_theme_lists.append(themes)
+            logger.event("batch", batch=i + 1, count=len(batch), status="ok")
+        else:
+            logger.event("batch", batch=i + 1, count=len(batch), status="error")
+            batch_errors += 1
 
     if not raw_theme_lists:
-        console.print("[red]No themes found in any batch. Check the prompt template and LLM output.[/red]")
+        console.print(
+            "[red]No themes found in any batch. Check the prompt template and LLM output.[/red]"
+        )
         raise SystemExit(1)
 
     # ── Synthesis call — merge and deduplicate themes across batches ─────────
@@ -231,7 +263,9 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
         final_themes = synthesized.get("themes", all_raw)
     except Exception as exc:
         if _is_context_overflow(exc):
-            console.print("[yellow]Synthesis context overflow — skipping dedup, using raw theme list.[/yellow]")
+            console.print(
+                "[yellow]Synthesis context overflow — skipping dedup, using raw theme list.[/yellow]"
+            )
         else:
             console.print(f"[yellow]Synthesis error — using raw theme list. ({exc})[/yellow]")
         final_themes = all_raw
@@ -265,3 +299,15 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
     console.print("  2. Edit theme names, merge/split as needed")
     console.print("  3. Add approved subfolders to config/taxonomy.local.yaml")
     console.print("  4. Run: uv run notes classify")
+
+    logger.finish(
+        summary={
+            "notes_processed": len(summaries),
+            "themes_found": len(final_themes),
+            "above_threshold": len(above_threshold),
+            "below_threshold": len(below_threshold),
+            "batch_errors": batch_errors,
+        },
+        dry_run=False,
+        params={"export_file": str(export_path), "model": model, "sample_size": sample_size},
+    )

@@ -54,7 +54,10 @@ class TestEnumeratePaths:
         entry = {
             "folder": "Resources",
             "subfolders": [
-                {"name": "Programming", "subfolders": [{"name": "Systems", "subfolders": ["Networking"]}]}
+                {
+                    "name": "Programming",
+                    "subfolders": [{"name": "Systems", "subfolders": ["Networking"]}],
+                }
             ],
         }
         assert enumerate_paths(entry) == [
@@ -116,11 +119,15 @@ class TestPathComponents:
 
 class TestMaxTaxonomyDepth:
     def test_flat_taxonomy(self) -> None:
-        taxonomy = {"forever_notes": {"inbox": {"folder": "Inbox"}, "archive": {"folder": "Archive"}}}
+        taxonomy = {
+            "forever_notes": {"inbox": {"folder": "Inbox"}, "archive": {"folder": "Archive"}}
+        }
         assert max_taxonomy_depth(taxonomy) == 1
 
     def test_two_level_taxonomy(self) -> None:
-        taxonomy = {"forever_notes": {"resources": {"folder": "Resources", "subfolders": ["Cooking"]}}}
+        taxonomy = {
+            "forever_notes": {"resources": {"folder": "Resources", "subfolders": ["Cooking"]}}
+        }
         assert max_taxonomy_depth(taxonomy) == 2
 
     def test_three_level_taxonomy(self) -> None:
@@ -181,7 +188,9 @@ class TestEffectiveMaxDepth:
         assert effective_max_depth({"thresholds": {"max_folder_depth": 4}}) == 4
 
     def test_clamped_to_apple_notes_max(self) -> None:
-        assert effective_max_depth({"thresholds": {"max_folder_depth": 99}}) == APPLE_NOTES_MAX_DEPTH
+        assert (
+            effective_max_depth({"thresholds": {"max_folder_depth": 99}}) == APPLE_NOTES_MAX_DEPTH
+        )
 
     def test_depth_of_one(self) -> None:
         assert effective_max_depth({"thresholds": {"max_folder_depth": 1}}) == 1

@@ -120,8 +120,13 @@ class TestInjectTaxonomy:
 
 class TestProposalPathDerivation:
     def test_proposed_folder_path_primary(self) -> None:
-        result = {"proposed_folder_path": "Resources/Programming/Python", "confidence": "high", "reason": "x"}
+        result = {
+            "proposed_folder_path": "Resources/Programming/Python",
+            "confidence": "high",
+            "reason": "x",
+        }
         from scripts.folder_utils import clamp_path, effective_max_depth
+
         path = clamp_path(result.get("proposed_folder_path", ""), effective_max_depth(None))
         parts = path.split("/", 1)
         assert parts[0] == "Resources"

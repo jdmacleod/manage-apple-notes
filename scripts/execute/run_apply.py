@@ -8,6 +8,7 @@ from pathlib import Path
 from rich.console import Console
 
 from scripts.classify.classify_notes import load_settings
+from scripts.run_logger import RunLogger, logs_dir_path
 
 console = Console()
 
@@ -38,6 +39,7 @@ def run_apply(proposal_file: str | None, dry_run: bool) -> None:
 
     settings = load_settings()
     cfg = settings.get("toplevel_folder", {})
+    logger = RunLogger("apply", logs_dir_path(settings))
 
     script = REPO_ROOT / "scripts" / "execute" / "apply-proposal.applescript"
     cmd = ["osascript", str(script)]
@@ -47,18 +49,31 @@ def run_apply(proposal_file: str | None, dry_run: bool) -> None:
         cmd += ["--container", cfg.get("name", "Library")]
     cmd.append(str(path.resolve()))
 
+    moved = skipped = errors = 0
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     assert proc.stdout is not None
     for line in iter(proc.stdout.readline, ""):
         line = line.rstrip()
         if line.startswith("[MOVED]"):
             console.print(f"[green]{line}[/green]")
+            logger.event("move", line=line, status="MOVED")
+            moved += 1
         elif line.startswith("[SKIP]"):
             console.print(f"[yellow]{line}[/yellow]")
+            logger.event("move", line=line, status="SKIP")
+            skipped += 1
         elif line.startswith("[ERROR]"):
             console.print(f"[red]{line}[/red]")
+            logger.event("move", line=line, status="ERROR")
+            logger.error(line)
+            errors += 1
         elif line:
             console.print(line)
     proc.wait()
+    logger.finish(
+        summary={"moved": moved, "skipped": skipped, "errors": errors},
+        dry_run=dry_run,
+        params={"proposal_file": str(path)},
+    )
     if proc.returncode != 0:
         raise SystemExit(proc.returncode)

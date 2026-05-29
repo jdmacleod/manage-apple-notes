@@ -20,6 +20,7 @@ from scripts.classify.classify_notes import (
     price_per_million,
 )
 from scripts.providers import get_provider
+from scripts.run_logger import RunLogger, estimate_duration, logs_dir_path
 
 console = Console()
 
@@ -57,7 +58,11 @@ def run_inbox(dry_run: bool) -> None:
         est_system_tokens = 1500
         est_total_tokens = len(notes) * est_tokens_per_note + len(batches) * est_system_tokens
         ppm = price_per_million(model)
-        cost_str = f"~${(est_total_tokens / 1_000_000) * ppm:.2f}  (@ ${ppm:.2f}/M input tokens)" if ppm is not None else "$0.00 (local inference)"
+        cost_str = (
+            f"~${(est_total_tokens / 1_000_000) * ppm:.2f}  (@ ${ppm:.2f}/M input tokens)"
+            if ppm is not None
+            else "$0.00 (local inference)"
+        )
         date_str = datetime.now().strftime("%Y-%m-%d")
 
         console.print("[bold]Dry run — no API calls will be made.[/bold]\n")
@@ -68,8 +73,21 @@ def run_inbox(dry_run: bool) -> None:
         console.print(f"Model:        {model}")
         console.print(f"Est. tokens:  ~{est_total_tokens:,}")
         console.print(f"Est. cost:    {cost_str}")
+        estimate = estimate_duration("inbox", len(notes), logs_dir_path(settings))
+        if estimate:
+            console.print(f"Est. time:    {estimate}")
         console.print(f"\nOutput would be written to: {PROPOSALS_DIR}/inbox-{date_str}.json")
+        RunLogger("inbox", logs_dir_path(settings)).finish(
+            summary={"notes_processed": len(notes), "batches": len(batches)},
+            dry_run=True,
+            params={"model": model, "batch_size": batch_size},
+        )
         return
+
+    logger = RunLogger("inbox", logs_dir_path(settings))
+    estimate = estimate_duration("inbox", len(notes), logs_dir_path(settings))
+    if estimate:
+        console.print(f"[dim]Estimated duration: {estimate}[/dim]")
 
     review_folder = _folder_name(taxonomy.get("forever_notes", {}).get("review", ""))
 
@@ -77,9 +95,15 @@ def run_inbox(dry_run: bool) -> None:
     needs_review: list[dict] = []
     no_change: list[dict] = []
     note_index = {n["id"]: n for n in notes}
+    batch_errors = 0
 
-    for batch in track(batches, description="Processing inbox..."):
+    for i, batch in enumerate(track(batches, description="Processing inbox...")):
         results = classify_batch(provider, batch, system_prompt, settings)
+        if not results:
+            logger.event("batch", batch=i + 1, count=len(batch), status="error")
+            batch_errors += 1
+        else:
+            logger.event("batch", batch=i + 1, count=len(batch), status="ok")
 
         for result in results:
             note_id = result.get("id", "")
@@ -99,29 +123,35 @@ def run_inbox(dry_run: bool) -> None:
             proposed_subfolder = parts[1] if len(parts) > 1 else None
 
             if confidence == "low" or proposed_folder == review_folder:
-                needs_review.append({
-                    "id": note_id,
-                    "title": note.get("title", ""),
-                    "current_folder": current_folder,
-                    "reason": reason,
-                })
+                needs_review.append(
+                    {
+                        "id": note_id,
+                        "title": note.get("title", ""),
+                        "current_folder": current_folder,
+                        "reason": reason,
+                    }
+                )
             elif proposed_folder_path == current_folder or proposed_folder == current_folder:
-                no_change.append({
-                    "id": note_id,
-                    "title": note.get("title", ""),
-                    "current_folder": current_folder,
-                })
+                no_change.append(
+                    {
+                        "id": note_id,
+                        "title": note.get("title", ""),
+                        "current_folder": current_folder,
+                    }
+                )
             else:
-                moves.append({
-                    "id": note_id,
-                    "title": note.get("title", ""),
-                    "current_folder": current_folder,
-                    "proposed_folder": proposed_folder,
-                    "proposed_subfolder": proposed_subfolder,
-                    "proposed_folder_path": proposed_folder_path,
-                    "confidence": confidence,
-                    "reason": reason,
-                })
+                moves.append(
+                    {
+                        "id": note_id,
+                        "title": note.get("title", ""),
+                        "current_folder": current_folder,
+                        "proposed_folder": proposed_folder,
+                        "proposed_subfolder": proposed_subfolder,
+                        "proposed_folder_path": proposed_folder_path,
+                        "confidence": confidence,
+                        "reason": reason,
+                    }
+                )
 
     PROPOSALS_DIR.mkdir(parents=True, exist_ok=True)
     date_str = datetime.now(UTC).strftime("%Y-%m-%d")
@@ -141,3 +171,15 @@ def run_inbox(dry_run: bool) -> None:
     console.print(f"  Moves:        {len(moves)}")
     console.print(f"  Needs review: {len(needs_review)}")
     console.print(f"  No change:    {len(no_change)}")
+
+    logger.finish(
+        summary={
+            "notes_processed": len(notes),
+            "moves": len(moves),
+            "needs_review": len(needs_review),
+            "no_change": len(no_change),
+            "batch_errors": batch_errors,
+        },
+        dry_run=False,
+        params={"model": model, "batch_size": batch_size},
+    )

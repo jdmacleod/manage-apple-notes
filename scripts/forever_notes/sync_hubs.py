@@ -15,6 +15,7 @@ import yaml
 from rich.console import Console
 
 from scripts.folder_utils import enumerate_paths, path_depth
+from scripts.run_logger import RunLogger, logs_dir_path
 
 console = Console()
 
@@ -157,8 +158,7 @@ def _lookup_uuids(primary_keys: list[str]) -> dict[str, str]:
         placeholders = ",".join("?" * len(pks_int))
         con = sqlite3.connect(str(db_copy))
         rows = con.execute(
-            f"SELECT Z_PK, ZIDENTIFIER FROM ZICCLOUDSYNCINGOBJECT "
-            f"WHERE Z_PK IN ({placeholders})",
+            f"SELECT Z_PK, ZIDENTIFIER FROM ZICCLOUDSYNCINGOBJECT WHERE Z_PK IN ({placeholders})",
             pks_int,
         ).fetchall()
         con.close()
@@ -408,7 +408,9 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
     theme_index = _build_theme_index(taxonomy, notes, min_count)
 
     if not theme_index:
-        console.print("[yellow]No Hub-eligible themes found (no subfolders meet the note count threshold).[/yellow]")
+        console.print(
+            "[yellow]No Hub-eligible themes found (no subfolders meet the note count threshold).[/yellow]"
+        )
         return
 
     console.print(f"\nFound [bold]{len(theme_index)}[/bold] Hub-eligible theme(s).")
@@ -427,10 +429,13 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
         ]
         note_uuid_map = _lookup_uuids(all_note_pks)
         if note_uuid_map:
-            console.print(f"  [dim]Resolved {len(note_uuid_map)} note UUID(s) from NoteStore.[/dim]")
+            console.print(
+                f"  [dim]Resolved {len(note_uuid_map)} note UUID(s) from NoteStore.[/dim]"
+            )
     else:
         note_uuid_map = {}
 
+    logger = RunLogger("sync-hubs", logs_dir_path(settings))
     created = updated = errors = 0
     hub_ids: dict[str, str] = {}  # hub_title → local pNNN returned by AppleScript
 
@@ -440,22 +445,32 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
         categories = theme_data["categories"]
         total = theme_data["total"]
 
-        console.print(f"  [bold]{h_title}[/bold] — {total} notes across {len(categories)} categor{'y' if len(categories) == 1 else 'ies'}")
+        console.print(
+            f"  [bold]{h_title}[/bold] — {total} notes across {len(categories)} categor{'y' if len(categories) == 1 else 'ies'}"
+        )
 
-        body = _generate_hub_body(sf_def, categories, hub_prefix, uuid_map=note_uuid_map, use_links=use_links)
-        status, local_id = _write_note_applescript(h_title, body, hub_folder, dry_run, container=container)
+        body = _generate_hub_body(
+            sf_def, categories, hub_prefix, uuid_map=note_uuid_map, use_links=use_links
+        )
+        status, local_id = _write_note_applescript(
+            h_title, body, hub_folder, dry_run, container=container
+        )
         if local_id:
             hub_ids[h_title] = local_id
 
         if status == "created":
             console.print("    [green][CREATED][/green]")
+            logger.event("hub", title=h_title, status="created")
             created += 1
         elif status == "[DRY RUN]":
             console.print("    [cyan][DRY RUN][/cyan]")
+            logger.event("hub", title=h_title, status="dry_run")
         elif status == "error":
+            logger.error(f"hub write failed: {h_title}")
             errors += 1
         else:
             console.print("    [dim][UPDATED][/dim]")
+            logger.event("hub", title=h_title, status="updated")
             updated += 1
 
     # Resolve stable UUIDs for hub notes themselves (for Home → Hub links).
@@ -464,8 +479,7 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
         hub_pks = [_url_id(lid) for lid in hub_ids.values() if _url_id(lid)]
         hub_pk_to_uuid = _lookup_uuids(hub_pks)
         hub_uuids: dict[str, str] = {
-            title: hub_pk_to_uuid.get(_url_id(lid), "")
-            for title, lid in hub_ids.items()
+            title: hub_pk_to_uuid.get(_url_id(lid), "") for title, lid in hub_ids.items()
         }
         resolved = sum(1 for v in hub_uuids.values() if v)
         if resolved:
@@ -479,7 +493,9 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
         taxonomy, theme_index, hub_prefix, home_title, hub_ids, hub_uuids, use_links=use_links
     )
 
-    home_status, _ = _write_note_applescript(home_title, home_body, home_folder, dry_run, container=container)
+    home_status, _ = _write_note_applescript(
+        home_title, home_body, home_folder, dry_run, container=container
+    )
     if home_status == "created":
         console.print("    [green][CREATED][/green]")
     elif home_status == "[DRY RUN]":
@@ -489,6 +505,16 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
     else:
         console.print("    [dim][UPDATED][/dim]")
 
-    console.print(f"\n[bold]Done.[/bold] Hubs: {created} created, {updated} updated" + (f", {errors} errors" if errors else "") + ".")
+    console.print(
+        f"\n[bold]Done.[/bold] Hubs: {created} created, {updated} updated"
+        + (f", {errors} errors" if errors else "")
+        + "."
+    )
     if dry_run:
         console.print("[dim]Dry-run — no changes were made.[/dim]")
+
+    logger.finish(
+        summary={"hubs_created": created, "hubs_updated": updated, "errors": errors},
+        dry_run=dry_run,
+        params={"export_file": str(export_path)},
+    )

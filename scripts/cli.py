@@ -1,4 +1,3 @@
-
 import typer
 from dotenv import load_dotenv
 
@@ -16,7 +15,9 @@ from scripts.maintenance.process_inbox import run_inbox
 from scripts.maintenance.repair_restored_notes import run_repair_restored
 from scripts.restore.run_restore import run_restore
 
-app = typer.Typer(help="Organize Apple Notes using AI classification into a user-defined folder taxonomy.")
+app = typer.Typer(
+    help="Organize Apple Notes using AI classification into a user-defined folder taxonomy."
+)
 
 
 @app.command()

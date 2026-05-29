@@ -18,6 +18,7 @@ from scripts.classify.classify_notes import (
     load_taxonomy,
 )
 from scripts.folder_utils import effective_max_depth, nesting_mode, path_depth
+from scripts.run_logger import RunLogger, logs_dir_path
 
 console = Console()
 
@@ -92,19 +93,24 @@ def _find_subfolder_candidates(
                 if word and word not in stopwords and len(word) > 2:
                     word_counts[word] += 1
                     break
-        top_words = [(word, count) for word, count in word_counts.most_common(5) if count >= min_notes]
+        top_words = [
+            (word, count) for word, count in word_counts.most_common(5) if count >= min_notes
+        ]
         if top_words:
-            candidates.append({
-                "folder": folder,
-                "note_count": len(folder_notes),
-                "theme_signals": ", ".join(f"{w} ({c})" for w, c in top_words),
-            })
+            candidates.append(
+                {
+                    "folder": folder,
+                    "note_count": len(folder_notes),
+                    "theme_signals": ", ".join(f"{w} ({c})" for w, c in top_words),
+                }
+            )
 
     return candidates
 
 
 def run_audit(export_file: str | None, output_override: str | None, dry_run: bool) -> None:
     settings = load_settings()
+    logger = RunLogger("audit", logs_dir_path(settings))
     taxonomy = load_taxonomy()
     fn = taxonomy.get("forever_notes", {})
 
@@ -146,13 +152,20 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
     ]
 
     if dry_run:
-        console.print("[bold]Dry run — no API calls will be made.[/bold] (Audit makes no API calls.)\n")
+        console.print(
+            "[bold]Dry run — no API calls will be made.[/bold] (Audit makes no API calls.)\n"
+        )
         console.print(f"Export:      {export_path}")
         console.print(f"Notes found: {len(notes)}\n")
         console.print("Checks:")
         for check in checks:
             console.print(f"  • {check}")
         console.print(f"\nReport would be written to: {report_path}")
+        logger.finish(
+            summary={"notes_scanned": len(notes)},
+            dry_run=True,
+            params={"export_file": str(export_path)},
+        )
         return
 
     # ── Run checks ───────────────────────────────────────────────────────────
@@ -164,7 +177,8 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
 
         stale_notes = sorted(
             [
-                n for n in notes
+                n
+                for n in notes
                 if n.get("folder") != archive_folder
                 and (d := _parse_date(n.get("modified", ""))) is not None
                 and d < stale_cutoff
@@ -182,15 +196,19 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
         duplicate_groups = {k: v for k, v in title_groups.items() if len(v) > 1}
 
         stale_inbox = [
-            n for n in notes
-            if n.get("folder") == inbox_folder and inbox_folder
+            n
+            for n in notes
+            if n.get("folder") == inbox_folder
+            and inbox_folder
             and (d := _parse_date(n.get("modified", ""))) is not None
             and d < inbox_cutoff
         ]
 
         stale_fleeting = [
-            n for n in notes
-            if n.get("folder") == fleeting_folder and fleeting_folder
+            n
+            for n in notes
+            if n.get("folder") == fleeting_folder
+            and fleeting_folder
             and (d := _parse_date(n.get("modified", ""))) is not None
             and d < fleeting_cutoff
         ]
@@ -217,7 +235,9 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
         "",
         f"Found {len(stale_notes)} notes.",
         "",
-        *_md_table(stale_notes, [("Title", "title"), ("Folder", "folder"), ("Last Modified", "modified")]),
+        *_md_table(
+            stale_notes, [("Title", "title"), ("Folder", "folder"), ("Last Modified", "modified")]
+        ),
         "---",
         "",
         f"## Stub Notes — body under {stub_chars} characters",
@@ -234,7 +254,9 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
     ]
 
     if duplicate_groups:
-        for group in sorted(duplicate_groups.values(), key=lambda g: (g[0].get("title") or "").lower()):
+        for group in sorted(
+            duplicate_groups.values(), key=lambda g: (g[0].get("title") or "").lower()
+        ):
             lines.append(f"**{group[0].get('title', '(untitled)')}** — {len(group)} notes")
             for note in group:
                 modified = (note.get("modified") or "")[:10]
@@ -283,3 +305,17 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
     console.print(f"  Stale inbox:        {len(stale_inbox)}")
     console.print(f"  Stale fleeting:     {len(stale_fleeting)}")
     console.print(f"  Subfolder candid.:  {len(subfolder_candidates)}")
+
+    logger.finish(
+        summary={
+            "notes_scanned": len(notes),
+            "stale": len(stale_notes),
+            "stubs": len(stub_notes),
+            "duplicate_title_groups": len(duplicate_groups),
+            "stale_inbox": len(stale_inbox),
+            "stale_fleeting": len(stale_fleeting),
+            "subfolder_candidates": len(subfolder_candidates),
+        },
+        dry_run=False,
+        params={"export_file": str(export_path), "report_path": str(report_path)},
+    )

@@ -16,6 +16,9 @@ from pathlib import Path
 
 from rich.console import Console
 
+from scripts.classify.classify_notes import load_settings
+from scripts.run_logger import RunLogger, logs_dir_path
+
 console = Console()
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -79,19 +82,25 @@ def run_repair_restored(
     old_export_file: str | None = None,
     dry_run: bool = False,
 ) -> None:
+    settings = load_settings()
+    logger = RunLogger("repair-restored", logs_dir_path(settings))
     # Resolve missing-notes file
     if missing_file:
         missing_path = Path(missing_file)
     else:
         missing_path = _find_missing_notes_file()
         if missing_path is None:
-            console.print("[red]No missing-notes-*.json file found in data/. Pass --missing-file explicitly.[/red]")
+            console.print(
+                "[red]No missing-notes-*.json file found in data/. Pass --missing-file explicitly.[/red]"
+            )
             raise SystemExit(1)
 
     console.print(f"Missing notes file: [dim]{missing_path.name}[/dim]")
     with open(missing_path) as f:
         missing_data = json.load(f)
-    missing_notes = missing_data.get("notes", missing_data) if isinstance(missing_data, dict) else missing_data
+    missing_notes = (
+        missing_data.get("notes", missing_data) if isinstance(missing_data, dict) else missing_data
+    )
     console.print(f"  {len(missing_notes)} notes listed as restored")
 
     # Resolve old export (source of original content)
@@ -102,7 +111,9 @@ def run_repair_restored(
         current = current_exports[0] if current_exports else None
         old_path = _find_old_export(current) if current else None
         if old_path is None:
-            console.print("[red]Could not find an earlier export to use as source. Pass --old-export explicitly.[/red]")
+            console.print(
+                "[red]Could not find an earlier export to use as source. Pass --old-export explicitly.[/red]"
+            )
             raise SystemExit(1)
 
     console.print(f"Original content source: [dim]{old_path.name}[/dim]")
@@ -147,13 +158,17 @@ def run_repair_restored(
 
         if "error" in status.lower():
             console.print(f"  [red]ERROR[/red] {title!r} — {status}")
+            logger.event("note", title=title, status="ERROR", detail=status)
+            logger.error(f"{title!r}: {status}")
             errors += 1
         elif dry_run:
             lines = original_body.count("\n") + 1
             console.print(f"  [cyan][DRY RUN][/cyan] {title!r} — {lines} lines → HTML")
+            logger.event("note", title=title, status="DRY_RUN")
             repaired += 1
         else:
             console.print(f"  [green]OK[/green]    {title!r} — {status}")
+            logger.event("note", title=title, status="REPAIRED")
             repaired += 1
 
     console.print(
@@ -161,4 +176,12 @@ def run_repair_restored(
         + (f", {skipped} skipped (not in old export)" if skipped else "")
         + (f", {errors} errors" if errors else "")
         + ("." if not dry_run else " (dry-run — no changes written).")
+    )
+    logger.finish(
+        summary={"repaired": repaired, "skipped": skipped, "errors": errors},
+        dry_run=dry_run,
+        params={
+            "missing_file": str(missing_path) if missing_path else None,
+            "old_export_file": str(old_path) if old_path else None,
+        },
     )
