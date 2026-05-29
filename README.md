@@ -79,14 +79,14 @@ Most commands accept `--dry-run` to preview without making changes. `apply-dedup
 
 Full documentation lives in the [`docs/`](docs/) directory.
 
-## Privacy
+## Privacy, Cost, and Speed
 
 **LLM provider choice affects what leaves your device.** Pick the option that matches your comfort level:
 
-| Provider | Note content sent off-device? | Setup complexity |
-|----------|-------------------------------|-----------------|
-| [Anthropic API](https://console.anthropic.com) | Yes — note text is sent to Anthropic's servers for inference and is subject to [Anthropic's privacy policy](https://www.anthropic.com/legal/privacy) | Low — API key only |
-| [Ollama](https://ollama.com) (local) | No — inference runs entirely on your machine | Medium — install Ollama, pull a model |
+| Provider | Note content sent off-device? | Setup complexity | Cost | Speed |
+|----------|-------------------------------|------------------|------|-------|
+| [Anthropic API](https://console.anthropic.com) | Yes — note text is sent to Anthropic's servers for inference and is subject to [Anthropic's privacy policy](https://www.anthropic.com/legal/privacy) | Low — API key only | Pay per use with token credits | Fast |
+| [Ollama](https://ollama.com) (local) | No — inference runs entirely on your machine | Medium — install Ollama, pull a model | No cost, model runs locally | Slower, but depends on your hardware |
 
 Regardless of provider, this repo is public and personal data is kept out of git:
 
@@ -95,7 +95,7 @@ Regardless of provider, this repo is public and personal data is kept out of git
 - The entire `data/` directory (exports, proposals, reports) is gitignored
 - A pre-commit hook blocks accidental commits of private files
 
-See `config/taxonomy.example.yaml` (Forever Notes / Zettelkasten), `config/taxonomy.para.yaml` (PARA method), and `config/settings.example.yaml` for the committed templates.
+See [`config/taxonomy.example.yaml`](config/taxonomy.example.yaml) (Forever Notes / Zettelkasten), [`config/taxonomy.para.yaml`](config/taxonomy.para.yaml) (PARA method), and [`config/settings.example.yaml`](config/settings.example.yaml) for the committed templates.
 
 ## License
 
