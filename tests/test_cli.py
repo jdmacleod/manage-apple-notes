@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from typer.testing import CliRunner
 
 from scripts.cli import app
@@ -18,7 +20,8 @@ def test_help_returns_zero() -> None:
 def test_classify_help() -> None:
     result = runner.invoke(app, ["classify", "--help"])
     assert result.exit_code == 0
-    assert "dry-run" in result.output
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    assert "dry-run" in plain
 
 
 def test_audit_help() -> None:
