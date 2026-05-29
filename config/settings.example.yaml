@@ -36,6 +36,7 @@ llm:
 paths:
   exports_dir: "data/exports"
   theme_maps_dir: "data/theme-maps"
+  taxonomy_drafts_dir: "data/taxonomy-drafts"
   proposals_dir: "data/proposals"
   dedup_proposals_dir: "data/dedup-proposals"
   reports_dir: "data/reports"

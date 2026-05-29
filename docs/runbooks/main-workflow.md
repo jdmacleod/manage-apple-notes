@@ -31,15 +31,23 @@ uv run notes discover             # → data/theme-maps/themes-YYYY-MM-DD.json
 Sends batches of note summaries to the LLM to map the thematic clusters in your library.
 No notes are changed.
 
-**→ HUMAN REVIEW:** Open `data/theme-maps/themes-YYYY-MM-DD.json` and review the themes.
-Merge, rename, or discard as needed. Then add the approved subfolder names to
-`config/taxonomy.local.yaml` under the relevant categories:
+**→ HUMAN REVIEW:** Run `uv run notes draft` to generate an editable taxonomy YAML from
+the discovered themes:
 
-```yaml
-areas:
-  folder: "Areas"
-  subfolders: ["Finance", "Health", "Work"]
+```bash
+uv run notes draft --dry-run   # preview proposed additions
+uv run notes draft             # → data/taxonomy-drafts/taxonomy-draft-YYYY-MM-DD.yaml
 ```
+
+Open `data/taxonomy-drafts/taxonomy-draft-YYYY-MM-DD.yaml`. The header comment lists
+every new path added. Remove subfolders you don't want, rename any that need adjusting,
+then copy the file to `config/taxonomy.local.yaml`:
+
+```bash
+cp data/taxonomy-drafts/taxonomy-draft-YYYY-MM-DD.yaml config/taxonomy.local.yaml
+```
+
+To examine the raw theme-map instead: `data/theme-maps/themes-YYYY-MM-DD.json`
 
 ### Step 3 — Classify (Pass 2)
 

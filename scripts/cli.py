@@ -6,6 +6,7 @@ load_dotenv()
 from scripts.classify.classify_notes import run_classify
 from scripts.classify.deduplicate_notes import run_dedup
 from scripts.classify.discover_themes import run_discover
+from scripts.classify.draft_taxonomy import run_draft
 from scripts.execute.apply_dedup import run_apply_dedup
 from scripts.execute.run_apply import run_apply
 from scripts.export.run_export import run_backup, run_export
@@ -34,6 +35,22 @@ def discover(
 ) -> None:
     """Discover thematic clusters in the library for subfolder planning (Pass 1)."""
     run_discover(export_file=export_file, dry_run=dry_run)
+
+
+@app.command()
+def draft(
+    theme_map_file: str | None = typer.Argument(
+        default=None,
+        help="Path to theme-map JSON. Defaults to most recent in data/theme-maps/.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Preview proposed additions without writing a file.",
+    ),
+) -> None:
+    """Generate a draft taxonomy YAML from theme discovery results."""
+    run_draft(theme_map_file=theme_map_file, dry_run=dry_run)
 
 
 @app.command()
