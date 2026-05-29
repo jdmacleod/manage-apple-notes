@@ -129,8 +129,14 @@ uv run notes apply-dedup --execute   # actually delete; notes go to Recently Del
 
 - Run `uv run notes audit` to find remaining stale, stub, or duplicate notes
 - Set a recurring inbox-processing habit (see below)
-- If running in strict mode (`forever_notes_mode: strict`), run `uv run notes sync-hubs`
-  to create the ✱ Home and ✱ Hub notes
+- If running in strict mode (`forever_notes_mode: strict`), export first then sync hubs
+  to create the ✱ Home and ✱ Hub notes:
+  ```bash
+  uv run notes export
+  uv run notes sync-hubs
+  ```
+  `sync-hubs` builds hub content from the latest export, so the export must reflect the
+  current state of Apple Notes — including any manual moves made after `notes apply`.
 
 ---
 
@@ -157,9 +163,11 @@ uv run notes apply --dry-run data/proposals/inbox-YYYY-MM-DD.json
 uv run notes apply data/proposals/inbox-YYYY-MM-DD.json
 ```
 
-If using strict mode, re-sync Hub notes after applying inbox moves:
+If using strict mode, re-export then sync Hub notes after applying moves. This is also
+the correct sequence after any manual reorganization in Apple Notes:
 
 ```bash
+uv run notes export
 uv run notes sync-hubs
 ```
 
