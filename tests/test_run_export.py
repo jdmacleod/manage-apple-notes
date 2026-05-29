@@ -34,6 +34,16 @@ class TestStripContainerPrefix:
         assert _strip_container_prefix([], "Library") == 0
 
 
+def _mock_popen(mocker: MagicMock, returncode: int = 0, stderr: str = "") -> MagicMock:
+    """Return a Popen mock that immediately reports completion."""
+    mock_proc = MagicMock()
+    mock_proc.poll.return_value = returncode
+    mock_proc.returncode = returncode
+    mock_proc.communicate.return_value = ("", stderr)
+    mocker.patch("subprocess.Popen", return_value=mock_proc)
+    return mock_proc
+
+
 class TestRunExport:
     def test_success_returns_export_path(
         self,
@@ -44,11 +54,7 @@ class TestRunExport:
         export_file = tmp_path / "notes-2026-05-28.json"
         export_file.write_text(json.dumps([{"id": "1", "title": "Note", "folder": "Inbox"}]))
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = ""
-        mock_result.stderr = ""
-        mocker.patch("subprocess.run", return_value=mock_result)
+        _mock_popen(mocker)
         mocker.patch("scripts.export.run_export.find_latest_export", return_value=export_file)
         mocker.patch("scripts.export.run_export.load_settings", return_value=minimal_settings)
 
@@ -61,11 +67,7 @@ class TestRunExport:
         tmp_path: Path,
         minimal_settings: dict,
     ) -> None:
-        mock_result = MagicMock()
-        mock_result.returncode = 1
-        mock_result.stdout = ""
-        mock_result.stderr = "AppleScript error"
-        mocker.patch("subprocess.run", return_value=mock_result)
+        _mock_popen(mocker, returncode=1, stderr="AppleScript error")
 
         with pytest.raises(SystemExit):
             run_export()
@@ -87,11 +89,7 @@ class TestRunExport:
         export_file = tmp_path / "notes-2026-05-28.json"
         export_file.write_text(json.dumps(notes))
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = ""
-        mock_result.stderr = ""
-        mocker.patch("subprocess.run", return_value=mock_result)
+        _mock_popen(mocker)
         mocker.patch("scripts.export.run_export.find_latest_export", return_value=export_file)
 
         settings_with_container = {"toplevel_folder": {"enabled": True, "name": "Library"}}
@@ -115,11 +113,7 @@ class TestRunBackup:
         export_file = tmp_path / "notes-2026-05-28.json"
         export_file.write_text(json.dumps([]))
 
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = ""
-        mock_result.stderr = ""
-        mocker.patch("subprocess.run", return_value=mock_result)
+        _mock_popen(mocker)
         mocker.patch("scripts.export.run_export.find_latest_export", return_value=export_file)
         mocker.patch("scripts.export.run_export.load_settings", return_value=minimal_settings)
         mocker.patch("scripts.export.run_export.REPO_ROOT", tmp_path)

@@ -41,13 +41,30 @@ do shell script "mkdir -p " & quoted form of exportsDir
 set outputDate to do shell script "date +%Y-%m-%d"
 set outputFile to exportsDir & "/notes-" & outputDate & ".json"
 set tempFile to "/tmp/notes_export_" & outputDate & ".tmp"
+set progressFile to "/tmp/notes_export_progress.tmp"
 
 -- Field/record separators: ASCII 31 (Unit Sep) and 30 (Record Sep).
 -- These are non-printable control characters that will not appear in note text.
 set fieldSep to character id 31
 set recordSep to character id 30
 
--- ── Collect notes ───────────────────────────────────────────────────────────
+-- ── Pass 1: count notes (fast — no body access) ──────────────────────────────
+
+set totalCount to 0
+tell application "Notes"
+	repeat with acct in accounts
+		repeat with aFolder in folders of acct
+			if name of aFolder is not "Recently Deleted" then
+				set totalCount to totalCount + (count notes of aFolder)
+			end if
+		end repeat
+	end repeat
+end tell
+
+-- Initialise progress file so Python can show "[000/NNN]" immediately
+do shell script "echo '0/" & totalCount & "' > " & quoted form of progressFile
+
+-- ── Pass 2: collect notes ────────────────────────────────────────────────────
 -- Iterate accounts → folders → notes so that folder context is always known
 -- from the outer loop. Accessing 'container of aNote' via 'every note' returns
 -- a generic 'item' reference on macOS Sequoia; iterating by folder avoids this.
@@ -92,15 +109,27 @@ tell application "Notes"
 					set modifiedStr to my formatISO(modification date of aNote)
 					set wordCountStr to (count words of noteBody) as string
 
-					-- One record = fields joined by fieldSep (8 fields)
-					set end of noteRecords to noteId & fieldSep & noteTitle & fieldSep & noteBody & fieldSep & folderName & fieldSep & parentFolderName & fieldSep & createdStr & fieldSep & modifiedStr & fieldSep & wordCountStr
+					set attachmentCountStr to "0"
+					try
+						set attachmentCountStr to (count attachments of aNote) as string
+					end try
+
+					-- One record = fields joined by fieldSep (9 fields)
+					set end of noteRecords to noteId & fieldSep & noteTitle & fieldSep & noteBody & fieldSep & folderName & fieldSep & parentFolderName & fieldSep & createdStr & fieldSep & modifiedStr & fieldSep & wordCountStr & fieldSep & attachmentCountStr
 
 					set exportedCount to exportedCount + 1
+
+					-- Write progress every 25 notes so Python can update the counter
+					if (exportedCount mod 25) = 0 then
+						do shell script "echo '" & exportedCount & "/" & totalCount & "' > " & quoted form of progressFile
+					end if
 				end repeat
 			end if
 		end repeat
 	end repeat
 end tell
+
+do shell script "echo 'DONE:" & exportedCount & "/" & totalCount & "' > " & quoted form of progressFile
 
 -- ── Write temp file ─────────────────────────────────────────────────────────
 
@@ -124,7 +153,8 @@ for rec in data.split(chr(30)):
     if len(f) < 8:
         continue
     nid, title, body, folder, parent_folder = f[0], f[1], f[2], f[3], f[4]
-    created, modified, wc = f[5], f[6], f[7].strip()
+    created, modified, wc = f[5], f[6], f[7]
+    ac = f[8].strip() if len(f) > 8 else '0'
     folder_path = (parent_folder + '/' + folder) if parent_folder else folder
     notes.append({
         'id': nid,
@@ -136,6 +166,7 @@ for rec in data.split(chr(30)):
         'created': created,
         'modified': modified,
         'word_count': int(wc) if wc.isdigit() else 0,
+        'attachment_count': int(ac) if ac.isdigit() else 0,
     })
 with open(sys.argv[2], 'w', encoding='utf-8') as out:
     json.dump(notes, out, indent=2, ensure_ascii=False)
