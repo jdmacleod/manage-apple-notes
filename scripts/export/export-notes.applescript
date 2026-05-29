@@ -18,6 +18,22 @@ on pad2(n)
 	return ns
 end pad2
 
+-- Walk the container chain upward to build the full slash-delimited folder path.
+-- Stops when the container is an account (not a folder) or on any error.
+on getFullPath(aFolder)
+	set folderName to name of aFolder
+	try
+		set parentContainer to container of aFolder
+		if class of parentContainer is folder then
+			return (my getFullPath(parentContainer)) & "/" & folderName
+		else
+			return folderName
+		end if
+	on error
+		return folderName
+	end try
+end getFullPath
+
 -- Format an AppleScript date as ISO 8601 (local time, Z suffix)
 on formatISO(d)
 	set y to (year of d) as string
@@ -82,15 +98,9 @@ tell application "Notes"
 			if folderName is "Recently Deleted" then
 				set skippedCount to skippedCount + (count notes of aFolder)
 			else
-				-- Determine whether this folder has a parent folder (i.e. it is a subfolder).
-				-- If the container of the folder is an account, it is top-level.
-				-- Wrapped in try because some accounts/folders raise -1728 on container access.
-				set parentFolderName to ""
-				try
-					if class of container of aFolder is folder then
-						set parentFolderName to name of container of aFolder
-					end if
-				end try
+				-- Build the full slash-delimited path for this folder by walking up the
+				-- container chain. Wrapped in getFullPath which handles -1728 errors.
+				set fullFolderPath to my getFullPath(aFolder)
 
 				repeat with aNote in notes of aFolder
 					set noteId to id of aNote
@@ -115,7 +125,7 @@ tell application "Notes"
 					end try
 
 					-- One record = fields joined by fieldSep (9 fields)
-					set end of noteRecords to noteId & fieldSep & noteTitle & fieldSep & noteBody & fieldSep & folderName & fieldSep & parentFolderName & fieldSep & createdStr & fieldSep & modifiedStr & fieldSep & wordCountStr & fieldSep & attachmentCountStr
+					set end of noteRecords to noteId & fieldSep & noteTitle & fieldSep & noteBody & fieldSep & folderName & fieldSep & fullFolderPath & fieldSep & createdStr & fieldSep & modifiedStr & fieldSep & wordCountStr & fieldSep & attachmentCountStr
 
 					set exportedCount to exportedCount + 1
 
@@ -152,16 +162,14 @@ for rec in data.split(chr(30)):
     f = rec.split(chr(31))
     if len(f) < 8:
         continue
-    nid, title, body, folder, parent_folder = f[0], f[1], f[2], f[3], f[4]
+    nid, title, body, folder, folder_path = f[0], f[1], f[2], f[3], f[4]
     created, modified, wc = f[5], f[6], f[7]
     ac = f[8].strip() if len(f) > 8 else '0'
-    folder_path = (parent_folder + '/' + folder) if parent_folder else folder
     notes.append({
         'id': nid,
         'title': title,
         'body': body,
         'folder': folder,
-        'parent_folder': parent_folder,
         'folder_path': folder_path,
         'created': created,
         'modified': modified,

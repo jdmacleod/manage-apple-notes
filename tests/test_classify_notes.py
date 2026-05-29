@@ -339,3 +339,122 @@ class TestRunClassify:
 
         with pytest.raises(SystemExit):
             run_classify(export_file=str(tmp_path / "nonexistent.json"), dry_run=True)
+
+    def _run_classify_with_notes(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        notes: list[dict],
+        settings: dict,
+        taxonomy: dict,
+        llm_response: list[dict],
+    ) -> dict:
+        """Helper: run classify and return the written proposal as a dict."""
+        export_file = tmp_path / "notes-test.json"
+        export_file.write_text(json.dumps(notes))
+
+        mock_provider = MagicMock()
+        mock_provider.name = "mock"
+        mock_provider.model = "mock-model"
+        mock_provider.classify_messages.return_value = json.dumps(llm_response)
+
+        mocker.patch("scripts.classify.classify_notes.load_settings", return_value=settings)
+        mocker.patch("scripts.classify.classify_notes.load_taxonomy", return_value=taxonomy)
+        mocker.patch(
+            "scripts.classify.classify_notes.load_prompt_template",
+            return_value="{CATEGORY_LIST} {CATCHALL}",
+        )
+        mocker.patch("scripts.classify.classify_notes.get_provider", return_value=mock_provider)
+        mocker.patch("scripts.classify.classify_notes.PROPOSALS_DIR", tmp_path)
+
+        run_classify(export_file=str(export_file), dry_run=False)
+
+        proposals = list(tmp_path.glob("proposal-*.json"))
+        return json.loads(proposals[0].read_text())
+
+    def test_archive_notes_excluded_from_moves_by_default(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+        minimal_taxonomy: dict,
+    ) -> None:
+        notes = [
+            {
+                "id": "arch-1",
+                "title": "Old project",
+                "body": "Done.",
+                "folder": "Archive",
+                "folder_path": "Archive",
+            }
+        ]
+        llm_response: list[dict] = []  # LLM should never be called for this note
+        data = self._run_classify_with_notes(
+            mocker, tmp_path, notes, minimal_settings, minimal_taxonomy, llm_response
+        )
+        assert all(m["id"] != "arch-1" for m in data["moves"])
+        assert any(n["id"] == "arch-1" for n in data["no_change"])
+
+    def test_archive_notes_included_when_exclude_false(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+        minimal_taxonomy: dict,
+    ) -> None:
+        settings = {**minimal_settings, "classify": {"exclude_archive": False}}
+        notes = [
+            {
+                "id": "arch-1",
+                "title": "Old project",
+                "body": "Done.",
+                "folder": "Archive",
+                "folder_path": "Archive",
+            }
+        ]
+        llm_response = [
+            {
+                "id": "arch-1",
+                "proposed_folder_path": "Resources/Reference",
+                "proposed_folder": "Resources",
+                "proposed_subfolder": "Reference",
+                "confidence": "high",
+                "reason": "Reference material",
+            }
+        ]
+        data = self._run_classify_with_notes(
+            mocker, tmp_path, notes, settings, minimal_taxonomy, llm_response
+        )
+        assert any(m["id"] == "arch-1" for m in data["moves"])
+
+    def test_subfolder_note_detected_as_no_change(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+        minimal_taxonomy: dict,
+    ) -> None:
+        notes = [
+            {
+                "id": "ref-1",
+                "title": "Python guide",
+                "body": "Use type hints.",
+                "folder": "Reference",
+                "folder_path": "Resources/Reference",
+            }
+        ]
+        llm_response = [
+            {
+                "id": "ref-1",
+                "proposed_folder_path": "Resources/Reference",
+                "proposed_folder": "Resources",
+                "proposed_subfolder": "Reference",
+                "confidence": "high",
+                "reason": "Already in correct folder",
+            }
+        ]
+        data = self._run_classify_with_notes(
+            mocker, tmp_path, notes, minimal_settings, minimal_taxonomy, llm_response
+        )
+        assert all(m["id"] != "ref-1" for m in data["moves"])
+        assert any(n["id"] == "ref-1" for n in data["no_change"])

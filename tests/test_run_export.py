@@ -14,17 +14,25 @@ from scripts.export.run_export import _strip_container_prefix, run_backup, run_e
 class TestStripContainerPrefix:
     def test_strips_matching_notes(self) -> None:
         notes = [
-            {"folder": "Areas", "folder_path": "Library/Areas", "parent_folder": "Library"},
-            {"folder": "Resources", "folder_path": "Library/Resources", "parent_folder": "Library"},
+            {"folder": "Areas", "folder_path": "Library/Areas"},
+            {"folder": "Resources", "folder_path": "Library/Resources"},
         ]
         patched = _strip_container_prefix(notes, "Library")
         assert patched == 2
         assert notes[0]["folder_path"] == "Areas"
-        assert notes[0]["parent_folder"] == ""
+        assert notes[1]["folder_path"] == "Resources"
+
+    def test_strips_deep_paths(self) -> None:
+        notes = [
+            {"folder": "Atlanta", "folder_path": "Library/Areas/Travel/Atlanta"},
+        ]
+        patched = _strip_container_prefix(notes, "Library")
+        assert patched == 1
+        assert notes[0]["folder_path"] == "Areas/Travel/Atlanta"
 
     def test_does_not_strip_non_matching(self) -> None:
         notes = [
-            {"folder": "Work", "folder_path": "Areas/Work", "parent_folder": "Areas"},
+            {"folder": "Work", "folder_path": "Areas/Work"},
         ]
         patched = _strip_container_prefix(notes, "Library")
         assert patched == 0
@@ -83,7 +91,6 @@ class TestRunExport:
                 "title": "Note",
                 "folder": "Areas",
                 "folder_path": "Library/Areas",
-                "parent_folder": "Library",
             },
         ]
         export_file = tmp_path / "notes-2026-05-28.json"

@@ -23,19 +23,19 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def _strip_container_prefix(notes: list[dict], container_name: str) -> int:
-    """Strip the toplevel container prefix from folder_path/parent_folder fields.
+    """Strip the toplevel container prefix from folder_path fields.
 
-    Notes whose immediate parent is the container (e.g. 'Areas' inside 'Library')
-    have parent_folder set to the container name. Strip it so downstream tools see
-    clean paths that match the taxonomy (e.g. 'Areas', not 'Library/Areas').
-    Notes in subfolders (e.g. 'Areas/Finance') are unaffected.
+    The AppleScript exports full paths from the account root (e.g. 'Library/Areas/Travel').
+    Strip the container prefix so downstream tools see taxonomy-relative paths
+    (e.g. 'Areas/Travel'). Works at any depth.
     Returns the count of notes modified.
     """
+    prefix = container_name + "/"
     patched = 0
     for note in notes:
-        if note.get("parent_folder") == container_name:
-            note["parent_folder"] = ""
-            note["folder_path"] = note["folder"]
+        fp = note.get("folder_path", "")
+        if fp.startswith(prefix):
+            note["folder_path"] = fp[len(prefix):]
             patched += 1
     return patched
 

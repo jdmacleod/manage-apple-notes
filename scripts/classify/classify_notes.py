@@ -201,7 +201,7 @@ def classify_batch(
             "id": n["id"],
             "title": n.get("title", ""),
             "body": n.get("body", "")[:max_body],
-            "current_folder": n.get("folder", ""),
+            "current_folder": n.get("folder_path") or n.get("folder", ""),
         }
         for n in notes_batch
     ]
@@ -270,6 +270,26 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
         else all_notes
     )
 
+    fn = taxonomy.get("forever_notes", {})
+    archive_folder = _folder_name(fn.get("archive", ""))
+    exclude_archive = settings.get("classify", {}).get("exclude_archive", True)
+
+    archive_notes: list[dict] = []
+    if exclude_archive and archive_folder:
+        archive_paths = set(enumerate_paths(fn.get("archive", {})))
+
+        def _is_archive(n: dict) -> bool:
+            fp = n.get("folder_path") or n.get("folder", "")
+            return fp == archive_folder or fp in archive_paths
+
+        archive_notes = [n for n in notes if _is_archive(n)]
+        notes = [n for n in notes if not _is_archive(n)]
+        if archive_notes:
+            console.print(
+                f"  [dim]Skipping {len(archive_notes)} Archive note(s) "
+                f"(classify.exclude_archive = true)[/dim]"
+            )
+
     llm_cfg = settings.get("llm") or settings.get("claude", {})
     batch_size = llm_cfg.get("batch_size", 20)
     provider = get_provider(settings, dry_run=dry_run)
@@ -313,7 +333,6 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
     if estimate:
         console.print(f"[dim]Estimated duration: {estimate}[/dim]")
 
-    fn = taxonomy.get("forever_notes", {})
     review_folder = _folder_name(fn.get("review", ""))
 
     moves: list[dict] = []
@@ -360,6 +379,7 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
                 proposed_folder = parts[0]
                 proposed_subfolder = parts[1] if len(parts) > 1 else None
 
+                current_path = note.get("folder_path") or note.get("folder", "")
                 if confidence == "low" or proposed_folder == review_folder:
                     needs_review.append(
                         {
@@ -369,7 +389,7 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
                             "reason": reason,
                         }
                     )
-                elif proposed_folder_path == current_folder or proposed_folder == current_folder:
+                elif proposed_folder_path == current_path:
                     no_change.append(
                         {
                             "id": note_id,
@@ -392,6 +412,15 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
                     )
 
             progress.advance(task)
+
+    for n in archive_notes:
+        no_change.append(
+            {
+                "id": n["id"],
+                "title": n.get("title", ""),
+                "current_folder": n.get("folder", ""),
+            }
+        )
 
     PROPOSALS_DIR.mkdir(parents=True, exist_ok=True)
     date_str = datetime.now(UTC).strftime("%Y-%m-%d")

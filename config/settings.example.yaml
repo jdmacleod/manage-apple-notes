@@ -46,6 +46,10 @@ export:
   max_body_chars: 2000        # Truncate long notes for classification
   skip_empty: true
 
+classify:
+  exclude_archive: true   # Skip Archive notes during classification (added to no_change automatically)
+                          # Set to false to include Archive notes in a full library re-organization
+
 deduplication:
   fuzzy_title_threshold: 85      # thefuzz token_sort_ratio threshold (0–100)
   jaccard_content_threshold: 80  # thefuzz token_set_ratio threshold (0–100)

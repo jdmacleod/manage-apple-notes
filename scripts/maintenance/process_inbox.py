@@ -139,6 +139,7 @@ def run_inbox(dry_run: bool) -> None:
                 proposed_folder = parts[0]
                 proposed_subfolder = parts[1] if len(parts) > 1 else None
 
+                current_path = note.get("folder_path") or note.get("folder", "")
                 if confidence == "low" or proposed_folder == review_folder:
                     needs_review.append(
                         {
@@ -148,7 +149,7 @@ def run_inbox(dry_run: bool) -> None:
                             "reason": reason,
                         }
                     )
-                elif proposed_folder_path == current_folder or proposed_folder == current_folder:
+                elif proposed_folder_path == current_path:
                     no_change.append(
                         {
                             "id": note_id,

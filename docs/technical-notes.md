@@ -28,21 +28,30 @@ generic `item` reference — not a `folder` — on macOS Sequoia. Attempting `na
 container of aNote` silently fails, leaving folder names empty.
 
 The reliable pattern is to iterate `accounts → folders of acct → notes of aFolder`.
-In this form, the folder context is always known from the outer loop:
+In this form, the folder context is always known from the outer loop. A recursive handler
+builds the full slash-delimited path by walking the container chain upward:
 
 ```applescript
+on getFullPath(aFolder)
+    set folderName to name of aFolder
+    try
+        set parentContainer to container of aFolder
+        if class of parentContainer is folder then
+            return (my getFullPath(parentContainer)) & "/" & folderName
+        else
+            return folderName
+        end if
+    on error
+        return folderName
+    end try
+end getFullPath
+
 tell application "Notes"
     repeat with acct in accounts
         repeat with aFolder in folders of acct
-            set folderName to name of aFolder
-            set parentFolderName to ""
-            try
-                if class of container of aFolder is folder then
-                    set parentFolderName to name of container of aFolder
-                end if
-            end try
+            set fullFolderPath to my getFullPath(aFolder)
             repeat with aNote in notes of aFolder
-                -- folderName and parentFolderName are correct here
+                -- fullFolderPath is the complete path, e.g. "Library/Areas/Travel/Atlanta"
             end repeat
         end repeat
     end repeat
@@ -52,8 +61,9 @@ end tell
 This also avoids needing `container of aNote` entirely.
 
 **Caveat:** `container of aFolder` raises error -1728 ("Can't get container of…") for certain
-folders in secondary accounts (e.g. "On My Mac"). Always wrap the access in `try/end try` and
-default `parentFolderName` to `""` on error so the export continues rather than aborting.
+folders in secondary accounts (e.g. "On My Mac"). The `on error` clause in `getFullPath`
+handles this — on error, it returns just the leaf folder name so the export continues
+rather than aborting.
 
 ### Why AppleScript, not SQLite
 
