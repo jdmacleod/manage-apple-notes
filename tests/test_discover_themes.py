@@ -29,6 +29,28 @@ class TestInjectDiscoverTaxonomy:
         result = inject_discover_taxonomy("Categories: {CATEGORIES}", {"forever_notes": {}})
         assert result == "Categories: "
 
+    def test_flat_mode_nesting_guidance(self, minimal_taxonomy: dict) -> None:
+        result = inject_discover_taxonomy(
+            "{CATEGORIES} {NESTING_GUIDANCE}", minimal_taxonomy, {"folder_nesting": "flat"}
+        )
+        assert "top-level categories only" in result
+
+    def test_natural_mode_nesting_guidance(self, minimal_taxonomy: dict) -> None:
+        result = inject_discover_taxonomy(
+            "{CATEGORIES} {NESTING_GUIDANCE}", minimal_taxonomy, {"folder_nesting": "natural"}
+        )
+        assert "level" in result
+        assert "{NESTING_GUIDANCE}" not in result
+
+    def test_deep_mode_nesting_guidance(self, minimal_taxonomy: dict) -> None:
+        result = inject_discover_taxonomy(
+            "{CATEGORIES} {NESTING_GUIDANCE}",
+            minimal_taxonomy,
+            {"folder_nesting": "deep", "thresholds": {"max_folder_depth": 4}},
+        )
+        assert "4" in result
+        assert "{NESTING_GUIDANCE}" not in result
+
 
 class TestExtractJsonObject:
     def test_plain_object(self) -> None:

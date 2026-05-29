@@ -1,7 +1,7 @@
 (*
   apply-proposal.applescript
   Reads an approved proposal JSON and moves notes in Apple Notes.
-  Creates nested subfolders as needed.
+  Creates nested folders as needed, up to Apple Notes' maximum depth.
 
   Usage:
     osascript scripts/execute/apply-proposal.applescript [--dry-run] [--container <name>] <proposal.json>
@@ -10,7 +10,7 @@
   'needs_review' and 'no_change' entries are ignored.
 
   When --container is given, all folders are created/found inside that
-  top-level container folder (3-level nesting: container → folder → subfolder).
+  top-level container folder (container + proposed path components).
 *)
 
 on run argv
@@ -57,19 +57,18 @@ on run argv
 
 	-- ── Parse JSON via Python ────────────────────────────────────────────────
 	-- Emit one tab-separated line per move:
-	--   id \t title \t current_folder \t proposed_folder \t proposed_subfolder
+	--   id \t title \t current_folder \t proposed_folder_path
 
 	set pyParse to "import json,sys
 with open(sys.argv[1]) as f:
     p=json.load(f)
 for m in p.get('moves',[]):
-    row=[
-        m.get('id',''),
-        m.get('title',''),
-        m.get('current_folder',''),
-        m.get('proposed_folder',''),
-        m.get('proposed_subfolder') or '',
-    ]
+    fp=m.get('proposed_folder_path','')
+    if not fp:
+        pf=m.get('proposed_folder','')
+        ps=m.get('proposed_subfolder') or ''
+        fp=pf+'/'+ps if ps else pf
+    row=[m.get('id',''),m.get('title',''),m.get('current_folder',''),fp]
     print('\t'.join(str(v).replace('\t',' ') for v in row))"
 
 	set moveData to do shell script "python3 -c " & quoted form of pyParse & " " & quoted form of proposalFile
@@ -100,19 +99,12 @@ for m in p.get('moves',[]):
 				set noteId to item 1 of fields
 				set noteTitle to item 2 of fields
 				set currentFolder to item 3 of fields
-				set targetFolderName to item 4 of fields
-				set subfolderName to ""
-				if (count fields) >= 5 then
-					set subfolderName to item 5 of fields
-				end if
+				set proposedPath to item 4 of fields
 
 				-- Build display path for logging
-				set displayPath to targetFolderName
+				set displayPath to proposedPath
 				if containerName is not "" then
-					set displayPath to containerName & "/" & targetFolderName
-				end if
-				if subfolderName is not "" then
-					set displayPath to displayPath & "/" & subfolderName
+					set displayPath to containerName & "/" & proposedPath
 				end if
 
 				if dryRun then
@@ -153,42 +145,19 @@ for m in p.get('moves',[]):
 								set skipCount to skipCount + 1
 							else
 								-- Walk up the container chain to find the account.
-							-- Handles notes at any depth (root, 1 folder, or already in a subfolder).
-							set noteAccount to container of targetNote
-							repeat while class of noteAccount is not account
-								set noteAccount to container of noteAccount
-							end repeat
+								-- Handles notes at any depth (root, 1 folder, or already in a subfolder).
+								set noteAccount to container of targetNote
+								repeat while class of noteAccount is not account
+									set noteAccount to container of noteAccount
+								end repeat
 
-								if containerName is not "" then
-									-- ── 3-level: container → folder → subfolder ──────────
-									if not (exists folder containerName of noteAccount) then
-										make new folder with properties {name: containerName} at noteAccount
-									end if
-									if not (exists folder targetFolderName of folder containerName of noteAccount) then
-										make new folder at folder containerName of noteAccount with properties {name: targetFolderName}
-									end if
-									if subfolderName is not "" then
-										if not (exists folder subfolderName of folder targetFolderName of folder containerName of noteAccount) then
-											make new folder at folder targetFolderName of folder containerName of noteAccount with properties {name: subfolderName}
-										end if
-										move targetNote to folder subfolderName of folder targetFolderName of folder containerName of noteAccount
-									else
-										move targetNote to folder targetFolderName of folder containerName of noteAccount
-									end if
-								else
-									-- ── 2-level: folder → subfolder (no container) ───────
-									if not (exists folder targetFolderName of noteAccount) then
-										make new folder with properties {name: targetFolderName} at noteAccount
-									end if
-									if subfolderName is not "" then
-										if not (exists folder subfolderName of folder targetFolderName of noteAccount) then
-											make new folder at folder targetFolderName of noteAccount with properties {name: subfolderName}
-										end if
-										move targetNote to folder subfolderName of folder targetFolderName of noteAccount
-									else
-										move targetNote to folder targetFolderName of noteAccount
-									end if
-								end if
+								-- Split proposed path into components and find/create the folder hierarchy
+								set AppleScript's text item delimiters to "/"
+								set pathParts to text items of proposedPath
+								set AppleScript's text item delimiters to ""
+
+								set targetFolder to my findOrCreateFolder(noteAccount, containerName, pathParts)
+								move targetNote to targetFolder
 
 								log "[MOVED] \"" & noteTitle & "\" → " & displayPath
 								set moveCount to moveCount + 1
@@ -212,3 +181,35 @@ for m in p.get('moves',[]):
 		log "Done: " & moveCount & " moved, " & skipCount & " skipped, " & errorCount & " errors."
 	end if
 end run
+
+
+-- ── findOrCreateFolder ───────────────────────────────────────────────────────
+-- Recursively find or create each folder component under the account (and
+-- optional container). Supports paths of 1–5 components (Apple Notes maximum).
+
+on findOrCreateFolder(noteAccount, containerName, pathComponents)
+	if containerName is not "" then
+		tell application "Notes"
+			if not (exists folder containerName of noteAccount) then
+				make new folder with properties {name: containerName} at noteAccount
+			end if
+		end tell
+		set currentParent to folder containerName of noteAccount
+	else
+		set currentParent to noteAccount
+	end if
+
+	tell application "Notes"
+		repeat with componentName in pathComponents
+			set cStr to componentName as string
+			if cStr is not "" then
+				if not (exists folder cStr of currentParent) then
+					make new folder at currentParent with properties {name: cStr}
+				end if
+				set currentParent to folder cStr of currentParent
+			end if
+		end repeat
+	end tell
+
+	return currentParent
+end findOrCreateFolder

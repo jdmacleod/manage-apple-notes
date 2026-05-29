@@ -14,6 +14,8 @@ from pathlib import Path
 import yaml
 from rich.console import Console
 
+from scripts.folder_utils import enumerate_paths, path_depth
+
 console = Console()
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -72,6 +74,32 @@ def _subfolders(entry: dict) -> list[dict]:
         else:
             result.append({"name": str(item)})
     return result
+
+
+def _find_sf_def(entry: dict, target_path: str) -> dict:
+    """Walk the taxonomy tree to find the subfolder dict for a given path.
+
+    Returns a minimal dict with at least a 'name' key if the entry is not found.
+    Used to preserve hub_title / hub_tag overrides for deeper paths.
+    """
+    parts = target_path.split("/")
+    if not parts:
+        return {"name": target_path}
+    # Skip the root folder component (index 0) when walking subfolders
+    node: dict | str = entry
+    for part in parts[1:]:
+        if not isinstance(node, dict):
+            return {"name": part}
+        for child in node.get("subfolders") or []:
+            child_name = child.get("name", "") if isinstance(child, dict) else str(child)
+            if child_name == part:
+                node = child
+                break
+        else:
+            return {"name": part}
+    if isinstance(node, dict):
+        return node
+    return {"name": str(node)}
 
 
 def _hub_title(subfolder_def: dict, prefix: str) -> str:
@@ -182,15 +210,16 @@ def _build_theme_index(
     for cat_key, cat_val in cats.items():
         if not isinstance(cat_val, dict):
             continue
-        folder = _folder_name(cat_val)
         cat_display = cat_key.capitalize()
-        for sf in _subfolders(cat_val):
-            sf_name = sf["name"]
-            path_to_cat[f"{folder}/{sf_name}"] = (cat_display, sf_name)
-            # Also match bare subfolder name for flat Notes structures where
+        for path in enumerate_paths(cat_val):
+            if path_depth(path) < 2:
+                continue
+            leaf = path.split("/")[-1]
+            path_to_cat[path] = (cat_display, leaf)
+            # Also match bare leaf name for flat Notes structures where
             # parent folder detection returns empty (e.g. -1728 on container access).
-            path_to_cat.setdefault(sf_name, (cat_display, sf_name))
-            subfolder_defs.setdefault(sf_name, sf)
+            path_to_cat.setdefault(leaf, (cat_display, leaf))
+            subfolder_defs.setdefault(leaf, _find_sf_def(cat_val, path))
 
     # Accumulate (title, nid) pairs per theme per category
     theme_cats: dict[str, dict[str, list[tuple[str, str]]]] = {}

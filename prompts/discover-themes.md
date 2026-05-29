@@ -15,6 +15,8 @@ For each theme, estimate:
 Also note any existing folder names from the input that suggest structural
 groupings worth preserving as subfolders.
 
+{NESTING_GUIDANCE}
+
 Return a JSON object:
 {
   "themes": [
@@ -22,7 +24,8 @@ Return a JSON object:
       "name": "<short theme name>",
       "estimated_count": <integer>,
       "appears_in_categories": ["<category1>", "<category2>"],
-      "description": "<one sentence>"
+      "description": "<one sentence>",
+      "suggested_path": "<optional: full folder path to copy into taxonomy, e.g. 'Resources/Programming'>"
     }
   ],
   "folder_observations": [

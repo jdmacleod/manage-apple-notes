@@ -41,7 +41,7 @@ class TestBuildRestoreEntries:
         assert len(entries) == 1
         assert entries[0]["title"] == "Router setup"
         assert entries[0]["body"] == "Hold reset button for 10s."
-        assert entries[0]["folder"] == "Resources"
+        assert entries[0]["folder_path"] == "Resources/Reference"
 
     def test_missing_titles_filter(self) -> None:
         backup_notes = [

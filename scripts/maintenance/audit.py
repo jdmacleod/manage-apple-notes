@@ -17,6 +17,7 @@ from scripts.classify.classify_notes import (
     load_settings,
     load_taxonomy,
 )
+from scripts.folder_utils import effective_max_depth, nesting_mode, path_depth
 
 console = Console()
 
@@ -59,19 +60,22 @@ def _find_subfolder_candidates(
     notes: list[dict],
     known_category_folders: set[str],
     min_notes: int,
+    max_depth: int = 3,
 ) -> list[dict]:
-    """Find flat top-level folders that are large enough to warrant subfolders.
+    """Find folders shallow enough to warrant deeper nesting.
 
     Groups notes in known category folders by the first significant word of their
     title as a rough theme proxy. Flags folders where any word group exceeds
-    min_notes as a candidate for subfolder creation.
+    min_notes as a candidate for subfolder creation. Notes already at max_depth
+    or beyond are excluded — they can't go deeper.
     """
-    # Only consider notes in known flat top-level folders (no "/" in folder path)
+    # Consider notes whose current path has room for at least one more level
     flat_notes: dict[str, list[dict]] = defaultdict(list)
     for note in notes:
+        folder_path = note.get("folder_path") or note.get("folder", "")
         folder = note.get("folder", "")
-        if folder in known_category_folders and "/" not in (note.get("folder_path") or folder):
-            flat_notes[folder].append(note)
+        if folder in known_category_folders and path_depth(folder_path) < max_depth:
+            flat_notes[folder_path or folder].append(note)
 
     candidates = []
     stopwords = {"a", "an", "the", "my", "i", "on", "in", "of", "for", "to", "and", "or", "how"}
@@ -191,7 +195,13 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
             and d < fleeting_cutoff
         ]
 
-        subfolder_candidates = _find_subfolder_candidates(notes, category_folders, min_subfolder)
+        max_depth = effective_max_depth(settings)
+        mode = nesting_mode(settings)
+        subfolder_candidates = (
+            _find_subfolder_candidates(notes, category_folders, min_subfolder, max_depth)
+            if mode != "flat"
+            else []
+        )
 
     # ── Build report ─────────────────────────────────────────────────────────
 

@@ -143,6 +143,25 @@ class TestBuildThemeIndex:
         index = _build_theme_index({}, [], min_count=1)
         assert index == {}
 
+    def test_three_level_path_indexed_by_leaf(self) -> None:
+        taxonomy = {
+            "forever_notes": {
+                "resources": {
+                    "folder": "Resources",
+                    "subfolders": [
+                        {"name": "Programming", "subfolders": ["Python"]},
+                    ],
+                }
+            }
+        }
+        notes = [
+            {"folder_path": "Resources/Programming/Python", "title": f"Note {i}", "id": f"p{i}"}
+            for i in range(5)
+        ]
+        index = _build_theme_index(taxonomy, notes, min_count=3)
+        assert "Python" in index
+        assert index["Python"]["total"] == 5
+
 
 class TestGenerateHubBody:
     def test_text_mode_no_links(self) -> None:

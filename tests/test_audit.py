@@ -110,6 +110,22 @@ class TestFindSubfolderCandidates:
         candidates = _find_subfolder_candidates(notes, {"Inbox"}, min_notes=3)
         assert candidates == []
 
+    def test_depth_two_path_candidate_when_max_depth_three(self) -> None:
+        notes = [
+            {"folder": "Resources", "folder_path": "Resources/Programming", "title": f"Python guide {i}"}
+            for i in range(10)
+        ]
+        candidates = _find_subfolder_candidates(notes, {"Resources"}, min_notes=8, max_depth=3)
+        assert len(candidates) >= 1
+
+    def test_depth_two_path_excluded_when_at_max_depth(self) -> None:
+        notes = [
+            {"folder": "Resources", "folder_path": "Resources/Programming", "title": f"Python guide {i}"}
+            for i in range(10)
+        ]
+        candidates = _find_subfolder_candidates(notes, {"Resources"}, min_notes=3, max_depth=2)
+        assert candidates == []
+
 
 class TestRunAudit:
     def _make_notes(self, count: int = 5) -> list[dict]:

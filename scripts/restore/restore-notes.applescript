@@ -7,10 +7,9 @@
     osascript scripts/restore/restore-notes.applescript [--dry-run] [--container <name>] <restore.json>
 
   The restore JSON is an array of objects:
-    [{"title": "...", "body": "...", "folder": "...", "subfolder": "..."}, ...]
+    [{"title": "...", "body": "...", "folder_path": "..."}, ...]
 
-  folder    — top-level category (e.g. "Areas"); empty string = account root
-  subfolder — optional subfolder within folder (e.g. "Travel"); empty = folder only
+  folder_path — slash-delimited target path (e.g. "Areas/Travel"); empty = account root
 
   When --container is given, folders are created inside that container folder.
 
@@ -64,7 +63,12 @@ with open(sys.argv[1]) as f:
     entries=json.load(f)
 records=[]
 for e in entries:
-    fields=[e.get('title',''),e.get('body',''),e.get('folder',''),e.get('subfolder') or '']
+    fp=e.get('folder_path','')
+    if not fp:
+        folder=e.get('folder','')
+        sub=e.get('subfolder') or ''
+        fp=folder+'/'+sub if sub else folder
+    fields=[e.get('title',''),e.get('body',''),fp]
     records.append(FS.join(str(v) for v in fields))
 sys.stdout.write(RS.join(records))"
 
@@ -91,17 +95,12 @@ sys.stdout.write(RS.join(records))"
 			if (count fields) >= 3 then
 				set noteTitle to item 1 of fields
 				set noteBody to item 2 of fields
-				set folderName to item 3 of fields
-				set subfolderName to ""
-				if (count fields) >= 4 then set subfolderName to item 4 of fields
+				set folderPath to item 3 of fields
 
 				-- Build display path for logging
-				set displayPath to folderName
+				set displayPath to folderPath
 				if containerName is not "" then
-					set displayPath to containerName & "/" & displayPath
-				end if
-				if subfolderName is not "" then
-					set displayPath to displayPath & "/" & subfolderName
+					set displayPath to containerName & "/" & folderPath
 				end if
 
 				if dryRun then
@@ -123,35 +122,11 @@ sys.stdout.write(RS.join(records))"
 							-- Resolve (or create) target folder
 							set targetFolder to missing value
 
-							if folderName is not "" then
-								if containerName is not "" then
-									if not (exists folder containerName of targetAcct) then
-										make new folder with properties {name: containerName} at targetAcct
-									end if
-									if not (exists folder folderName of folder containerName of targetAcct) then
-										make new folder at folder containerName of targetAcct with properties {name: folderName}
-									end if
-									if subfolderName is not "" then
-										if not (exists folder subfolderName of folder folderName of folder containerName of targetAcct) then
-											make new folder at folder folderName of folder containerName of targetAcct with properties {name: subfolderName}
-										end if
-										set targetFolder to folder subfolderName of folder folderName of folder containerName of targetAcct
-									else
-										set targetFolder to folder folderName of folder containerName of targetAcct
-									end if
-								else
-									if not (exists folder folderName of targetAcct) then
-										make new folder with properties {name: folderName} at targetAcct
-									end if
-									if subfolderName is not "" then
-										if not (exists folder subfolderName of folder folderName of targetAcct) then
-											make new folder at folder folderName of targetAcct with properties {name: subfolderName}
-										end if
-										set targetFolder to folder subfolderName of folder folderName of targetAcct
-									else
-										set targetFolder to folder folderName of targetAcct
-									end if
-								end if
+							if folderPath is not "" then
+								set AppleScript's text item delimiters to "/"
+								set pathParts to text items of folderPath
+								set AppleScript's text item delimiters to ""
+								set targetFolder to my findOrCreateFolder(targetAcct, containerName, pathParts)
 							end if
 
 							-- Skip if a note with the same title already exists in the target
@@ -196,3 +171,35 @@ sys.stdout.write(RS.join(records))"
 		log "Done: " & createdCount & " created, " & existsCount & " already existed, " & errorCount & " errors."
 	end if
 end run
+
+
+-- ── findOrCreateFolder ───────────────────────────────────────────────────────
+-- Recursively find or create each folder component under the account (and
+-- optional container). Supports paths of 1–5 components (Apple Notes maximum).
+
+on findOrCreateFolder(noteAccount, containerName, pathComponents)
+	if containerName is not "" then
+		tell application "Notes"
+			if not (exists folder containerName of noteAccount) then
+				make new folder with properties {name: containerName} at noteAccount
+			end if
+		end tell
+		set currentParent to folder containerName of noteAccount
+	else
+		set currentParent to noteAccount
+	end if
+
+	tell application "Notes"
+		repeat with componentName in pathComponents
+			set cStr to componentName as string
+			if cStr is not "" then
+				if not (exists folder cStr of currentParent) then
+					make new folder at currentParent with properties {name: cStr}
+				end if
+				set currentParent to folder cStr of currentParent
+			end if
+		end repeat
+	end tell
+
+	return currentParent
+end findOrCreateFolder

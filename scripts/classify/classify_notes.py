@@ -10,6 +10,13 @@ import yaml
 from rich.console import Console
 from rich.progress import track
 
+from scripts.folder_utils import (
+    clamp_path,
+    effective_max_depth,
+    enumerate_paths,
+    nesting_mode,
+    path_depth,
+)
 from scripts.providers import LLMProvider, get_provider
 
 console = Console()
@@ -103,14 +110,21 @@ _CATEGORY_META = [
 ]
 
 
-def inject_taxonomy(system_prompt: str, taxonomy: dict) -> str:
+def inject_taxonomy(
+    system_prompt: str,
+    taxonomy: dict,
+    settings: dict | None = None,
+) -> str:
     """Inject the user's taxonomy into the classify prompt template.
 
-    Replaces {CATEGORY_LIST} with only the categories present in the taxonomy,
-    each with its description and subfolders. Replaces {CATCHALL} with the
-    review folder name if defined, or the inbox folder name as a fallback.
+    Replaces {CATEGORY_LIST} with only the categories present in the taxonomy.
+    In flat mode only top-level folder names are listed; in natural/deep modes
+    all available sub-paths are shown indented by depth, up to max_folder_depth.
+    Replaces {CATCHALL} with the review folder name, or inbox as a fallback.
     """
     fn = taxonomy.get("forever_notes", {})
+    mode = nesting_mode(settings)
+    max_depth = effective_max_depth(settings)
 
     lines: list[str] = []
     for key, description in _CATEGORY_META:
@@ -120,10 +134,16 @@ def inject_taxonomy(system_prompt: str, taxonomy: dict) -> str:
         folder = _folder_name(entry)
         if not folder:
             continue
-        subs = _subfolders(entry)
         lines.append(f"{folder} — {description}")
-        if subs:
-            lines.append(f"  Subfolders: {_subfolder_str(subs)}")
+
+        if mode != "flat":
+            for path in enumerate_paths(entry):
+                d = path_depth(path)
+                if d < 2 or d > max_depth:
+                    continue
+                indent = "  " * (d - 1)
+                leaf = path.split("/")[-1]
+                lines.append(f"{indent}{leaf}  [{path}]")
 
     catchall = (
         _folder_name(fn.get("review"))
@@ -219,7 +239,7 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
     settings = load_settings()
     taxonomy = load_taxonomy()
     system_prompt_template = load_prompt_template()
-    system_prompt = inject_taxonomy(system_prompt_template, taxonomy)
+    system_prompt = inject_taxonomy(system_prompt_template, taxonomy, settings)
 
     export_path = Path(export_file) if export_file else find_latest_export()
     if not export_path.exists():
@@ -275,11 +295,19 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
             note_id = result.get("id", "")
             note = note_index.get(note_id, {})
             current_folder = note.get("folder", "")
-            proposed_folder = result.get("proposed_folder", "")
-            proposed_subfolder = result.get("proposed_subfolder") or None
             confidence = result.get("confidence", "low")
             reason = result.get("reason", "")
-            proposed_folder_path = _build_folder_path(proposed_folder, proposed_subfolder)
+
+            # Prefer proposed_folder_path (new prompt); fall back to old separate fields
+            proposed_folder_path_raw = result.get("proposed_folder_path") or ""
+            if not proposed_folder_path_raw:
+                pf = result.get("proposed_folder", "")
+                ps = result.get("proposed_subfolder") or ""
+                proposed_folder_path_raw = f"{pf}/{ps}" if ps else pf
+            proposed_folder_path = clamp_path(proposed_folder_path_raw, effective_max_depth(settings))
+            parts = proposed_folder_path.split("/", 1)
+            proposed_folder = parts[0]
+            proposed_subfolder = parts[1] if len(parts) > 1 else None
 
             if confidence == "low" or proposed_folder == review_folder:
                 needs_review.append({

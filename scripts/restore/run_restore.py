@@ -52,13 +52,17 @@ def _build_restore_entries(
         if missing_titles is not None and title not in missing_titles:
             continue
         body = body_by_title.get(title, "")
-        folder = dest.get("proposed_folder", "")
-        subfolder = dest.get("proposed_subfolder") or ""
-        key = (title, folder, subfolder)
+        # Prefer proposed_folder_path; fall back to folder + subfolder for old entries
+        folder_path = dest.get("proposed_folder_path") or dest.get("folder_path") or ""
+        if not folder_path:
+            folder = dest.get("proposed_folder", "")
+            subfolder = dest.get("proposed_subfolder") or ""
+            folder_path = f"{folder}/{subfolder}" if subfolder else folder
+        key = (title, folder_path)
         if key in seen:
             continue
         seen.add(key)
-        entries.append({"title": title, "body": body, "folder": folder, "subfolder": subfolder})
+        entries.append({"title": title, "body": body, "folder_path": folder_path})
     return entries
 
 
@@ -121,12 +125,9 @@ def run_restore(
         console.print("[yellow]No missing-notes file found — restoring all notes in backup.[/yellow]")
         for n in backup_notes:
             title = n.get("title", "")
-            folder = n.get("folder", "")
+            folder_path = n.get("folder_path") or n.get("folder", "")
             if title and title not in proposal_destinations:
-                proposal_destinations[title] = {
-                    "proposed_folder": folder,
-                    "proposed_subfolder": None,
-                }
+                proposal_destinations[title] = {"folder_path": folder_path}
 
     # ── Build restore list ───────────────────────────────────────────────────
     entries = _build_restore_entries(backup_notes, missing_titles, proposal_destinations)

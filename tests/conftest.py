@@ -33,18 +33,43 @@ def minimal_settings() -> dict:
         "anthropic_api_key_env": "ANTHROPIC_API_KEY",
         "llm": {"provider": "anthropic", "model": "claude-sonnet-4-6", "batch_size": 20},
         "export": {"max_body_chars": 2000, "skip_empty": True},
+        "folder_nesting": "natural",
         "thresholds": {
             "stale_days": 180,
             "stub_chars": 50,
             "inbox_stale_days": 7,
             "fleeting_stale_days": 30,
             "min_notes_for_subfolder": 8,
+            "max_folder_depth": 3,
         },
         "deduplication": {
             "fuzzy_title_threshold": 85,
             "jaccard_content_threshold": 80,
             "content_preview_chars": 300,
         },
+    }
+
+
+@pytest.fixture
+def deep_taxonomy() -> dict:
+    return {
+        "forever_notes": {
+            "inbox": {"folder": "Inbox"},
+            "resources": {
+                "folder": "Resources",
+                "subfolders": [
+                    "Cooking",
+                    {
+                        "name": "Programming",
+                        "subfolders": [
+                            "Python",
+                            {"name": "Systems", "subfolders": ["Networking"]},
+                        ],
+                    },
+                ],
+            },
+            "archive": {"folder": "Archive"},
+        }
     }
 
 

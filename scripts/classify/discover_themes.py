@@ -17,6 +17,7 @@ from scripts.classify.classify_notes import (
     load_taxonomy,
     price_per_million,
 )
+from scripts.folder_utils import effective_max_depth, max_taxonomy_depth, nesting_mode
 from scripts.providers import get_provider
 
 console = Console()
@@ -41,15 +42,42 @@ def load_discover_prompt() -> str:
     return system_part.strip()
 
 
-def inject_discover_taxonomy(system_prompt: str, taxonomy: dict) -> str:
-    """Replace {CATEGORIES} with the user's actual top-level folder names."""
+def inject_discover_taxonomy(
+    system_prompt: str,
+    taxonomy: dict,
+    settings: dict | None = None,
+) -> str:
+    """Replace {CATEGORIES} and {NESTING_GUIDANCE} in the discover prompt template."""
     fn = taxonomy.get("forever_notes", {})
     folders = [
         _folder_name(fn[key])
         for key, _ in _CATEGORY_META
         if key in fn and _folder_name(fn[key])
     ]
-    return system_prompt.replace("{CATEGORIES}", ", ".join(folders))
+    mode = nesting_mode(settings)
+    max_depth = effective_max_depth(settings)
+    current_depth = max_taxonomy_depth(taxonomy)
+
+    if mode == "flat":
+        guidance = "Do not suggest subfolders. All themes should map to top-level categories only."
+    elif mode == "deep":
+        guidance = (
+            f"You may suggest hierarchical folder paths up to {max_depth} levels deep "
+            f"where strong theme clusters warrant it. Use '/' to separate path levels, "
+            f"e.g. 'Resources/Programming/Python'."
+        )
+    else:  # natural
+        guidance = (
+            f"The current taxonomy is {current_depth} level(s) deep. "
+            f"Do not suggest paths deeper than {min(current_depth + 1, max_depth)} levels. "
+            f"Add one additional tier only where a clear theme cluster warrants it."
+        )
+
+    return (
+        system_prompt
+        .replace("{CATEGORIES}", ", ".join(folders))
+        .replace("{NESTING_GUIDANCE}", guidance)
+    )
 
 
 def _is_context_overflow(exc: Exception) -> bool:
@@ -92,7 +120,7 @@ def _extract_json_object(text: str) -> dict:
 def run_discover(export_file: str | None, dry_run: bool) -> None:
     settings = load_settings()
     taxonomy = load_taxonomy()
-    system_prompt = inject_discover_taxonomy(load_discover_prompt(), taxonomy)
+    system_prompt = inject_discover_taxonomy(load_discover_prompt(), taxonomy, settings)
 
     export_path = Path(export_file) if export_file else find_latest_export()
     if not export_path.exists():
@@ -163,13 +191,34 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
 
     # ── Synthesis call — merge and deduplicate themes across batches ─────────
 
+    mode = nesting_mode(settings)
+    max_depth = effective_max_depth(settings)
+    current_depth = max_taxonomy_depth(taxonomy)
+    if mode == "flat":
+        nesting_guidance = "Do not suggest subfolders. All themes map to top-level categories only."
+    elif mode == "deep":
+        nesting_guidance = (
+            f"You may suggest hierarchical paths up to {max_depth} levels deep. "
+            f"Add a 'suggested_path' field using '/' as the separator, e.g. 'Resources/Programming/Python'."
+        )
+    else:
+        cap = min(current_depth + 1, max_depth)
+        nesting_guidance = (
+            f"The current taxonomy is {current_depth} level(s) deep. "
+            f"Do not suggest paths deeper than {cap} levels. "
+            f"Add a 'suggested_path' field only when a clear subfolder is warranted, "
+            f"e.g. 'Resources/Programming'."
+        )
+
     synthesis_prompt = (
         "You received theme lists from multiple batches of notes. "
         "Merge, deduplicate, and consolidate into a single ranked list. "
         "Combine similar themes (e.g. 'Health', 'Health & Fitness', 'Fitness' → 'Health & Fitness'). "
         "Sum estimated_counts for merged themes. "
         f"Flag themes with estimated_count < {min_subfolder} as below the subfolder threshold. "
-        "Return a JSON object with a single 'themes' array using the same schema as before."
+        f"{nesting_guidance} "
+        "Return a JSON object with a single 'themes' array using the same schema as before, "
+        "adding an optional 'suggested_path' field where appropriate."
     )
 
     all_raw = [theme for batch in raw_theme_lists for theme in batch]

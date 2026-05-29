@@ -27,7 +27,7 @@ console = Console()
 def run_inbox(dry_run: bool) -> None:
     settings = load_settings()
     taxonomy = load_taxonomy()
-    system_prompt = inject_taxonomy(load_prompt_template(), taxonomy)
+    system_prompt = inject_taxonomy(load_prompt_template(), taxonomy, settings)
 
     inbox_folder = _folder_name(taxonomy.get("forever_notes", {}).get("inbox", ""))
     if not inbox_folder or inbox_folder.startswith("["):
@@ -85,9 +85,18 @@ def run_inbox(dry_run: bool) -> None:
             note_id = result.get("id", "")
             note = note_index.get(note_id, {})
             current_folder = note.get("folder", "")
-            proposed_folder = result.get("proposed_folder", "")
             confidence = result.get("confidence", "low")
             reason = result.get("reason", "")
+
+            proposed_folder_path_raw = result.get("proposed_folder_path") or ""
+            if not proposed_folder_path_raw:
+                pf = result.get("proposed_folder", "")
+                ps = result.get("proposed_subfolder") or ""
+                proposed_folder_path_raw = f"{pf}/{ps}" if ps else pf
+            proposed_folder_path = proposed_folder_path_raw
+            parts = proposed_folder_path.split("/", 1)
+            proposed_folder = parts[0]
+            proposed_subfolder = parts[1] if len(parts) > 1 else None
 
             if confidence == "low" or proposed_folder == review_folder:
                 needs_review.append({
@@ -96,7 +105,7 @@ def run_inbox(dry_run: bool) -> None:
                     "current_folder": current_folder,
                     "reason": reason,
                 })
-            elif proposed_folder == current_folder:
+            elif proposed_folder_path == current_folder or proposed_folder == current_folder:
                 no_change.append({
                     "id": note_id,
                     "title": note.get("title", ""),
@@ -108,6 +117,8 @@ def run_inbox(dry_run: bool) -> None:
                     "title": note.get("title", ""),
                     "current_folder": current_folder,
                     "proposed_folder": proposed_folder,
+                    "proposed_subfolder": proposed_subfolder,
+                    "proposed_folder_path": proposed_folder_path,
                     "confidence": confidence,
                     "reason": reason,
                 })

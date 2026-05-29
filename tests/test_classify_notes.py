@@ -91,7 +91,50 @@ class TestInjectTaxonomy:
             }
         }
         result = inject_taxonomy("{CATEGORY_LIST}", taxonomy)
-        assert "Reference, Tools" in result
+        assert "Reference" in result
+        assert "Tools" in result
+        assert "[Resources/Reference]" in result
+
+    def test_flat_mode_no_subfolders(self) -> None:
+        taxonomy = {
+            "forever_notes": {
+                "resources": {"folder": "Resources", "subfolders": ["Reference", "Tools"]}
+            }
+        }
+        result = inject_taxonomy("{CATEGORY_LIST}", taxonomy, {"folder_nesting": "flat"})
+        assert "Resources" in result
+        assert "[Resources/Reference]" not in result
+        assert "Reference" not in result
+
+    def test_deep_taxonomy_shows_nested_paths(self, deep_taxonomy: dict) -> None:
+        result = inject_taxonomy("{CATEGORY_LIST}", deep_taxonomy)
+        assert "[Resources/Programming]" in result
+        assert "[Resources/Programming/Python]" in result
+        assert "[Resources/Programming/Systems/Networking]" not in result  # exceeds default depth 3
+
+    def test_deep_taxonomy_with_depth_5(self, deep_taxonomy: dict) -> None:
+        settings = {"folder_nesting": "natural", "thresholds": {"max_folder_depth": 5}}
+        result = inject_taxonomy("{CATEGORY_LIST}", deep_taxonomy, settings)
+        assert "[Resources/Programming/Systems/Networking]" in result
+
+
+class TestProposalPathDerivation:
+    def test_proposed_folder_path_primary(self) -> None:
+        result = {"proposed_folder_path": "Resources/Programming/Python", "confidence": "high", "reason": "x"}
+        from scripts.folder_utils import clamp_path, effective_max_depth
+        path = clamp_path(result.get("proposed_folder_path", ""), effective_max_depth(None))
+        parts = path.split("/", 1)
+        assert parts[0] == "Resources"
+        assert parts[1] == "Programming/Python"
+
+    def test_fallback_to_old_fields(self) -> None:
+        result = {"proposed_folder": "Resources", "proposed_subfolder": "Reference"}
+        fp = result.get("proposed_folder_path") or ""
+        if not fp:
+            pf = result.get("proposed_folder", "")
+            ps = result.get("proposed_subfolder") or ""
+            fp = f"{pf}/{ps}" if ps else pf
+        assert fp == "Resources/Reference"
 
 
 class TestPricePerMillion:
