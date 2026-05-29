@@ -1,5 +1,11 @@
 # manage-apple-notes
 
+[![CI](https://github.com/jdmacleod/manage-apple-notes/actions/workflows/ci.yml/badge.svg)](https://github.com/jdmacleod/manage-apple-notes/actions/workflows/ci.yml)
+[![Coverage](badges/coverage.svg)](https://github.com/jdmacleod/manage-apple-notes/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://www.apple.com/macos/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Scripts and workflows for organizing Apple Notes using AI-powered classification into a user-defined folder taxonomy — PARA, Zettelkasten-influenced, or custom. Optional [Forever Notes](https://forevernotesframework.com) structural features (Hub notes, tags) are available in strict mode.
 
 The pipeline is: **export → discover themes → AI classify → human review → apply**. Nothing touches your notes until you approve a proposal.
@@ -71,16 +77,7 @@ Most commands accept `--dry-run` to preview without making changes. `apply-dedup
 
 > **Backup scope:** `notes backup` saves a text-only snapshot — note titles, plaintext body, and folder paths. Images, attachments, sketches, and formatting are not captured. For full media backup, use Time Machine or a clone utility (CCC, SuperDuper) to back up `~/Library/Group Containers/group.com.apple.notes/`.
 
-## Documentation
-
-| Document | Contents |
-|----------|----------|
-| [docs/runbooks/main-workflow.md](docs/runbooks/main-workflow.md) | Full step-by-step workflow |
-| [docs/para-method.md](docs/para-method.md) | PARA method overview, taxonomy designs, and guidance for generating taxonomy.local.yaml |
-| [docs/forever-notes-framework.md](docs/forever-notes-framework.md) | Forever Notes loose/strict modes, Hub notes, and sync-hubs usage |
-| [docs/security-considerations.md](docs/security-considerations.md) | Data flow, cloud vs. local LLM, Apple Notes MCP guidance |
-| [docs/technical-notes.md](docs/technical-notes.md) | Apple Notes platform behavior, LLM findings, local model recommendations |
-| [docs/references.md](docs/references.md) | Web references: Apple Notes platform, note organisation frameworks, security, LLM providers, Apple Notes MCP servers |
+Full documentation lives in the [`docs/`](docs/) directory.
 
 ## Privacy
 
@@ -92,37 +89,6 @@ This is a public repo. Your note content and folder names never leave your machi
 - A pre-commit hook blocks accidental commits of private files
 
 See `config/taxonomy.example.yaml` (Forever Notes / Zettelkasten), `config/taxonomy.para.yaml` (PARA method), and `config/settings.example.yaml` for the committed templates.
-
-## Default Folder Taxonomy
-
-| Folder | Purpose |
-|--------|---------|
-| Inbox | Temporary capture, not yet processed |
-| Fleeting | Quick thoughts, to be processed or discarded |
-| Literature | Notes tied to a specific source (book, article, talk) |
-| Permanent | Atomic, evergreen concepts in your own words |
-| Projects | Notes tied to a specific active project |
-| Areas | Ongoing responsibilities and reference |
-| Resources | Reference material, how-tos, collections |
-| Archive | Inactive, completed, or outdated notes |
-| Review | Needs human triage (used during cleanup) |
-
-This is the default Zettelkasten-influenced taxonomy. For the PARA method (Inbox, Projects, Areas, Resources, Archive), see [`config/taxonomy.para.yaml`](config/taxonomy.para.yaml) and [`docs/para-method.md`](docs/para-method.md).
-
-## Forever Notes
-
-This project optionally supports the [Forever Notes framework](https://forevernotesframework.com).
-See [myforevernotes.com](https://www.myforevernotes.com/docs/home) for the full framework docs.
-
-Two operating modes are available, set via `forever_notes_mode` in `settings.local.yaml`:
-
-| Mode | What it does |
-|------|-------------|
-| `loose` (default) | Folder taxonomy, theme discovery, classification, deduplication |
-| `strict` | Everything in loose, plus ✱ Hub notes per theme, a ✱ Home root note, and tags on classified notes |
-
-Strict mode is **additive** — it does not change folder structure or how classification works.
-See [`docs/forever-notes-framework.md`](docs/forever-notes-framework.md) for details.
 
 ## License
 

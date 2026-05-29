@@ -18,3 +18,15 @@ __pycache__/
 
 # Environment variables — may contain API keys
 .env
+
+# Test / build artifacts
+.coverage
+coverage.xml
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+*.egg-info/
+
+# CI-generated coverage badge (committed by CI bot on each run)
+# badges/coverage.svg intentionally tracked — see .github/workflows/ci.yml
