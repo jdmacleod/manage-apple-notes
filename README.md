@@ -52,7 +52,8 @@ See [docs/runbooks/main-workflow.md](docs/runbooks/main-workflow.md) for the ful
 uv run notes export              # export from Apple Notes
 uv run notes backup              # safety backup before bulk changes → data/backups/
 uv run notes discover            # map thematic clusters → data/theme-maps/
-# → HUMAN: review theme map, add subfolders to taxonomy.local.yaml
+uv run notes draft               # generate editable taxonomy YAML → data/taxonomy-drafts/
+# → HUMAN: review draft, copy to config/taxonomy.local.yaml
 uv run notes classify            # classify notes → data/proposals/
 # → HUMAN: review proposal JSON
 uv run notes apply --dry-run     # preview moves
