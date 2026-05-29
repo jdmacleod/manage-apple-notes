@@ -85,6 +85,7 @@ def run_repair_restored(
     settings = load_settings()
     logger = RunLogger("repair-restored", logs_dir_path(settings))
     # Resolve missing-notes file
+    missing_path: Path | None
     if missing_file:
         missing_path = Path(missing_file)
     else:
@@ -104,6 +105,7 @@ def run_repair_restored(
     console.print(f"  {len(missing_notes)} notes listed as restored")
 
     # Resolve old export (source of original content)
+    old_path: Path | None
     if old_export_file:
         old_path = Path(old_export_file)
     else:

@@ -13,7 +13,7 @@ from pathlib import Path
 import yaml
 from rich.console import Console
 
-from scripts.providers import get_provider
+from scripts.providers import LLMProvider, get_provider
 from scripts.run_logger import RunLogger, logs_dir_path
 
 console = Console()
@@ -169,7 +169,7 @@ def pass2_fuzzy(
     consumed: set[str],
     settings: dict,
 ) -> list[tuple[dict, dict, float]]:
-    from thefuzz import fuzz  # type: ignore[import]
+    from thefuzz import fuzz
 
     dedup_cfg = settings.get("deduplication", {})
     title_threshold = float(dedup_cfg.get("fuzzy_title_threshold", 85))
@@ -205,7 +205,7 @@ def pass2_fuzzy(
 def pass3_llm(
     candidates: list[tuple[dict, dict, float]],
     system_prompt: str,
-    provider,
+    provider: LLMProvider,
     preview_chars: int,
 ) -> list[dict]:
     groups_payload = [
@@ -248,7 +248,8 @@ def pass3_llm(
     end = text.rfind("]") + 1
     if start == -1 or end == 0:
         raise ValueError(f"No JSON array in LLM response:\n{text[:300]}")
-    return json.loads(text[start:end])
+    result: list[dict] = json.loads(text[start:end])
+    return result
 
 
 def run_dedup(export_file: str | None, proposal_file: str | None, dry_run: bool) -> None:

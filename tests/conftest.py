@@ -119,9 +119,13 @@ def mock_llm_provider() -> MagicMock:
 
 
 def _load_response_fixture(filename: str) -> MagicMock:
+    import anthropic
+
     data = json.loads((RESPONSES_DIR / filename).read_text())
     mock_response = MagicMock()
-    mock_response.content = [MagicMock(text=data["content"][0]["text"])]
+    mock_response.content = [
+        MagicMock(spec=anthropic.types.TextBlock, text=data["content"][0]["text"])
+    ]
     mock_response.model = data["model"]
     mock_response.stop_reason = data["stop_reason"]
     return mock_response

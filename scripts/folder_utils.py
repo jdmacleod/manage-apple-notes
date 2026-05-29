@@ -65,4 +65,4 @@ def nesting_mode(settings: dict | None) -> str:
     """Read folder_nesting from settings, defaulting to 'natural'."""
     if not settings:
         return "natural"
-    return settings.get("folder_nesting", "natural")
+    return str(settings.get("folder_nesting") or "natural")

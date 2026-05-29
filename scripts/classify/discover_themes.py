@@ -31,7 +31,7 @@ from scripts.folder_utils import (
     nesting_mode,
     path_depth,
 )
-from scripts.providers import get_provider
+from scripts.providers import LLMProvider, get_provider
 from scripts.run_logger import RunLogger, estimate_duration, logs_dir_path
 
 console = Console()
@@ -146,7 +146,7 @@ def _is_context_overflow(exc: Exception) -> bool:
     )
 
 
-def _discover_batch(provider, system_prompt: str, batch: list) -> list:
+def _discover_batch(provider: LLMProvider, system_prompt: str, batch: list) -> list:
     """Send one batch to the LLM; on context overflow, split recursively and merge."""
     try:
         response = provider.classify_messages(
@@ -154,7 +154,7 @@ def _discover_batch(provider, system_prompt: str, batch: list) -> list:
             json.dumps(batch, indent=2, ensure_ascii=False),
         )
         result = _extract_json_object(response)
-        return result.get("themes", [])
+        return list(result.get("themes") or [])
     except (ValueError, json.JSONDecodeError) as exc:
         console.print(f"[yellow]Warning:[/yellow] batch parse error — {exc}")
         return []
@@ -179,7 +179,8 @@ def _extract_json_object(text: str) -> dict:
     end = text.rfind("}") + 1
     if start == -1 or end == 0:
         raise ValueError(f"No JSON object found in response:\n{text[:300]}")
-    return json.loads(text[start:end])
+    result: dict = json.loads(text[start:end])
+    return result
 
 
 def run_discover(export_file: str | None, dry_run: bool) -> None:

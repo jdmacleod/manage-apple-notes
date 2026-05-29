@@ -62,7 +62,7 @@ def find_latest_export() -> Path:
 
 
 def _folder_name(entry: dict) -> str:
-    return entry.get("folder", "") if isinstance(entry, dict) else str(entry)
+    return str(entry.get("folder") or "") if isinstance(entry, dict) else str(entry)
 
 
 def _subfolders(entry: dict) -> list[dict]:
@@ -104,12 +104,12 @@ def _find_sf_def(entry: dict, target_path: str) -> dict:
 
 
 def _hub_title(subfolder_def: dict, prefix: str) -> str:
-    return subfolder_def.get("hub_title") or f"{prefix}{subfolder_def['name']}"
+    return str(subfolder_def.get("hub_title") or f"{prefix}{subfolder_def['name']}")
 
 
 def _hub_tag(subfolder_def: dict) -> str:
     if "hub_tag" in subfolder_def:
-        return subfolder_def["hub_tag"]
+        return str(subfolder_def["hub_tag"])
     name = subfolder_def["name"].lower()
     name = re.sub(r"[^a-z0-9]+", "-", name).strip("-")
     return f"#{name}"

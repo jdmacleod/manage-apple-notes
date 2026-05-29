@@ -90,7 +90,7 @@ def load_prompt_template() -> str:
 def _folder_name(entry: dict | str) -> str:
     """Extract the folder name from a taxonomy entry (nested dict or legacy string)."""
     if isinstance(entry, dict):
-        return entry.get("folder", "")
+        return str(entry.get("folder") or "")
     return entry or ""
 
 
@@ -171,7 +171,8 @@ def _extract_json_array(text: str) -> list:
     end = text.rfind("]") + 1
     if start == -1 or end == 0:
         raise ValueError(f"No JSON array found in response:\n{text[:300]}")
-    return json.loads(text[start:end])
+    result: list = json.loads(text[start:end])
+    return result
 
 
 def _is_context_overflow(exc: Exception) -> bool:

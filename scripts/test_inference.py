@@ -23,7 +23,7 @@ from scripts.classify.classify_notes import (
     load_settings,
     load_taxonomy,
 )
-from scripts.providers import OllamaProvider, get_provider
+from scripts.providers import LLMProvider, OllamaProvider, get_provider
 
 TEST_NOTE = [
     {
@@ -43,6 +43,7 @@ def main() -> None:
     taxonomy = load_taxonomy()
     system_prompt = inject_taxonomy(load_prompt_template(), taxonomy)
 
+    provider: LLMProvider
     if os.environ.get("OLLAMA_BASE_URL"):
         provider = OllamaProvider("llama3")  # OLLAMA_MODEL env var overrides in __init__
     else:

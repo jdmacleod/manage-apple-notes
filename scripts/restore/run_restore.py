@@ -107,6 +107,7 @@ def run_restore(
     missing_titles: set[str] | None = None
     proposal_destinations: dict[str, dict] = {}
 
+    missing_path: Path | None
     if missing_file:
         missing_path = Path(missing_file)
     else:

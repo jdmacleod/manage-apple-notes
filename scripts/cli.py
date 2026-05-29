@@ -31,7 +31,7 @@ def discover(
         "--dry-run",
         help="Preview batches and estimated cost without calling the API.",
     ),
-):
+) -> None:
     """Discover thematic clusters in the library for subfolder planning (Pass 1)."""
     run_discover(export_file=export_file, dry_run=dry_run)
 
@@ -47,7 +47,7 @@ def classify(
         "--dry-run",
         help="Preview batches and estimated API cost without calling the API.",
     ),
-):
+) -> None:
     """Classify notes from an export and write a move proposal."""
     run_classify(export_file=export_file, dry_run=dry_run)
 
@@ -59,7 +59,7 @@ def inbox(
         "--dry-run",
         help="Preview batches and estimated API cost without calling the API.",
     ),
-):
+) -> None:
     """Classify Inbox notes and write a move proposal."""
     run_inbox(dry_run=dry_run)
 
@@ -76,19 +76,19 @@ def audit(
         "--dry-run",
         help="Preview checks and note counts without writing a report.",
     ),
-):
+) -> None:
     """Scan the library for quality issues and write a Markdown report."""
     run_audit(export_file=None, output_override=output, dry_run=dry_run)
 
 
 @app.command()
-def export():
+def export() -> None:
     """Export all notes from Apple Notes to data/exports/."""
     run_export()
 
 
 @app.command()
-def backup():
+def backup() -> None:
     """Export notes and save a timestamped backup to data/backups/."""
     run_backup()
 
@@ -110,7 +110,7 @@ def restore(
         "--dry-run",
         help="Preview what would be created without touching Notes.",
     ),
-):
+) -> None:
     """Restore notes from a backup — recreates notes lost during apply operations."""
     run_restore(backup_file=backup_file, missing_file=missing_file, dry_run=dry_run)
 
@@ -126,7 +126,7 @@ def apply(
         "--dry-run",
         help="Preview moves without touching Notes.",
     ),
-):
+) -> None:
     """Apply an approved move proposal to Apple Notes."""
     run_apply(proposal_file=proposal_file, dry_run=dry_run)
 
@@ -147,7 +147,7 @@ def dedup(
         "--dry-run",
         help="Run algorithmic passes only; no LLM calls and no file written.",
     ),
-):
+) -> None:
     """Detect duplicate notes and write a dedup proposal (Pass 3)."""
     run_dedup(export_file=export_file, proposal_file=proposal, dry_run=dry_run)
 
@@ -163,7 +163,7 @@ def apply_dedup(
         "--execute",
         help="Actually delete notes. Without this flag the command is a dry-run.",
     ),
-):
+) -> None:
     """Apply an approved dedup proposal — delete confirmed duplicates."""
     run_apply_dedup(proposal_file=proposal_file, execute=execute)
 
@@ -179,7 +179,7 @@ def sync_hubs(
         "--dry-run",
         help="Preview hub content without writing to Apple Notes.",
     ),
-):
+) -> None:
     """Create or update ✱ Home and ✱ Hub notes (strict mode only)."""
     run_sync_hubs(export_file=export_file, dry_run=dry_run)
 
@@ -201,7 +201,7 @@ def repair_restored(
         "--dry-run",
         help="Preview what would be rewritten without touching Notes.",
     ),
-):
+) -> None:
     """Repair notes corrupted after an iCloud Recently Deleted restore (duplicate title, missing newlines)."""
     run_repair_restored(missing_file=missing_file, old_export_file=old_export, dry_run=dry_run)
 

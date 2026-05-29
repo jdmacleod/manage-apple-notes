@@ -38,6 +38,8 @@ class AnthropicProvider:
     def classify_messages(
         self, system_prompt: str, user_content: str, max_tokens: int = 4096
     ) -> str:
+        import anthropic
+
         response = self._client.messages.create(
             model=self._model,
             max_tokens=max_tokens,
@@ -46,7 +48,9 @@ class AnthropicProvider:
             ],
             messages=[{"role": "user", "content": user_content}],
         )
-        return response.content[0].text
+        block = response.content[0]
+        assert isinstance(block, anthropic.types.TextBlock)
+        return block.text
 
 
 class OllamaProvider:
@@ -88,7 +92,7 @@ class OllamaProvider:
                 {"role": "user", "content": user_content},
             ],
         )
-        return response.choices[0].message.content
+        return response.choices[0].message.content or ""
 
 
 def get_provider(settings: dict, dry_run: bool = False) -> LLMProvider:
