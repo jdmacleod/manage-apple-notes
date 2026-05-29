@@ -8,7 +8,14 @@ from pathlib import Path
 
 import yaml
 from rich.console import Console
-from rich.progress import track
+from rich.progress import (
+    BarColumn,
+    Progress,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
 
 from scripts.folder_utils import (
     clamp_path,
@@ -315,64 +322,75 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
     note_index = {n["id"]: n for n in notes}
     batch_errors = 0
 
-    for i, batch in enumerate(track(batches, description="Classifying...")):
-        results = classify_batch_resilient(provider, batch, system_prompt, settings)
-        if not results:
-            logger.event("batch", batch=i + 1, count=len(batch), status="error")
-            batch_errors += 1
-        else:
-            logger.event("batch", batch=i + 1, count=len(batch), status="ok")
-
-        for result in results:
-            note_id = result.get("id", "")
-            note = note_index.get(note_id, {})
-            current_folder = note.get("folder", "")
-            confidence = result.get("confidence", "low")
-            reason = result.get("reason", "")
-
-            # Prefer proposed_folder_path (new prompt); fall back to old separate fields
-            proposed_folder_path_raw = result.get("proposed_folder_path") or ""
-            if not proposed_folder_path_raw:
-                pf = result.get("proposed_folder", "")
-                ps = result.get("proposed_subfolder") or ""
-                proposed_folder_path_raw = f"{pf}/{ps}" if ps else pf
-            proposed_folder_path = clamp_path(
-                proposed_folder_path_raw, effective_max_depth(settings)
-            )
-            parts = proposed_folder_path.split("/", 1)
-            proposed_folder = parts[0]
-            proposed_subfolder = parts[1] if len(parts) > 1 else None
-
-            if confidence == "low" or proposed_folder == review_folder:
-                needs_review.append(
-                    {
-                        "id": note_id,
-                        "title": note.get("title", ""),
-                        "current_folder": current_folder,
-                        "reason": reason,
-                    }
-                )
-            elif proposed_folder_path == current_folder or proposed_folder == current_folder:
-                no_change.append(
-                    {
-                        "id": note_id,
-                        "title": note.get("title", ""),
-                        "current_folder": current_folder,
-                    }
-                )
+    with Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(elapsed_when_finished=True),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Classifying...", total=len(batches))
+        for i, batch in enumerate(batches):
+            results = classify_batch_resilient(provider, batch, system_prompt, settings)
+            if not results:
+                logger.event("batch", batch=i + 1, count=len(batch), status="error")
+                batch_errors += 1
             else:
-                moves.append(
-                    {
-                        "id": note_id,
-                        "title": note.get("title", ""),
-                        "current_folder": current_folder,
-                        "proposed_folder": proposed_folder,
-                        "proposed_subfolder": proposed_subfolder,
-                        "proposed_folder_path": proposed_folder_path,
-                        "confidence": confidence,
-                        "reason": reason,
-                    }
+                logger.event("batch", batch=i + 1, count=len(batch), status="ok")
+
+            for result in results:
+                note_id = result.get("id", "")
+                note = note_index.get(note_id, {})
+                current_folder = note.get("folder", "")
+                confidence = result.get("confidence", "low")
+                reason = result.get("reason", "")
+
+                # Prefer proposed_folder_path (new prompt); fall back to old separate fields
+                proposed_folder_path_raw = result.get("proposed_folder_path") or ""
+                if not proposed_folder_path_raw:
+                    pf = result.get("proposed_folder", "")
+                    ps = result.get("proposed_subfolder") or ""
+                    proposed_folder_path_raw = f"{pf}/{ps}" if ps else pf
+                proposed_folder_path = clamp_path(
+                    proposed_folder_path_raw, effective_max_depth(settings)
                 )
+                parts = proposed_folder_path.split("/", 1)
+                proposed_folder = parts[0]
+                proposed_subfolder = parts[1] if len(parts) > 1 else None
+
+                if confidence == "low" or proposed_folder == review_folder:
+                    needs_review.append(
+                        {
+                            "id": note_id,
+                            "title": note.get("title", ""),
+                            "current_folder": current_folder,
+                            "reason": reason,
+                        }
+                    )
+                elif proposed_folder_path == current_folder or proposed_folder == current_folder:
+                    no_change.append(
+                        {
+                            "id": note_id,
+                            "title": note.get("title", ""),
+                            "current_folder": current_folder,
+                        }
+                    )
+                else:
+                    moves.append(
+                        {
+                            "id": note_id,
+                            "title": note.get("title", ""),
+                            "current_folder": current_folder,
+                            "proposed_folder": proposed_folder,
+                            "proposed_subfolder": proposed_subfolder,
+                            "proposed_folder_path": proposed_folder_path,
+                            "confidence": confidence,
+                            "reason": reason,
+                        }
+                    )
+
+            progress.advance(task)
 
     PROPOSALS_DIR.mkdir(parents=True, exist_ok=True)
     date_str = datetime.now(UTC).strftime("%Y-%m-%d")

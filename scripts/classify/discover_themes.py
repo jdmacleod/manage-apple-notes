@@ -7,7 +7,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from rich.console import Console
-from rich.progress import track
+from rich.progress import (
+    BarColumn,
+    Progress,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
 
 from scripts.classify.classify_notes import (
     _CATEGORY_META,
@@ -201,27 +208,7 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
     if estimate:
         console.print(f"[dim]Estimated duration: {estimate}[/dim]")
 
-    # ── Discovery batches ────────────────────────────────────────────────────
-
-    raw_theme_lists: list[list] = []
-    batch_errors = 0
-
-    for i, batch in enumerate(track(batches, description="Discovering themes...")):
-        themes = _discover_batch(provider, system_prompt, batch)
-        if themes:
-            raw_theme_lists.append(themes)
-            logger.event("batch", batch=i + 1, count=len(batch), status="ok")
-        else:
-            logger.event("batch", batch=i + 1, count=len(batch), status="error")
-            batch_errors += 1
-
-    if not raw_theme_lists:
-        console.print(
-            "[red]No themes found in any batch. Check the prompt template and LLM output.[/red]"
-        )
-        raise SystemExit(1)
-
-    # ── Synthesis call — merge and deduplicate themes across batches ─────────
+    # ── Pre-compute synthesis prompt (no I/O) ────────────────────────────────
 
     mode = nesting_mode(settings)
     max_depth = effective_max_depth(settings)
@@ -253,22 +240,60 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
         "adding an optional 'suggested_path' field where appropriate."
     )
 
-    all_raw = [theme for batch in raw_theme_lists for theme in batch]
-    try:
-        synthesis_response = provider.classify_messages(
-            synthesis_prompt,
-            json.dumps(all_raw, indent=2, ensure_ascii=False),
+    # ── Discovery batches + synthesis (single progress bar) ──────────────────
+
+    raw_theme_lists: list[list] = []
+    batch_errors = 0
+    final_themes: list = []
+
+    with Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(elapsed_when_finished=True),
+        console=console,
+    ) as progress:
+        # total=len(batches)+1 accounts for the synthesis call after discovery
+        task = progress.add_task("Discovering themes...", total=len(batches) + 1)
+
+        for i, batch in enumerate(batches):
+            themes = _discover_batch(provider, system_prompt, batch)
+            if themes:
+                raw_theme_lists.append(themes)
+                logger.event("batch", batch=i + 1, count=len(batch), status="ok")
+            else:
+                logger.event("batch", batch=i + 1, count=len(batch), status="error")
+                batch_errors += 1
+            progress.advance(task)
+
+        if raw_theme_lists:
+            progress.update(task, description="Synthesising themes...")
+            all_raw = [theme for batch_list in raw_theme_lists for theme in batch_list]
+            try:
+                synthesis_response = provider.classify_messages(
+                    synthesis_prompt,
+                    json.dumps(all_raw, indent=2, ensure_ascii=False),
+                )
+                synthesized = _extract_json_object(synthesis_response)
+                final_themes = synthesized.get("themes", all_raw)
+            except Exception as exc:
+                if _is_context_overflow(exc):
+                    console.print(
+                        "[yellow]Synthesis context overflow — skipping dedup, using raw theme list.[/yellow]"
+                    )
+                else:
+                    console.print(
+                        f"[yellow]Synthesis error — using raw theme list. ({exc})[/yellow]"
+                    )
+                final_themes = all_raw
+            progress.advance(task)
+
+    if not raw_theme_lists:
+        console.print(
+            "[red]No themes found in any batch. Check the prompt template and LLM output.[/red]"
         )
-        synthesized = _extract_json_object(synthesis_response)
-        final_themes = synthesized.get("themes", all_raw)
-    except Exception as exc:
-        if _is_context_overflow(exc):
-            console.print(
-                "[yellow]Synthesis context overflow — skipping dedup, using raw theme list.[/yellow]"
-            )
-        else:
-            console.print(f"[yellow]Synthesis error — using raw theme list. ({exc})[/yellow]")
-        final_themes = all_raw
+        raise SystemExit(1)
 
     # ── Build and write theme map ────────────────────────────────────────────
 
