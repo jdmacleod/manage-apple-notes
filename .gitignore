@@ -28,5 +28,3 @@ coverage.xml
 dist/
 *.egg-info/
 
-# CI-generated coverage badge (committed by CI bot on each run)
-# badges/coverage.svg intentionally tracked — see .github/workflows/ci.yml

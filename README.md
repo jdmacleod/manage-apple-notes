@@ -1,7 +1,7 @@
 # manage-apple-notes
 
 [![CI](https://github.com/jdmacleod/manage-apple-notes/actions/workflows/ci.yml/badge.svg)](https://github.com/jdmacleod/manage-apple-notes/actions/workflows/ci.yml)
-[![Coverage](badges/coverage.svg)](https://github.com/jdmacleod/manage-apple-notes/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/jdmacleod/manage-apple-notes/graph/badge.svg)](https://codecov.io/gh/jdmacleod/manage-apple-notes)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://www.apple.com/macos/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)

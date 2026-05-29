@@ -12,8 +12,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: astral-sh/setup-uv@v5
         with:
@@ -32,14 +30,11 @@ jobs:
       - name: Test
         run: uv run pytest
 
-      - name: Generate coverage badge
-        run: uv run genbadge coverage -i coverage.xml -o badges/coverage.svg
-
-      - name: Commit coverage badge
-        uses: stefanzweifel/git-auto-commit-action@v5
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
         with:
-          commit_message: "chore: update coverage badge [skip ci]"
-          file_pattern: badges/coverage.svg
+          files: coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Build verification
         run: uv build
