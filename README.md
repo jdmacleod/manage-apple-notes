@@ -62,11 +62,14 @@ uv run notes dedup               # detect duplicates → data/dedup-proposals/
 # → HUMAN: review dedup proposal
 uv run notes purge               # preview deletions (dry-run by default)
 uv run notes purge --execute     # delete confirmed duplicates
+uv run notes export              # refresh after deletions
+uv run notes sync-hubs           # create ✱ Home and ✱ Hub notes (strict mode only)
 
 # Ongoing
 uv run notes backup              # timestamped backup to data/backups/
 uv run notes triage              # triage Inbox captures
 uv run notes audit               # quality report (stale, stub, duplicate)
+uv run notes export              # refresh before hub sync
 uv run notes sync-hubs           # update ✱ Home and ✱ Hub notes (strict mode only)
 
 # Recovery
@@ -74,7 +77,7 @@ uv run notes restore             # recreate notes lost during move
 uv run notes repair              # fix formatting after an iCloud Recently Deleted restore
 ```
 
-Most commands accept `--dry-run` to preview without making changes. `apply-dedup` is a dry-run by default; pass `--execute` to apply deletions.
+Most commands accept `--dry-run` to preview without making changes. `purge` is a dry-run by default; pass `--execute` to apply deletions.
 
 > **Backup scope:** `notes backup` saves a text-only snapshot — note titles, plaintext body, and folder paths. Images, attachments, sketches, and formatting are not captured. For full media backup, use Time Machine or a clone utility (CCC, SuperDuper) to back up `~/Library/Group Containers/group.com.apple.notes/`.
 
