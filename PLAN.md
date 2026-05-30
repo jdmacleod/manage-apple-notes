@@ -113,9 +113,9 @@ manage-apple-notes/
 │   │   └── export-notes.applescript # Dump all notes to data/exports/
 │   ├── classify/
 │   │   ├── __init__.py
-│   │   ├── discover_themes.py       # Pass 1: find natural clusters in the library
-│   │   ├── classify_notes.py        # Pass 2: classify notes using approved theme map
-│   │   └── deduplicate_notes.py     # Pass 3: detect duplicates, write dedup proposal
+│   │   ├── discover_themes.py       # find natural thematic clusters in the library
+│   │   ├── classify_notes.py        # classify notes into the taxonomy
+│   │   └── deduplicate_notes.py     # detect duplicates, write dedup proposal
 │   ├── execute/
 │   │   ├── apply-proposal.applescript          # Read approved move proposal, move notes
 │   │   └── apply-dedup-proposal.applescript    # Read approved dedup proposal, delete notes
@@ -151,9 +151,9 @@ manage-apple-notes/
 │
 └── data/                            # ENTIRELY GITIGNORED
     ├── exports/                     # Raw dumps from Apple Notes
-    ├── theme-maps/                  # Theme discovery output (Pass 1)
-    ├── proposals/                   # Classification proposals (Pass 2)
-    ├── dedup-proposals/             # Deduplication proposals (Pass 3)
+    ├── theme-maps/                  # Theme discovery output
+    ├── proposals/                   # Classification proposals
+    ├── dedup-proposals/             # Deduplication proposals
     ├── reports/                     # Maintenance pass outputs
     └── archive/                     # Old proposals and reports
 ```
@@ -215,7 +215,7 @@ Literature, Permanent, Projects, Areas, Resources, Archive, Review. See
 # Copy to taxonomy.local.yaml and fill in your actual folder names and subfolders.
 #
 # Subfolders are discovered during the theme discovery pass (notes discover).
-# Add them to taxonomy.local.yaml before running notes classify (Pass 2).
+# Add them to taxonomy.local.yaml before running notes classify.
 # Categories without a subfolders key remain flat.
 
 forever_notes:
@@ -326,8 +326,7 @@ thresholds:
   "title": "Note title",
   "body": "Plain text body",
   "folder": "Current folder name",
-  "parent_folder": "Parent folder name, or empty string if top-level",
-  "folder_path": "Parent Folder/Current Folder",
+  "folder_path": "Areas/Travel/Atlanta",
   "created": "2024-01-15T10:30:00Z",
   "modified": "2024-03-20T14:22:00Z",
   "word_count": 142
@@ -336,13 +335,13 @@ thresholds:
 
 **Implementation notes:**
 - Use ASCII 31/30 as field/record separators (safe for all note content)
-- Capture `container of container` to build `parent_folder` and `folder_path`
+- `folder_path` is built recursively via `getFullPath` (walks `container of aFolder` until hitting an account)
 - Python converts the delimited temp file to UTF-8 JSON via `json.dump`
 - Skip notes in the "Recently Deleted" folder
 
 ---
 
-### scripts/classify/discover_themes.py  *(Pass 1)*
+### scripts/classify/discover_themes.py
 
 **Purpose:** Analyze the exported library and discover the natural thematic
 clusters. Writes a theme map to `data/theme-maps/themes-YYYY-MM-DD.json`
@@ -395,11 +394,11 @@ for human review before any classification begins.
 
 **Human review step:** Open the theme map, edit/merge/rename themes, remove
 themes that should stay flat, then add the approved subfolder names to
-`config/taxonomy.local.yaml` before running Pass 2.
+`config/taxonomy.local.yaml` before running `notes classify`.
 
 ---
 
-### scripts/classify/classify_notes.py  *(Pass 2)*
+### scripts/classify/classify_notes.py
 
 **Purpose:** Using the approved taxonomy (including subfolders), classify each
 note into its `top-level folder / subfolder` destination.
@@ -446,7 +445,7 @@ note into its `top-level folder / subfolder` destination.
 
 ---
 
-### scripts/classify/deduplicate_notes.py  *(Pass 3)*
+### scripts/classify/deduplicate_notes.py
 
 **Purpose:** Detect duplicate notes using a three-pass funnel and write a dedup
 proposal to `data/dedup-proposals/` for human review before any deletions occur.
@@ -857,6 +856,6 @@ preserves manually applied tags and avoids unexpected data loss.
 
 **Top-level container is transparent to classification.** When `toplevel_folder.enabled`
 is true, the export post-processor strips the container prefix from `folder_path` so all
-downstream tools (classify, dedup, discover, audit, inbox, sync-hubs) see clean paths
+downstream tools (classify, dedup, discover, audit, triage, sync-hubs) see clean paths
 that match the taxonomy. Only the export (strip) and apply (prepend) scripts are
 container-aware. Disabling the setting requires no changes to any other component.
