@@ -67,7 +67,9 @@ uv run notes sync-hubs           # create ✱ Home and ✱ Hub notes (strict mod
 
 # Ongoing
 uv run notes backup              # timestamped backup to data/backups/
-uv run notes triage              # triage Inbox captures
+uv run notes triage              # triage Inbox captures → data/proposals/
+# → HUMAN: review proposal JSON
+uv run notes move                # move notes per approved proposal
 uv run notes audit               # quality report (stale, stub, duplicate)
 uv run notes export              # refresh before hub sync
 uv run notes sync-hubs           # update ✱ Home and ✱ Hub notes (strict mode only)
