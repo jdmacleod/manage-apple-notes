@@ -8,6 +8,13 @@
   Architecture: AppleScript collects note data and writes a delimited temp
   file; Python converts it to properly-encoded UTF-8 JSON. This avoids
   AppleScript's unreliable file encoding and manual JSON-escaping limitations.
+
+  Folder path strategy: builds paths top-down via 'folders of folder'.
+  'container of folder' is not used — on macOS Sequoia it only works one level
+  deep and class-of-container comparisons are unreliable. Instead, processFolder
+  is called recursively with the accumulated path so every nested note gets the
+  correct full slash-delimited path (e.g. "Library/Areas/Finance").
+  run_export.py strips any container prefix configured in settings.
 *)
 
 -- ── Utilities ───────────────────────────────────────────────────────────────
@@ -17,40 +24,6 @@ on pad2(n)
 	if (count ns) < 2 then return "0" & ns
 	return ns
 end pad2
-
--- Walk the container chain upward to build the full slash-delimited folder path.
--- Stops when the container is an account (not a folder) or on any error.
--- On macOS Sequoia, 'container of folder' returns a generic 'item' reference for
--- both folder and account containers instead of the typed 'folder' class. To
--- distinguish them, probe one level higher: if the parent's own container is
--- accessible, the parent is a nested folder and we recurse; if that probe raises
--- an error, the parent is the account root and we stop.
-on getFullPath(aFolder)
-	set folderName to name of aFolder
-	try
-		set parentContainer to container of aFolder
-		if class of parentContainer is folder then
-			-- Pre-Sequoia: container is typed as 'folder'
-			return (my getFullPath(parentContainer)) & "/" & folderName
-		else if class of parentContainer is item then
-			-- macOS Sequoia returns 'item' for folder containers.
-			-- Probe grandparent: success means parent is a folder; error means
-			-- parent is the account root and aFolder is a top-level folder.
-			try
-				set unused to container of parentContainer
-				return (my getFullPath(parentContainer)) & "/" & folderName
-			on error
-				return folderName
-			end try
-		else
-			-- parentContainer is an account → top-level folder
-			return folderName
-		end if
-	on error
-		-- -1728 or other error (e.g. secondary-account folder) → return bare name
-		return folderName
-	end try
-end getFullPath
 
 -- Format an AppleScript date as ISO 8601 (local time, Z suffix)
 on formatISO(d)
@@ -62,6 +35,69 @@ on formatISO(d)
 	set sc to my pad2(seconds of d)
 	return y & "-" & mo & "-" & dy & "T" & hr & ":" & mn & ":" & sc & "Z"
 end formatISO
+
+-- ── Script-level state (shared with processFolder handler) ───────────────────
+
+property gNoteRecords : {}
+property gExportedCount : 0
+property gSkippedCount : 0
+property gFieldSep : ""
+property gProgressFile : ""
+property gTotalCount : 0
+
+-- ── Recursive folder processor ───────────────────────────────────────────────
+-- Called for each top-level folder and recurses into subfolders.
+-- folderPath is the slash-delimited path built top-down, e.g. "Library/Areas/Finance".
+on processFolder(aFolder, folderPath)
+	tell application "Notes"
+		-- Collect notes in this folder
+		repeat with aNote in notes of aFolder
+			set noteId to id of aNote
+
+			set noteTitle to ""
+			try
+				set noteTitle to name of aNote
+			end try
+
+			set noteBody to ""
+			try
+				set noteBody to plaintext of aNote
+			end try
+
+			set createdStr to my formatISO(creation date of aNote)
+			set modifiedStr to my formatISO(modification date of aNote)
+			set wordCountStr to (count words of noteBody) as string
+
+			set attachmentCountStr to "0"
+			try
+				set attachmentCountStr to (count attachments of aNote) as string
+			end try
+
+			-- folderName = leaf component of folderPath
+			set folderName to name of aFolder
+
+			-- One record = 9 fields joined by gFieldSep
+			set end of gNoteRecords to noteId & gFieldSep & noteTitle & gFieldSep & noteBody & gFieldSep & folderName & gFieldSep & folderPath & gFieldSep & createdStr & gFieldSep & modifiedStr & gFieldSep & wordCountStr & gFieldSep & attachmentCountStr
+
+			set gExportedCount to gExportedCount + 1
+
+			-- Write progress every 25 notes so Python can update the counter
+			if (gExportedCount mod 25) = 0 then
+				tell current application
+					do shell script "echo '" & gExportedCount & "/" & gTotalCount & "' > " & quoted form of gProgressFile
+				end tell
+			end if
+		end repeat
+
+		-- Recurse into subfolders, extending the path
+		try
+			repeat with subFolder in folders of aFolder
+				set subName to name of subFolder
+				my processFolder(subFolder, folderPath & "/" & subName)
+			end repeat
+		end try
+	end tell
+end processFolder
 
 -- ── Setup ───────────────────────────────────────────────────────────────────
 
@@ -98,71 +134,64 @@ end tell
 -- Initialise progress file so Python can show "[000/NNN]" immediately
 do shell script "echo '0/" & totalCount & "' > " & quoted form of progressFile
 
--- ── Pass 2: collect notes ────────────────────────────────────────────────────
--- Iterate accounts → folders → notes so that folder context is always known
--- from the outer loop. Accessing 'container of aNote' via 'every note' returns
--- a generic 'item' reference on macOS Sequoia; iterating by folder avoids this.
+-- ── Pass 2: collect notes (walk down from top-level folders) ─────────────────
+-- 'folders of acct' returns all folders flat (including nested ones).
+-- We identify top-level folders using a name-based approach: build the set of
+-- folder names that appear as direct children of any folder; those are NOT
+-- top-level. The remaining folders are top-level and we walk down from each.
 
-set noteRecords to {}
-set exportedCount to 0
-set skippedCount to 0
+set gNoteRecords to {}
+set gExportedCount to 0
+set gSkippedCount to 0
+set gFieldSep to fieldSep
+set gProgressFile to progressFile
+set gTotalCount to totalCount
 
 tell application "Notes"
 	repeat with acct in accounts
-		repeat with aFolder in folders of acct
-			set folderName to name of aFolder
+		set allFolders to folders of acct
 
-			-- Skip Recently Deleted / Trash folder entirely
-			if folderName is "Recently Deleted" then
-				set skippedCount to skippedCount + (count notes of aFolder)
+		-- Build the set of subfolder names: iterate all folders and collect
+		-- the names of their direct children via 'folders of folder'.
+		-- Any folder whose name appears here is NOT a top-level folder.
+		set subNames to {}
+		repeat with f in allFolders
+			try
+				repeat with sub in folders of f
+					set end of subNames to name of sub
+				end repeat
+			end try
+		end repeat
+
+		-- Walk down from each top-level folder.
+		-- Skip Recently Deleted entirely (count its notes as skipped).
+		repeat with f in allFolders
+			set fName to name of f
+			if fName is "Recently Deleted" then
+				set gSkippedCount to gSkippedCount + (count notes of f)
 			else
-				-- Build the full slash-delimited path for this folder by walking up the
-				-- container chain. Wrapped in getFullPath which handles -1728 errors.
-				set fullFolderPath to my getFullPath(aFolder)
-
-				repeat with aNote in notes of aFolder
-					set noteId to id of aNote
-
-					set noteTitle to ""
-					try
-						set noteTitle to name of aNote
-					end try
-
-					set noteBody to ""
-					try
-						set noteBody to plaintext of aNote
-					end try
-
-					set createdStr to my formatISO(creation date of aNote)
-					set modifiedStr to my formatISO(modification date of aNote)
-					set wordCountStr to (count words of noteBody) as string
-
-					set attachmentCountStr to "0"
-					try
-						set attachmentCountStr to (count attachments of aNote) as string
-					end try
-
-					-- One record = fields joined by fieldSep (9 fields)
-					set end of noteRecords to noteId & fieldSep & noteTitle & fieldSep & noteBody & fieldSep & folderName & fieldSep & fullFolderPath & fieldSep & createdStr & fieldSep & modifiedStr & fieldSep & wordCountStr & fieldSep & attachmentCountStr
-
-					set exportedCount to exportedCount + 1
-
-					-- Write progress every 25 notes so Python can update the counter
-					if (exportedCount mod 25) = 0 then
-						do shell script "echo '" & exportedCount & "/" & totalCount & "' > " & quoted form of progressFile
+				-- Top-level if its name is not found in the subfolder name set
+				set isChild to false
+				repeat with sn in subNames
+					if (contents of sn) is fName then
+						set isChild to true
+						exit repeat
 					end if
 				end repeat
+				if not isChild then
+					my processFolder(f, fName)
+				end if
 			end if
 		end repeat
 	end repeat
 end tell
 
-do shell script "echo 'DONE:" & exportedCount & "/" & totalCount & "' > " & quoted form of progressFile
+do shell script "echo 'DONE:" & gExportedCount & "/" & totalCount & "' > " & quoted form of progressFile
 
 -- ── Write temp file ─────────────────────────────────────────────────────────
 
 set AppleScript's text item delimiters to recordSep
-set rawData to noteRecords as text
+set rawData to gNoteRecords as text
 set AppleScript's text item delimiters to ""
 
 set tempRef to open for access (POSIX file tempFile) with write permission
@@ -202,7 +231,7 @@ do shell script "python3 -c " & quoted form of pyScript & " " & quoted form of t
 
 -- ── Summary ─────────────────────────────────────────────────────────────────
 
-log "Exported " & exportedCount & " notes to " & outputFile
-if skippedCount > 0 then
-	log "Skipped " & skippedCount & " notes in Recently Deleted."
+log "Exported " & gExportedCount & " notes to " & outputFile
+if gSkippedCount > 0 then
+	log "Skipped " & gSkippedCount & " notes in Recently Deleted."
 end if

@@ -21,64 +21,75 @@ Platform-specific findings are noted where behavior differs between devices or O
 
 ## Apple Notes Platform Behavior
 
-### `container of` returns a generic `item` reference on macOS Sequoia
+### `container of folder` is broken for path-building on macOS Sequoia
 
-On macOS Sequoia, the `container` property returns a generic `item` reference instead of a
-typed `folder` or `account` object in two distinct situations:
+On macOS Sequoia, `container of folder` has two distinct problems that make it unusable
+for building full hierarchical paths:
 
-**1. `container of aNote` when iterating `every note`**
+**1. `class of (container of aFolder)` cannot be coerced to a string**
 
-`every note` at the application level returns notes without folder context. Attempting
-`name of container of aNote` silently fails. The reliable pattern is to iterate
-`accounts → folders of acct → notes of aFolder` so that the folder is always known from
-the outer loop, avoiding `container of aNote` entirely.
+The error message is `"Can't make class of container of … into type specifier."` This means
+any approach that checks `class of parentContainer is folder` to decide whether to recurse
+will fail silently — the comparison always evaluates to `false`, regardless of whether the
+parent is actually a folder.
 
-**2. `container of aFolder` in `getFullPath`**
+**2. `container of aNote` when iterating `every note`**
 
-`folders of acct` returns all folders flat (including nested ones). Building the full path
-requires walking UP the container chain with a recursive handler. Pre-Sequoia,
-`class of (container of aFolder)` returns `folder` for nested folders and `account` for
-top-level ones — a clean stopping condition. On Sequoia, BOTH return class `item`.
+`every note` at the application level returns notes without folder context. `container of
+aNote` returns a generic reference whose class cannot be determined. The reliable pattern is
+to iterate `accounts → folders of acct → notes of aFolder` so the folder is always known
+from the outer loop.
 
-Since `item` is used for both folder and account containers, the class check alone cannot
-distinguish them. The workaround is a **grandparent probe**: try to access `container of
-parentContainer`. If that succeeds, the parent has its own parent → it is a nested folder,
-recurse. If it raises an error, the parent has no container → it is the account root, stop.
+**The correct approach: walk DOWN using `folders of folder`**
+
+`folders of aFolder` reliably returns direct children (subfolders) on all tested macOS
+versions. Instead of walking UP the container chain, the export script now walks DOWN,
+passing the accumulated path as a parameter:
 
 ```applescript
-on getFullPath(aFolder)
-    set folderName to name of aFolder
-    try
-        set parentContainer to container of aFolder
-        if class of parentContainer is folder then
-            -- Pre-Sequoia: container is typed as 'folder'
-            return (my getFullPath(parentContainer)) & "/" & folderName
-        else if class of parentContainer is item then
-            -- macOS Sequoia: probe grandparent to distinguish folder from account root
-            try
-                set unused to container of parentContainer
-                return (my getFullPath(parentContainer)) & "/" & folderName
-            on error
-                return folderName  -- parent is account root → stop
-            end try
-        else
-            -- parentContainer is typed account → top-level folder
-            return folderName
-        end if
-    on error
-        -- -1728 (secondary account folder) or other error → return bare name
-        return folderName
-    end try
-end getFullPath
+on processFolder(aFolder, folderPath)
+    tell application "Notes"
+        repeat with aNote in notes of aFolder
+            -- record note with folderPath as folder_path
+        end repeat
+        try
+            repeat with subFolder in folders of aFolder
+                set subName to name of subFolder
+                my processFolder(subFolder, folderPath & "/" & subName)
+            end repeat
+        end try
+    end tell
+end processFolder
 ```
 
-Without the grandparent probe (original code), `getFullPath` falls through to the `else`
-branch for `item`-typed parents and returns just the leaf folder name — so
-`Library/Archive/Animation Guild` exports as `folder_path: "Animation Guild"`.
+**Top-level folder detection and the `contents of` pitfall**
 
-**Caveat:** `container of aFolder` raises error -1728 ("Can't get container of…") for certain
-folders in secondary accounts (e.g. "On My Mac"). The outer `on error` clause handles this —
-it returns just the leaf folder name so the export continues rather than aborting.
+`folders of acct` returns ALL folders flat (including nested ones). To walk only from
+top-level folders (avoiding duplicating every note), the script builds a set of subfolder
+names: for each folder, collect `name of` its direct children. Any folder whose name
+appears in that set is NOT top-level. The remaining folders are walked from the top.
+
+The critical subtlety: in AppleScript's `repeat with item in list`, the loop variable is a
+**reference** to the list item, not a copy of its value. Comparing it with `is` always
+returns `false`:
+
+```applescript
+-- WRONG: sn is a reference, not a value
+if sn is fName then ...
+
+-- CORRECT: dereference the list item before comparing
+if (contents of sn) is fName then ...
+```
+
+This `is` comparison failure produces an empty top-level set (all folders treated as
+top-level), causing every note to be exported once per level of nesting depth.
+
+**Caveat:** `container of aFolder` raises error -1728 ("Can't get container of…") for
+folders in secondary accounts (e.g. "On My Mac"). The walk-down approach avoids this
+entirely since it never calls `container of`.
+
+The diagnostic test at `scripts/export/test-getfullpath.applescript` documents these
+findings and can be used to verify correct behavior after macOS upgrades.
 
 ### Why AppleScript, not SQLite
 
