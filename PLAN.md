@@ -99,6 +99,7 @@ of slightly-different names for the same concept.
 manage-apple-notes/
 ├── README.md
 ├── PLAN.md                          # This file
+├── CHANGELOG.md
 ├── pyproject.toml                   # Python project config, deps, entry point
 ├── .env.example                     # Environment variable template (committed)
 ├── .gitignore
@@ -109,31 +110,39 @@ manage-apple-notes/
 │   ├── __init__.py
 │   ├── cli.py                       # Unified 'notes' CLI entry point (typer)
 │   ├── providers.py                 # LLM provider abstraction (Anthropic + Ollama)
+│   ├── folder_utils.py              # Taxonomy path utilities (enumerate_paths, path_depth)
+│   ├── run_logger.py                # Structured run logging — one JSON file per execution
 │   ├── export/
-│   │   └── export-notes.applescript # Dump all notes to data/exports/
+│   │   ├── export-notes.applescript # Dump all notes to data/exports/
+│   │   └── run_export.py            # Python wrapper; export and backup commands
 │   ├── classify/
 │   │   ├── __init__.py
-│   │   ├── discover_themes.py       # find natural thematic clusters in the library
-│   │   ├── classify_notes.py        # classify notes into the taxonomy
-│   │   └── deduplicate_notes.py     # detect duplicates, write dedup proposal
+│   │   ├── discover_themes.py       # Discover thematic clusters (notes discover)
+│   │   ├── draft_taxonomy.py        # Generate draft taxonomy YAML (notes draft)
+│   │   ├── classify_notes.py        # Classify notes into the taxonomy (notes classify)
+│   │   └── deduplicate_notes.py     # Detect duplicates, write dedup proposal (notes dedup)
 │   ├── execute/
-│   │   ├── apply-proposal.applescript          # Read approved move proposal, move notes
-│   │   └── apply-dedup-proposal.applescript    # Read approved dedup proposal, delete notes
+│   │   ├── run_apply.py             # Python wrapper for apply-proposal.applescript
+│   │   ├── apply_dedup.py           # Python wrapper for apply-dedup-proposal.applescript
+│   │   ├── apply-proposal.applescript          # Move notes per approved proposal
+│   │   └── apply-dedup-proposal.applescript    # Delete notes per approved dedup proposal
+│   ├── restore/
+│   │   ├── run_restore.py           # Recreate notes from backup (notes restore)
+│   │   └── restore-notes.applescript
 │   ├── forever_notes/               # Strict mode only
 │   │   ├── sync_hubs.py             # Create/update ✱ Home and ✱ Hub notes
 │   │   └── sync-hubs.applescript    # AppleScript writer called by sync_hubs.py
 │   └── maintenance/
 │       ├── __init__.py
-│       ├── process_inbox.py         # Classify and propose moves for Inbox notes
-│       └── audit.py                 # Find stale, duplicate, orphaned notes
+│       ├── process_inbox.py         # Triage Inbox notes, write proposal (notes triage)
+│       ├── repair_restored_notes.py # Fix formatting after iCloud restore (notes repair)
+│       └── audit.py                 # Library quality report (notes audit)
 │
 ├── prompts/
 │   ├── discover-themes.md           # Prompt template: theme/cluster discovery
-│   ├── classify-notes.md            # Prompt template: bulk classification
+│   ├── classify-notes.md            # Prompt template: bulk classification (and triage)
 │   ├── deduplicate-notes.md         # Prompt template: duplicate pair review
-│   ├── sync-hubs.md                 # Prompt template: Hub note content generation (strict)
-│   ├── process-inbox.md             # Prompt template: inbox triage
-│   └── audit.md                     # Prompt template: library audit
+│   └── sync-hubs.md                 # Prompt template: Hub note content generation (strict)
 │
 ├── config/
 │   ├── taxonomy.example.yaml        # Forever Notes / Zettelkasten taxonomy template
@@ -143,19 +152,22 @@ manage-apple-notes/
 │   └── settings.local.yaml          # GITIGNORED — your personal settings
 │
 ├── docs/
-│   ├── forever-notes-framework.md   # Framework reference
+│   ├── forever-notes-framework.md   # Forever Notes framework reference
+│   ├── para-method.md               # PARA method taxonomy guidance
+│   ├── security-considerations.md   # Data flow and privacy notes
+│   ├── technical-notes.md           # AppleScript/macOS platform findings
 │   └── runbooks/
-│       ├── one-time-cleanup.md
-│       ├── inbox-processing.md
-│       └── audit.md
+│       └── main-workflow.md         # Consolidated step-by-step workflow
 │
 └── data/                            # ENTIRELY GITIGNORED
     ├── exports/                     # Raw dumps from Apple Notes
-    ├── theme-maps/                  # Theme discovery output
-    ├── proposals/                   # Classification proposals
-    ├── dedup-proposals/             # Deduplication proposals
-    ├── reports/                     # Maintenance pass outputs
-    └── archive/                     # Old proposals and reports
+    ├── backups/                     # Timestamped text-only backups (notes backup)
+    ├── theme-maps/                  # Theme discovery output (notes discover)
+    ├── taxonomy-drafts/             # Draft taxonomy YAMLs (notes draft)
+    ├── proposals/                   # Classification and triage proposals
+    ├── dedup-proposals/             # Deduplication proposals (notes dedup)
+    ├── reports/                     # Audit reports (notes audit)
+    └── logs/                        # Run logs — one JSON file per command execution
 ```
 
 ---
@@ -341,6 +353,16 @@ thresholds:
 
 ---
 
+### scripts/export/run_export.py
+
+**Purpose:** Python wrapper that invokes `export-notes.applescript` and writes the result to `data/exports/`. Also implements the `backup` command, which runs export then copies the output to `data/backups/backup-YYYY-MM-DD-HHmmss.json`.
+
+**CLI:**
+- `uv run notes export` — export to `data/exports/notes-YYYY-MM-DD.json`
+- `uv run notes backup` — export + timestamped copy to `data/backups/`
+
+---
+
 ### scripts/classify/discover_themes.py
 
 **Purpose:** Analyze the exported library and discover the natural thematic
@@ -392,9 +414,31 @@ for human review before any classification begins.
 }
 ```
 
-**Human review step:** Open the theme map, edit/merge/rename themes, remove
-themes that should stay flat, then add the approved subfolder names to
-`config/taxonomy.local.yaml` before running `notes classify`.
+**Human review step:** Run `notes draft` to generate an editable taxonomy YAML,
+review the proposed subfolders, then copy to `config/taxonomy.local.yaml` before
+running `notes classify`.
+
+---
+
+### scripts/classify/draft_taxonomy.py
+
+**Purpose:** Read the latest theme map, merge above-threshold suggested paths not
+already in the taxonomy into a deep copy of `taxonomy.local.yaml`, and write a
+complete, ready-to-review YAML to `data/taxonomy-drafts/taxonomy-draft-YYYY-MM-DD.yaml`.
+
+**CLI:** `uv run notes draft [theme_map_file] [--dry-run]`
+
+**Logic:**
+1. Load latest `data/theme-maps/themes-*.json` (or a specified file)
+2. Filter to themes where `below_subfolder_threshold: false` and path not in `established_paths`
+3. Merge new paths into a `copy.deepcopy` of the current taxonomy via `_insert_subfolder`
+4. Write YAML with a header comment block listing added and skipped paths
+
+**`_insert_subfolder(entry, parts)`:** Recursively inserts path components; promotes
+a plain-string subfolder entry to a dict when deeper nesting is needed.
+
+**Human review step:** Open the draft YAML, remove unwanted subfolders, rename as
+needed, then copy to `config/taxonomy.local.yaml`.
 
 ---
 
@@ -519,6 +563,35 @@ osascript scripts/execute/apply-proposal.applescript [--dry-run] <proposal.json>
 - Move note to the correct folder (subfolder if set, top-level otherwise)
 - Log: `[MOVED] "Title" → Permanent/Health`
 - Summary: N moved, N skipped, N errors
+
+---
+
+### scripts/restore/run_restore.py
+
+**Purpose:** Compare a backup against the current Apple Notes library and recreate
+any notes that are absent (matched by title within each folder).
+
+**CLI:** `uv run notes restore [--from-backup <file>] [--missing <file>] [--dry-run]`
+
+**Implementation notes:**
+- Defaults to latest file in `data/backups/`, then `data/exports/` if no backup exists
+- Accepts an optional `--missing` JSON listing specific notes to restore
+- Calls `restore-notes.applescript` to recreate notes via the Notes app API
+
+---
+
+### scripts/maintenance/repair_restored_notes.py
+
+**Purpose:** Fix formatting corruption that can occur when notes are restored via
+iCloud Recently Deleted — symptoms include a duplicated title line and collapsed
+newlines.
+
+**CLI:** `uv run notes repair [--missing-file <file>] [--old-export <file>] [--dry-run]`
+
+**Implementation notes:**
+- Reads original content from an older export JSON
+- Rewrites the note body HTML via `repair-note.applescript`
+- Matches notes by title; skips any not found in the old export
 
 ---
 
@@ -656,75 +729,45 @@ Directory structure, git, `.gitignore`, pre-commit hook, config examples, README
 ### Phase 2 — Export ✅
 
 `export-notes.applescript` with ASCII-delimited temp file → Python UTF-8 JSON conversion.
+`run_export.py` Python wrapper; `notes export` and `notes backup` commands.
 
-### prompts/deduplicate-notes.md
-
-System prompt for Pass 3 LLM review of fuzzy candidate pairs. Key constraints:
-- Resolution must be `delete` or `review` only — no `merge`
-- `review` when either note contains content not present in the other
-- Returns a JSON array, one object per group
-
----
-
-### Phase 2a — Theme Discovery *(new)*
+### Phase 2a — Theme Discovery ✅
 
 1. Implement `discover_themes.py` with `notes discover` CLI command
 2. Write `prompts/discover-themes.md`
-3. Document in `docs/runbooks/one-time-cleanup.md` through the theme review step
+3. Implement `draft_taxonomy.py` with `notes draft` CLI command
+4. Document in `docs/runbooks/main-workflow.md`
 
-**Human checkpoint:** Review theme map → edit `taxonomy.local.yaml` to add discovered
-subfolders → approve before proceeding to Phase 2b.
-
-### Phase 2b — Classify and Execute *(subfolder-aware upgrade)*
+### Phase 2b — Classify and Execute ✅
 
 1. Update `classify_notes.py`: nested taxonomy reads, subfolder in proposals
 2. Update `apply-proposal.applescript`: subfolder creation and 5-field move logic
 3. Update `prompts/classify-notes.md`: subfolder placeholders
 4. Update `process_inbox.py`: nested taxonomy reads
-5. Complete `docs/runbooks/one-time-cleanup.md`
 
-**Human checkpoints:** Review proposal JSON → approve → dry-run → execute.
+### Phase 3 — Maintenance Scripts ✅
 
-### Phase 3 — Maintenance Scripts ✅ (partial upgrade needed)
+1. `audit.py`: nested taxonomy reads + subfolder candidate detection
+2. `repair_restored_notes.py`: fix formatting after iCloud Recently Deleted restore
+3. `run_restore.py`: recreate notes from backup
+4. Consolidated `docs/runbooks/main-workflow.md`
 
-1. Update `audit.py`: nested taxonomy reads + subfolder candidate detection
-2. Update runbooks for audit
+### Phase 3b — Deduplicate ✅
 
-### Phase 3b — Deduplicate *(new)*
+1. `deduplicate_notes.py` with three-pass funnel
+2. `apply-dedup-proposal.applescript` with `--execute` flag requirement
+3. `apply_dedup.py` Python wrapper with streaming colored output
+4. `prompts/deduplicate-notes.md` LLM review prompt
+5. `notes dedup` and `notes purge` commands
 
-Run after classification so that `proposed_folder_path` enriches the similarity signal.
+### Phase 3c — Hub Setup ✅ *(strict mode only)*
 
-1. Implement `deduplicate_notes.py` (Pass 3) with three-pass funnel
-2. Implement `apply-dedup-proposal.applescript` with `--execute` flag requirement
-3. Implement `apply_dedup.py` Python wrapper with streaming colored output
-4. Write `prompts/deduplicate-notes.md` LLM review prompt
-5. Add `dedup` and `purge` commands to `scripts/cli.py`
-6. Update `docs/runbooks/main-workflow.md` to add dedup step after move
+1. `sync_hubs.py` + `sync-hubs.applescript`
+2. `notes sync-hubs` command
+3. NoteStore.sqlite UUID lookup for stable `applenotes://` links (opt-in via `internal_links: "html"`)
 
-**Human checkpoints:**
-- Review dedup proposal JSON — confirm `keep_id` choices before approving
-- Run `uv run notes purge` (dry-run by default) to preview deletions
-- Run `uv run notes purge --execute` to apply
-- Note: deletions move notes to Recently Deleted (recoverable for 30 days)
-
-### Phase 3c — Hub Setup *(strict mode only)*
-
-Run after classification and deduplication, once the library is in a stable state.
-*Skip entirely if `forever_notes_mode: loose`.*
-
-1. Set `forever_notes_mode: strict` in `settings.local.yaml`
-2. Optionally populate `hub_title`/`hub_tag` overrides in `taxonomy.local.yaml` for
-   any subfolders where the auto-derived names are incorrect
-3. Run `uv run notes sync-hubs --dry-run` to preview Hub content
-4. Run `uv run notes sync-hubs` to create ✱ Home and all ✱ Hub notes in Apple Notes
-5. Open ✱ Home in Apple Notes; convert plain-text Hub references to internal links
-   using `>>` (one-time manual step, takes a few minutes)
-
-**Human checkpoint:** Review ✱ Home and a few Hub notes. Verify titles, fix any
-missing Hub coverage, and manually add `>>` internal links as desired.
-
-**Ongoing (after new notes are classified):** Re-run `uv run notes sync-hubs` to
-keep Hub contents current. Hub note bodies are fully regenerated on each run.
+**Ongoing:** Re-run `uv run notes export && uv run notes sync-hubs` after any moves
+or manual reorganization to keep Hub contents current.
 
 ### Phase 4 — Scheduling (optional)
 
