@@ -20,16 +20,34 @@ end pad2
 
 -- Walk the container chain upward to build the full slash-delimited folder path.
 -- Stops when the container is an account (not a folder) or on any error.
+-- On macOS Sequoia, 'container of folder' returns a generic 'item' reference for
+-- both folder and account containers instead of the typed 'folder' class. To
+-- distinguish them, probe one level higher: if the parent's own container is
+-- accessible, the parent is a nested folder and we recurse; if that probe raises
+-- an error, the parent is the account root and we stop.
 on getFullPath(aFolder)
 	set folderName to name of aFolder
 	try
 		set parentContainer to container of aFolder
 		if class of parentContainer is folder then
+			-- Pre-Sequoia: container is typed as 'folder'
 			return (my getFullPath(parentContainer)) & "/" & folderName
+		else if class of parentContainer is item then
+			-- macOS Sequoia returns 'item' for folder containers.
+			-- Probe grandparent: success means parent is a folder; error means
+			-- parent is the account root and aFolder is a top-level folder.
+			try
+				set unused to container of parentContainer
+				return (my getFullPath(parentContainer)) & "/" & folderName
+			on error
+				return folderName
+			end try
 		else
+			-- parentContainer is an account → top-level folder
 			return folderName
 		end if
 	on error
+		-- -1728 or other error (e.g. secondary-account folder) → return bare name
 		return folderName
 	end try
 end getFullPath

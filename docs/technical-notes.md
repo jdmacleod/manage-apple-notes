@@ -21,15 +21,29 @@ Platform-specific findings are noted where behavior differs between devices or O
 
 ## Apple Notes Platform Behavior
 
-### `every note` does not expose folder context on macOS Sequoia
+### `container of` returns a generic `item` reference on macOS Sequoia
 
-When iterating `every note` at the application level, `container of aNote` returns a
-generic `item` reference — not a `folder` — on macOS Sequoia. Attempting `name of
-container of aNote` silently fails, leaving folder names empty.
+On macOS Sequoia, the `container` property returns a generic `item` reference instead of a
+typed `folder` or `account` object in two distinct situations:
 
-The reliable pattern is to iterate `accounts → folders of acct → notes of aFolder`.
-In this form, the folder context is always known from the outer loop. A recursive handler
-builds the full slash-delimited path by walking the container chain upward:
+**1. `container of aNote` when iterating `every note`**
+
+`every note` at the application level returns notes without folder context. Attempting
+`name of container of aNote` silently fails. The reliable pattern is to iterate
+`accounts → folders of acct → notes of aFolder` so that the folder is always known from
+the outer loop, avoiding `container of aNote` entirely.
+
+**2. `container of aFolder` in `getFullPath`**
+
+`folders of acct` returns all folders flat (including nested ones). Building the full path
+requires walking UP the container chain with a recursive handler. Pre-Sequoia,
+`class of (container of aFolder)` returns `folder` for nested folders and `account` for
+top-level ones — a clean stopping condition. On Sequoia, BOTH return class `item`.
+
+Since `item` is used for both folder and account containers, the class check alone cannot
+distinguish them. The workaround is a **grandparent probe**: try to access `container of
+parentContainer`. If that succeeds, the parent has its own parent → it is a nested folder,
+recurse. If it raises an error, the parent has no container → it is the account root, stop.
 
 ```applescript
 on getFullPath(aFolder)
@@ -37,33 +51,34 @@ on getFullPath(aFolder)
     try
         set parentContainer to container of aFolder
         if class of parentContainer is folder then
+            -- Pre-Sequoia: container is typed as 'folder'
             return (my getFullPath(parentContainer)) & "/" & folderName
+        else if class of parentContainer is item then
+            -- macOS Sequoia: probe grandparent to distinguish folder from account root
+            try
+                set unused to container of parentContainer
+                return (my getFullPath(parentContainer)) & "/" & folderName
+            on error
+                return folderName  -- parent is account root → stop
+            end try
         else
+            -- parentContainer is typed account → top-level folder
             return folderName
         end if
     on error
+        -- -1728 (secondary account folder) or other error → return bare name
         return folderName
     end try
 end getFullPath
-
-tell application "Notes"
-    repeat with acct in accounts
-        repeat with aFolder in folders of acct
-            set fullFolderPath to my getFullPath(aFolder)
-            repeat with aNote in notes of aFolder
-                -- fullFolderPath is the complete path, e.g. "Library/Areas/Travel/Atlanta"
-            end repeat
-        end repeat
-    end repeat
-end tell
 ```
 
-This also avoids needing `container of aNote` entirely.
+Without the grandparent probe (original code), `getFullPath` falls through to the `else`
+branch for `item`-typed parents and returns just the leaf folder name — so
+`Library/Archive/Animation Guild` exports as `folder_path: "Animation Guild"`.
 
 **Caveat:** `container of aFolder` raises error -1728 ("Can't get container of…") for certain
-folders in secondary accounts (e.g. "On My Mac"). The `on error` clause in `getFullPath`
-handles this — on error, it returns just the leaf folder name so the export continues
-rather than aborting.
+folders in secondary accounts (e.g. "On My Mac"). The outer `on error` clause handles this —
+it returns just the leaf folder name so the export continues rather than aborting.
 
 ### Why AppleScript, not SQLite
 
