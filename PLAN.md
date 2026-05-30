@@ -3,6 +3,9 @@
 > **Handoff document for Claude Code implementation.**
 > All folder names, note titles, and personal identifiers in this document are
 > placeholders. Real names live in `config/taxonomy.local.yaml` (gitignored).
+>
+> Detailed specs for completed phases and embedded config examples live in
+> [`PLAN-archive.md`](PLAN-archive.md).
 
 ---
 
@@ -98,7 +101,8 @@ of slightly-different names for the same concept.
 ```
 manage-apple-notes/
 ├── README.md
-├── PLAN.md                          # This file
+├── PLAN.md                          # This file (active plan)
+├── PLAN-archive.md                  # Completed phase specs and config examples
 ├── CHANGELOG.md
 ├── pyproject.toml                   # Python project config, deps, entry point
 ├── .env.example                     # Environment variable template (committed)
@@ -109,8 +113,10 @@ manage-apple-notes/
 ├── scripts/
 │   ├── __init__.py
 │   ├── cli.py                       # Unified 'notes' CLI entry point (typer)
+│   ├── config.py                    # Shared config: load_settings, load_taxonomy, find_latest_export
+│   ├── json_utils.py                # Shared JSON parsing helpers for LLM response extraction
 │   ├── providers.py                 # LLM provider abstraction (Anthropic + Ollama)
-│   ├── folder_utils.py              # Taxonomy path utilities (enumerate_paths, path_depth)
+│   ├── folder_utils.py              # Taxonomy path utilities (enumerate_paths, folder_name, etc.)
 │   ├── run_logger.py                # Structured run logging — one JSON file per execution
 │   ├── export/
 │   │   ├── export-notes.applescript # Dump all notes to data/exports/
@@ -141,8 +147,7 @@ manage-apple-notes/
 ├── prompts/
 │   ├── discover-themes.md           # Prompt template: theme/cluster discovery
 │   ├── classify-notes.md            # Prompt template: bulk classification (and triage)
-│   ├── deduplicate-notes.md         # Prompt template: duplicate pair review
-│   └── sync-hubs.md                 # Prompt template: Hub note content generation (strict)
+│   └── deduplicate-notes.md         # Prompt template: duplicate pair review
 │
 ├── config/
 │   ├── taxonomy.example.yaml        # Forever Notes / Zettelkasten taxonomy template
@@ -172,606 +177,44 @@ manage-apple-notes/
 
 ---
 
-## Privacy and Git Safety
+## Implementation Status
 
-### .gitignore (root)
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Scaffold, `.gitignore`, pre-commit hook, config examples, README | ✅ Complete |
+| 2 | `export-notes.applescript`, `run_export.py`, export/backup commands | ✅ Complete |
+| 2a | Theme discovery (`discover_themes.py`, `draft_taxonomy.py`) | ✅ Complete |
+| 2b | Classification (`classify_notes.py`, `apply-proposal.applescript`) | ✅ Complete |
+| 3 | Maintenance scripts: `audit.py`, `repair_restored_notes.py`, `run_restore.py` | ✅ Complete |
+| 3b | Deduplication (`deduplicate_notes.py`, `apply-dedup-proposal.applescript`) | ✅ Complete |
+| 3c | Hub setup (`sync_hubs.py`, `sync-hubs.applescript`) | ✅ Complete |
+| 4 | Scheduling via cron or launchd | 🔲 Upcoming |
 
-```gitignore
-# Private config — contains personal folder names and paths
-config/*.local.*
+Detailed specs for completed phases are in [`PLAN-archive.md`](PLAN-archive.md).
 
-# All personal data — note exports, theme maps, proposals, reports
-data/
+---
 
-# Convenience: any file explicitly marked private
-*.private.md
-PRIVATE*.md
+## Phase 4 — Scheduling (optional)
 
-# Environment variables — may contain API keys
-.env
-
-# macOS
-.DS_Store
-
-# Python
-__pycache__/
-*.pyc
-.venv/
-```
-
-### Pre-commit Hook
-
-`.git-hooks/pre-commit` blocks: `data/`, `*.local.*` config, large JSON files (>10KB),
-and `.env` files (`.env.example` is explicitly allowed). Activate with:
+Document how to run the maintenance workflow on a schedule via macOS launchd or
+cron. The pipeline commands to schedule are:
 
 ```bash
-git config core.hooksPath .git-hooks
+uv run notes export
+uv run notes classify --dry-run    # review before applying
+uv run notes audit
 ```
 
----
+For recurring inbox triage without a full classify pass:
 
-## Config Files
-
-### config/taxonomy.example.yaml  *(Forever Notes / Zettelkasten)*
-
-The taxonomy supports nested subfolders. The `subfolders` list under each
-category is populated after the theme discovery pass and lives in
-`taxonomy.local.yaml` only. Categories without a `subfolders` key remain flat.
-
-This template uses the full Zettelkasten-influenced set: Inbox, Fleeting,
-Literature, Permanent, Projects, Areas, Resources, Archive, Review. See
-`config/taxonomy.para.yaml` for the PARA alternative.
-
-```yaml
-# Forever Notes folder taxonomy — generic template.
-# Copy to taxonomy.local.yaml and fill in your actual folder names and subfolders.
-#
-# Subfolders are discovered during the theme discovery pass (notes discover).
-# Add them to taxonomy.local.yaml before running notes classify.
-# Categories without a subfolders key remain flat.
-
-forever_notes:
-  inbox:
-    folder: "[YOUR_INBOX_FOLDER]"          # keep flat
-
-  fleeting:
-    folder: "[YOUR_FLEETING_FOLDER]"       # keep flat
-
-  literature:
-    folder: "[YOUR_LITERATURE_FOLDER]"
-    subfolders: []                         # e.g. ["Health", "Technology", "History"]
-
-  permanent:
-    folder: "[YOUR_PERMANENT_FOLDER]"
-    subfolders: []                         # e.g. ["Health", "Writing", "Philosophy"]
-
-  projects:
-    folder: "[YOUR_PROJECTS_FOLDER]"
-    subfolders: []                         # one subfolder per active project
-
-  areas:
-    folder: "[YOUR_AREAS_FOLDER]"
-    subfolders: []                         # one subfolder per area of life/work
-
-  resources:
-    folder: "[YOUR_RESOURCES_FOLDER]"
-    subfolders: []                         # e.g. ["Recipes", "Coding", "Finance"]
-
-  archive:
-    folder: "[YOUR_ARCHIVE_FOLDER]"
-    subfolders: []                         # mirror of old structure where useful
-
-  review:
-    folder: "[YOUR_REVIEW_FOLDER]"         # keep flat
-```
-
-### config/taxonomy.para.yaml  *(PARA method)*
-
-An alternative template using PARA's four actionability-based top-level
-categories. Omits Fleeting, Literature, Permanent, and Review — those
-note types are absorbed into Projects, Areas, and Resources via subfolders.
-See `docs/para-method.md` for guidance on minimalist vs. expanded PARA designs
-and how PARA maps to the default Forever Notes taxonomy.
-
-To use PARA: copy `taxonomy.para.yaml` to `taxonomy.local.yaml` and fill in
-your folder names. Forever Notes strict mode is compatible with PARA — Hub notes
-will be generated for any subfolders defined.
-
-### config/settings.example.yaml
-
-```yaml
-# General settings — copy to settings.local.yaml and customize.
-
-# provider: "anthropic" (default, cloud) or "ollama" (local)
-llm:
-  provider: "anthropic"
-  model: "claude-opus-4-6"          # or claude-sonnet-4-6 for cost/speed tradeoff
-  batch_size: 20                    # notes per API call during classification
-  theme_discovery_sample: 50        # notes per batch during theme discovery
-
-# Ollama / llama.cpp example:
-# llm:
-#   provider: "ollama"
-#   model: "llama3"                 # overridden by OLLAMA_MODEL env var if set
-#   batch_size: 5
-#   theme_discovery_sample: 20
-
-paths:
-  exports_dir: "data/exports"
-  theme_maps_dir: "data/theme-maps"
-  proposals_dir: "data/proposals"
-  reports_dir: "data/reports"
-
-export:
-  include_body: true
-  max_body_chars: 2000              # truncate long notes for classification
-  skip_empty: true
-
-deduplication:
-  fuzzy_title_threshold: 85         # thefuzz token_sort_ratio threshold (0–100)
-  jaccard_content_threshold: 80     # thefuzz token_set_ratio threshold (0–100)
-  content_preview_chars: 300        # characters of each note shown in the dedup proposal
-  semantic_sweep: false             # full LLM pass over theme clusters (expensive; off by default)
-  default_resolution: "review"      # conservative default: flag for human, don't auto-delete
-
-thresholds:
-  min_notes_for_subfolder: 8       # themes with fewer notes stay flat in parent
-  stale_days: 180                   # notes unmodified longer than this → flag for archive
-  stub_chars: 50                    # notes shorter than this → flag as stub
-  inbox_stale_days: 7               # inbox notes older than this → stale
-  fleeting_stale_days: 30           # fleeting notes older than this → stale
-```
-
----
-
-## Scripts Specification
-
-### scripts/export/export-notes.applescript
-
-**Purpose:** Dump all notes from Apple Notes to a JSON file at
-`data/exports/notes-YYYY-MM-DD.json`.
-
-**Output schema per note:**
-```json
-{
-  "id": "x-coredata://...",
-  "title": "Note title",
-  "body": "Plain text body",
-  "folder": "Current folder name",
-  "folder_path": "Areas/Travel/Atlanta",
-  "created": "2024-01-15T10:30:00Z",
-  "modified": "2024-03-20T14:22:00Z",
-  "word_count": 142
-}
-```
-
-**Implementation notes:**
-- Use ASCII 31/30 as field/record separators (safe for all note content)
-- `folder_path` is built recursively via `getFullPath` (walks `container of aFolder` until hitting an account)
-- Python converts the delimited temp file to UTF-8 JSON via `json.dump`
-- Skip notes in the "Recently Deleted" folder
-
----
-
-### scripts/export/run_export.py
-
-**Purpose:** Python wrapper that invokes `export-notes.applescript` and writes the result to `data/exports/`. Also implements the `backup` command, which runs export then copies the output to `data/backups/backup-YYYY-MM-DD-HHmmss.json`.
-
-**CLI:**
-- `uv run notes export` — export to `data/exports/notes-YYYY-MM-DD.json`
-- `uv run notes backup` — export + timestamped copy to `data/backups/`
-
----
-
-### scripts/classify/discover_themes.py
-
-**Purpose:** Analyze the exported library and discover the natural thematic
-clusters. Writes a theme map to `data/theme-maps/themes-YYYY-MM-DD.json`
-for human review before any classification begins.
-
-**CLI:** `uv run notes discover [export_file] [--dry-run]`
-
-**Inputs:**
-- Export file: `data/exports/notes-YYYY-MM-DD.json` (or latest)
-- Settings: `config/settings.local.yaml`
-- Prompt template: `prompts/discover-themes.md`
-
-**Algorithm:**
-1. Extract lightweight summaries: `{id, title, body[:200], folder_path}`
-2. Split into batches of `theme_discovery_sample` (default 50)
-3. Send each batch to the LLM via `provider.classify_messages()`
-4. Collect raw theme lists; send a synthesis call to merge/deduplicate
-5. Flag themes below `min_notes_for_subfolder` as "flat" (no subfolder needed)
-6. Write theme map JSON
-
-**Output schema (data/theme-maps/themes-YYYY-MM-DD.json):**
-```json
-{
-  "generated_at": "2024-03-20T15:00:00Z",
-  "source_export": "data/exports/notes-2024-03-20.json",
-  "total_notes": 347,
-  "themes": [
-    {
-      "name": "Health",
-      "estimated_count": 42,
-      "suggested_subfolders_in": ["Permanent", "Literature", "Areas"],
-      "notes": "Covers sleep, nutrition, fitness, mental health"
-    },
-    {
-      "name": "Random Web Clips",
-      "estimated_count": 6,
-      "suggested_subfolders_in": [],
-      "notes": "Below subfolder threshold — keep flat in Resources"
-    }
-  ],
-  "existing_folders_analysed": [
-    {
-      "folder_path": "Work/Project X",
-      "note_count": 18,
-      "suggested_mapping": "Projects/Project X"
-    }
-  ]
-}
-```
-
-**Human review step:** Run `notes draft` to generate an editable taxonomy YAML,
-review the proposed subfolders, then copy to `config/taxonomy.local.yaml` before
-running `notes classify`.
-
----
-
-### scripts/classify/draft_taxonomy.py
-
-**Purpose:** Read the latest theme map, merge above-threshold suggested paths not
-already in the taxonomy into a deep copy of `taxonomy.local.yaml`, and write a
-complete, ready-to-review YAML to `data/taxonomy-drafts/taxonomy-draft-YYYY-MM-DD.yaml`.
-
-**CLI:** `uv run notes draft [theme_map_file] [--dry-run]`
-
-**Logic:**
-1. Load latest `data/theme-maps/themes-*.json` (or a specified file)
-2. Filter to themes where `below_subfolder_threshold: false` and path not in `established_paths`
-3. Merge new paths into a `copy.deepcopy` of the current taxonomy via `_insert_subfolder`
-4. Write YAML with a header comment block listing added and skipped paths
-
-**`_insert_subfolder(entry, parts)`:** Recursively inserts path components; promotes
-a plain-string subfolder entry to a dict when deeper nesting is needed.
-
-**Human review step:** Open the draft YAML, remove unwanted subfolders, rename as
-needed, then copy to `config/taxonomy.local.yaml`.
-
----
-
-### scripts/classify/classify_notes.py
-
-**Purpose:** Using the approved taxonomy (including subfolders), classify each
-note into its `top-level folder / subfolder` destination.
-
-**CLI:** `uv run notes classify [export_file] [--dry-run]`
-
-**Output schema (data/proposals/proposal-YYYY-MM-DD.json):**
-```json
-{
-  "generated_at": "...",
-  "source_export": "...",
-  "moves": [
-    {
-      "id": "x-coredata://...",
-      "title": "Note title",
-      "current_folder": "Old Folder",
-      "proposed_folder": "Permanent",
-      "proposed_subfolder": "Health",
-      "proposed_folder_path": "Permanent/Health",
-      "confidence": "high",
-      "reason": "Atomic evergreen concept about sleep science"
-    },
-    {
-      "id": "...",
-      "title": "Another note",
-      "current_folder": "Misc",
-      "proposed_folder": "Resources",
-      "proposed_subfolder": null,
-      "proposed_folder_path": "Resources",
-      "confidence": "high",
-      "reason": "Reference material; no subfolder matches"
-    }
-  ],
-  "needs_review": [...],
-  "no_change": [...]
-}
-```
-
-**Implementation notes:**
-- Uses `_folder_name(entry)` / `_subfolders(entry)` helpers to read nested taxonomy
-- `proposed_subfolder` is null when no subfolders are defined or no match
-- LLM provider selected via `get_provider(settings)` from `scripts.providers`
-- Prompt caching applied for Anthropic; not for Ollama
-
----
-
-### scripts/classify/deduplicate_notes.py
-
-**Purpose:** Detect duplicate notes using a three-pass funnel and write a dedup
-proposal to `data/dedup-proposals/` for human review before any deletions occur.
-Run after `classify_notes.py` so that `proposed_folder_path` can be used as a
-similarity signal (two notes heading to the same folder are more likely true
-duplicates than notes in different categories).
-
-**CLI:** `uv run notes dedup [export_file] [--proposal <file>] [--dry-run]`
-
-**Algorithm — three-pass funnel:**
-
-*Pass 1 — exact hash (free, instant):*
-- Normalize body: lowercase, collapse whitespace, strip punctuation
-- MD5 hash normalized content; group notes with identical hash
-- Auto-resolved as `delete` — no LLM review needed
-
-*Pass 2 — fuzzy candidates (free, fast):*
-- Group notes by `proposed_folder_path` (or current folder as fallback)
-- Within each group, flag pairs where:
-  - `thefuzz.fuzz.token_sort_ratio(title_a, title_b) >= fuzzy_title_threshold` (default 85)
-  - `thefuzz.fuzz.token_set_ratio(body_a[:500], body_b[:500]) >= jaccard_content_threshold` (default 80)
-- O(n) within clusters, not O(n²) across the whole library
-
-*Pass 3 — LLM review of fuzzy candidates:*
-- Send each candidate pair to the LLM via `provider.classify_messages()`
-- Prompt: `prompts/deduplicate-notes.md`
-- LLM returns: `is_duplicate`, `resolution` (`delete` or `review`), `keep_id`, `reason`
-- No `merge` resolution: pairs with unique content on both sides → `review`
-
-**Keep heuristics:** most complete content → already in correct folder → most recently
-modified → more descriptive title.
-
-**`dry_run` mode:** Runs Pass 1 and Pass 2 only; prints candidate counts; no LLM calls;
-no file written.
-
----
-
-### scripts/execute/apply-dedup-proposal.applescript
-
-**Purpose:** Read an approved dedup proposal JSON and delete confirmed duplicate
-notes in Apple Notes (moves to Recently Deleted — recoverable for 30 days).
-
-**Usage:**
 ```bash
-osascript scripts/execute/apply-dedup-proposal.applescript [--execute] <dedup-proposal.json>
+uv run notes export
+uv run notes triage
+uv run notes move                  # apply the latest proposal
 ```
 
-**Implementation notes:**
-- Default is dry-run; requires `--execute` flag to make actual changes
-- Processes only groups with `resolution: "delete"`; skips `review`
-- Before deleting, verifies the keep note still exists
-- Log: `[DELETED] "Note Title" (duplicate of "Keep Note Title")`
-- Summary: N deleted, N skipped, N errors + recovery reminder
-
----
-
-### scripts/execute/apply-proposal.applescript
-
-**Purpose:** Read an approved proposal JSON and execute the moves in Apple Notes,
-creating nested folder structure as needed.
-
-**Usage:**
-```bash
-osascript scripts/execute/apply-proposal.applescript [--dry-run] <proposal.json>
-```
-
-**Implementation notes:**
-- Python parser extracts 5 fields per move: `id, title, current_folder, proposed_folder, proposed_subfolder`
-- When `proposed_subfolder` is set: check whether the subfolder exists inside the
-  top-level folder; create it if not
-- Move note to the correct folder (subfolder if set, top-level otherwise)
-- Log: `[MOVED] "Title" → Permanent/Health`
-- Summary: N moved, N skipped, N errors
-
----
-
-### scripts/restore/run_restore.py
-
-**Purpose:** Compare a backup against the current Apple Notes library and recreate
-any notes that are absent (matched by title within each folder).
-
-**CLI:** `uv run notes restore [--from-backup <file>] [--missing <file>] [--dry-run]`
-
-**Implementation notes:**
-- Defaults to latest file in `data/backups/`, then `data/exports/` if no backup exists
-- Accepts an optional `--missing` JSON listing specific notes to restore
-- Calls `restore-notes.applescript` to recreate notes via the Notes app API
-
----
-
-### scripts/maintenance/repair_restored_notes.py
-
-**Purpose:** Fix formatting corruption that can occur when notes are restored via
-iCloud Recently Deleted — symptoms include a duplicated title line and collapsed
-newlines.
-
-**CLI:** `uv run notes repair [--missing-file <file>] [--old-export <file>] [--dry-run]`
-
-**Implementation notes:**
-- Reads original content from an older export JSON
-- Rewrites the note body HTML via `repair-note.applescript`
-- Matches notes by title; skips any not found in the old export
-
----
-
-### scripts/maintenance/process_inbox.py
-
-**Purpose:** Classify only the Inbox folder notes and write a proposal.
-
-Same pipeline as `classify_notes.py` but scoped to the inbox folder. Subfolder-aware —
-uses the same taxonomy and prompt injection.
-
-**CLI:** `uv run notes triage [--dry-run]`
-
----
-
-### scripts/maintenance/audit.py
-
-**Purpose:** Analyze the full library for quality issues. Writes a report to
-`data/reports/audit-YYYY-MM-DD.md`.
-
-**CLI:** `uv run notes audit [--output <path>] [--dry-run]`
-
-**Checks:**
-- Notes not modified in `> stale_days` that are not in Archive
-- Notes with body < `stub_chars` characters → stubs
-- Notes with identical or near-identical titles → possible duplicates
-- Inbox notes older than `inbox_stale_days`
-- Fleeting notes older than `fleeting_stale_days`
-- **Subfolder candidates** — flat top-level folders with `> min_notes_for_subfolder`
-  notes; uses title-word grouping as a heuristic signal for human review
-
-**Output:** Markdown report only — no automatic changes.
-
----
-
-## Prompt Templates
-
-### prompts/discover-themes.md
-
-```markdown
-You are analyzing a collection of Apple Notes to discover the natural thematic
-clusters present in the library. This is a cartography pass — your goal is to
-map what topics and domains exist, not to classify individual notes yet.
-
-You will be given batches of notes (title + opening text). Across all batches,
-identify the major themes. A theme is a coherent subject domain that multiple
-notes share (e.g. "Health & Fitness", "Side Project: App Redesign", "Cooking").
-
-For each theme, estimate:
-- How many notes likely belong to it
-- Which top-level categories it might appear in (e.g. Permanent, Literature,
-  Projects, Areas, Resources in the default taxonomy; or Projects, Areas,
-  Resources in a PARA taxonomy)
-- A one-sentence description
-
-Also note any existing folder names from the input that suggest structural
-groupings worth preserving.
-
-Return a JSON object:
-{
-  "themes": [
-    {
-      "name": "<short theme name>",
-      "estimated_count": <integer>,
-      "appears_in_categories": ["Permanent", "Literature"],
-      "description": "<one sentence>"
-    }
-  ],
-  "folder_observations": [
-    {
-      "folder_path": "<existing folder path>",
-      "observation": "<note about this folder's contents or suggested mapping>"
-    }
-  ]
-}
-
-Notes sample:
-{NOTES_JSON}
-```
-
-### prompts/classify-notes.md
-
-The category list in this prompt is dynamically injected from `taxonomy.local.yaml`
-at runtime — only the categories defined there appear. The example below reflects
-the default Forever Notes taxonomy. A PARA user would see Inbox, Projects, Areas,
-Resources, and Archive instead.
-
-```markdown
-You are organizing notes in Apple Notes according to a configured folder taxonomy.
-The taxonomy has two levels: a top-level category (the nature of the note) and
-an optional subfolder (the subject domain).
-
-Available top-level categories and their subfolders:
-
-Inbox: {INBOX} — temporary capture, no subfolders
-Fleeting: {FLEETING} — quick thoughts, no subfolders
-Literature: {LITERATURE} — notes tied to a specific source
-  Subfolders: {LITERATURE_SUBFOLDERS}
-Permanent: {PERMANENT} — atomic, evergreen concepts in your own words
-  Subfolders: {PERMANENT_SUBFOLDERS}
-Projects: {PROJECTS} — notes tied to a specific active project
-  Subfolders: {PROJECTS_SUBFOLDERS}
-Areas: {AREAS} — ongoing responsibilities
-  Subfolders: {AREAS_SUBFOLDERS}
-Resources: {RESOURCES} — reference material, how-tos, collections
-  Subfolders: {RESOURCES_SUBFOLDERS}
-Archive: {ARCHIVE} — inactive, completed, or outdated notes
-  Subfolders: {ARCHIVE_SUBFOLDERS}
-Review: {REVIEW} — use when classification is genuinely unclear, no subfolders
-
-For each note, return a JSON array with one object per note:
-{
-  "id": "<the id field from input>",
-  "proposed_folder": "<exact top-level folder name>",
-  "proposed_subfolder": "<exact subfolder name, or null if none applies>",
-  "confidence": "high" | "medium" | "low",
-  "reason": "<one sentence>"
-}
-
-Use null for proposed_subfolder when: no subfolders are defined for the target
-category, or the note's theme doesn't clearly match any listed subfolder.
-Use "Review" (with null subfolder) when the note is too short or ambiguous.
-
-Notes to classify:
-{NOTES_JSON}
-```
-
----
-
-## Phased Implementation
-
-### Phase 1 — Scaffold and Safety ✅
-
-Directory structure, git, `.gitignore`, pre-commit hook, config examples, README.
-
-### Phase 2 — Export ✅
-
-`export-notes.applescript` with ASCII-delimited temp file → Python UTF-8 JSON conversion.
-`run_export.py` Python wrapper; `notes export` and `notes backup` commands.
-
-### Phase 2a — Theme Discovery ✅
-
-1. Implement `discover_themes.py` with `notes discover` CLI command
-2. Write `prompts/discover-themes.md`
-3. Implement `draft_taxonomy.py` with `notes draft` CLI command
-4. Document in `docs/runbooks/main-workflow.md`
-
-### Phase 2b — Classify and Execute ✅
-
-1. Update `classify_notes.py`: nested taxonomy reads, subfolder in proposals
-2. Update `apply-proposal.applescript`: subfolder creation and 5-field move logic
-3. Update `prompts/classify-notes.md`: subfolder placeholders
-4. Update `process_inbox.py`: nested taxonomy reads
-
-### Phase 3 — Maintenance Scripts ✅
-
-1. `audit.py`: nested taxonomy reads + subfolder candidate detection
-2. `repair_restored_notes.py`: fix formatting after iCloud Recently Deleted restore
-3. `run_restore.py`: recreate notes from backup
-4. Consolidated `docs/runbooks/main-workflow.md`
-
-### Phase 3b — Deduplicate ✅
-
-1. `deduplicate_notes.py` with three-pass funnel
-2. `apply-dedup-proposal.applescript` with `--execute` flag requirement
-3. `apply_dedup.py` Python wrapper with streaming colored output
-4. `prompts/deduplicate-notes.md` LLM review prompt
-5. `notes dedup` and `notes purge` commands
-
-### Phase 3c — Hub Setup ✅ *(strict mode only)*
-
-1. `sync_hubs.py` + `sync-hubs.applescript`
-2. `notes sync-hubs` command
-3. NoteStore.sqlite UUID lookup for stable `applenotes://` links (opt-in via `internal_links: "html"`)
-
-**Ongoing:** Re-run `uv run notes export && uv run notes sync-hubs` after any moves
-or manual reorganization to keep Hub contents current.
-
-### Phase 4 — Scheduling (optional)
-
-Document scheduling via cron or launchd.
+A launchd plist example and step-by-step setup guide belong in
+`docs/runbooks/scheduling.md`.
 
 ---
 
@@ -839,6 +282,12 @@ and model are selected from `settings.local.yaml` and env vars (`OLLAMA_BASE_URL
 **`.env` for credentials.** `python-dotenv` loads `.env` at CLI startup.
 `ANTHROPIC_API_KEY`, `OLLAMA_BASE_URL`, and `OLLAMA_MODEL` are read from there.
 `.env` is gitignored; `.env.example` is committed.
+
+**Shared infrastructure in `scripts/config.py` and `scripts/json_utils.py`.** Config
+loading (`load_settings`, `load_taxonomy`, `find_latest_export`) and LLM response parsing
+(`extract_json_array`, `extract_json_object`, `is_context_overflow`) are extracted into
+dedicated modules. All classify/maintenance scripts import from these; `classify_notes.py`
+is a pure classification module, not a utility hub.
 
 **AppleScript for reads and writes, not SQLite.** The NoteStore.sqlite schema is
 undocumented and changes between macOS versions. AppleScript uses the Notes app's

@@ -10,7 +10,7 @@ from pathlib import Path
 import yaml
 from rich.console import Console
 
-from scripts.classify.classify_notes import load_settings, load_taxonomy
+from scripts.config import load_settings, load_taxonomy
 from scripts.folder_utils import enumerate_paths
 from scripts.run_logger import RunLogger, logs_dir_path
 

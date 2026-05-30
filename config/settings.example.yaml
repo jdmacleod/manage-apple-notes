@@ -21,8 +21,9 @@ toplevel_folder:
 # provider: "anthropic" (default, cloud) or "ollama" (local)
 llm:
   provider: "anthropic"
-  model: "claude-opus-4-6"   # or claude-sonnet-4-6 for cost/speed tradeoff
-  batch_size: 20              # Notes per API call during bulk classification
+  model: "claude-opus-4-6"        # or claude-sonnet-4-6 for cost/speed tradeoff
+  batch_size: 20                  # notes per API call during bulk classification
+  theme_discovery_sample: 50      # notes sampled per batch during theme discovery (notes discover)
   theme_discovery_mode: "anchored"   # "anchored" = prefer existing taxonomy paths (default)
                                      # "full" = ignore existing paths, propose from scratch
 
@@ -76,10 +77,14 @@ strict_mode:
   home_note_folder: null         # null = iCloud root; or specify a folder name
   hub_title_prefix: "✱ "
   hub_note_folder: null          # null = same folder as home note
-  tag_all_notes: true            # append #ForeverNotes to every classified note
-  tag_theme_notes: true          # append #[theme] tag to notes on classification
-  tag_hub_notes: true            # append #hub tag to all hub notes
-  update_hubs_after_classify: true
   internal_links: "text"         # "text" = plain title list (safe, default)
                                   # "html" = applenotes:// links (experimental — may break
                                   #          after iCloud sync; see docs/forever-notes-framework.md)
+
+  # ── Future / unreleased settings ─────────────────────────────────────────
+  # These keys are reserved for upcoming features and are NOT yet read by any script.
+  # Enabling them now has no effect.
+  tag_all_notes: false           # NOT YET IMPLEMENTED — append #ForeverNotes to every classified note
+  tag_theme_notes: false         # NOT YET IMPLEMENTED — append #[theme] tag to notes on classification
+  tag_hub_notes: false           # NOT YET IMPLEMENTED — append #hub tag to all hub notes
+  update_hubs_after_classify: false  # NOT YET IMPLEMENTED — auto-run sync-hubs after classify

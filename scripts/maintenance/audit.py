@@ -11,16 +11,12 @@ from pathlib import Path
 
 from rich.console import Console
 
-from scripts.classify.classify_notes import (
-    _CATEGORY_META,
-    _folder_name,
-    find_latest_export,
-    load_settings,
-    load_taxonomy,
-)
+from scripts.classify.classify_notes import _CATEGORY_META
+from scripts.config import find_latest_export, load_settings, load_taxonomy
 from scripts.folder_utils import (
     effective_max_depth,
     enumerate_paths,
+    folder_name,
     has_taxonomy_ancestor,
     nesting_mode,
     path_depth,
@@ -119,10 +115,10 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
     taxonomy = load_taxonomy()
     fn = taxonomy.get("forever_notes", {})
 
-    archive_folder = _folder_name(fn.get("archive", ""))
-    inbox_folder = _folder_name(fn.get("inbox", ""))
-    fleeting_folder = _folder_name(fn.get("fleeting", ""))
-    projects_folder = _folder_name(fn.get("projects", ""))
+    archive_folder = folder_name(fn.get("archive", ""))
+    inbox_folder = folder_name(fn.get("inbox", ""))
+    fleeting_folder = folder_name(fn.get("fleeting", ""))
+    projects_folder = folder_name(fn.get("projects", ""))
 
     thresholds = settings.get("thresholds", {})
     stub_words = thresholds.get("stub_words", STUB_MAX_WORDS)
@@ -139,9 +135,9 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
 
     # Collect known top-level category folder names for subfolder candidate check
     category_folders = {
-        _folder_name(v)
+        folder_name(v)
         for v in fn.values()
-        if _folder_name(v) and not _folder_name(v).startswith("[")
+        if folder_name(v) and not folder_name(v).startswith("[")
     }
 
     export_path = Path(export_file) if export_file else find_latest_export()
@@ -277,7 +273,7 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
             entry = fn.get(key)
             if not entry:
                 continue
-            folder = _folder_name(entry)
+            folder = folder_name(entry)
             if not folder or folder.startswith("["):
                 continue
             count = sum(
@@ -336,8 +332,8 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
         "| Category | Folder | Notes | Share |",
         "| --- | --- | --- | --- |",
     ]
-    for para_label, folder_name, count in category_counts:
-        lines.append(f"| {para_label} | {folder_name} | {count} | {_pct(count)} |")
+    for para_label, cat_folder, count in category_counts:
+        lines.append(f"| {para_label} | {cat_folder} | {count} | {_pct(count)} |")
     if uncategorized_count > 0 or not category_counts:
         lines.append(
             f"| *(uncategorized)* | — | {uncategorized_count} | {_pct(uncategorized_count)} |"

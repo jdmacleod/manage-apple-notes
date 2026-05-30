@@ -18,19 +18,18 @@ from rich.progress import (
 
 from scripts.classify.classify_notes import (
     _CATEGORY_META,
-    _folder_name,
-    find_latest_export,
-    load_settings,
-    load_taxonomy,
     price_per_million,
 )
+from scripts.config import find_latest_export, load_settings, load_taxonomy
 from scripts.folder_utils import (
     effective_max_depth,
     enumerate_paths,
+    folder_name,
     max_taxonomy_depth,
     nesting_mode,
     path_depth,
 )
+from scripts.json_utils import extract_json_object, is_context_overflow
 from scripts.providers import LLMProvider, get_provider
 from scripts.run_logger import RunLogger, estimate_duration, logs_dir_path
 
@@ -78,9 +77,9 @@ def inject_discover_taxonomy(
     fn = taxonomy.get("forever_notes", {})
     # Build "Folder — description" lines so the LLM knows each category's intent
     category_lines = [
-        f"{_folder_name(fn[key])} — {desc}"
+        f"{folder_name(fn[key])} — {desc}"
         for key, desc in _CATEGORY_META
-        if key in fn and _folder_name(fn[key])
+        if key in fn and folder_name(fn[key])
     ]
 
     mode = nesting_mode(settings)
@@ -132,20 +131,6 @@ def inject_discover_taxonomy(
     )
 
 
-def _is_context_overflow(exc: Exception) -> bool:
-    msg = str(exc).lower()
-    return any(
-        k in msg
-        for k in (
-            "exceed_context",
-            "context_length",
-            "context size",
-            "context window",
-            "maximum context",
-        )
-    )
-
-
 def _discover_batch(provider: LLMProvider, system_prompt: str, batch: list) -> list:
     """Send one batch to the LLM; on context overflow, split recursively and merge."""
     try:
@@ -153,13 +138,13 @@ def _discover_batch(provider: LLMProvider, system_prompt: str, batch: list) -> l
             system_prompt,
             json.dumps(batch, indent=2, ensure_ascii=False),
         )
-        result = _extract_json_object(response)
+        result = extract_json_object(response)
         return list(result.get("themes") or [])
     except (ValueError, json.JSONDecodeError) as exc:
         console.print(f"[yellow]Warning:[/yellow] batch parse error — {exc}")
         return []
     except Exception as exc:
-        if _is_context_overflow(exc) and len(batch) > 1:
+        if is_context_overflow(exc) and len(batch) > 1:
             mid = len(batch) // 2
             console.print(
                 f"[yellow]Context overflow — splitting batch ({len(batch)} → {mid}+{len(batch) - mid})[/yellow]"
@@ -168,19 +153,6 @@ def _discover_batch(provider: LLMProvider, system_prompt: str, batch: list) -> l
                 provider, system_prompt, batch[mid:]
             )
         raise
-
-
-def _extract_json_object(text: str) -> dict:
-    """Extract a JSON object from an LLM response that may include prose or fences."""
-    if "```" in text:
-        start = text.find("{", text.find("```"))
-    else:
-        start = text.find("{")
-    end = text.rfind("}") + 1
-    if start == -1 or end == 0:
-        raise ValueError(f"No JSON object found in response:\n{text[:300]}")
-    result: dict = json.loads(text[start:end])
-    return result
 
 
 def run_discover(export_file: str | None, dry_run: bool) -> None:
@@ -339,10 +311,10 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
                     synthesis_prompt,
                     json.dumps(all_raw, indent=2, ensure_ascii=False),
                 )
-                synthesized = _extract_json_object(synthesis_response)
+                synthesized = extract_json_object(synthesis_response)
                 final_themes = synthesized.get("themes", all_raw)
             except Exception as exc:
-                if _is_context_overflow(exc):
+                if is_context_overflow(exc):
                     console.print(
                         "[yellow]Synthesis context overflow — skipping dedup, using raw theme list.[/yellow]"
                     )
@@ -393,9 +365,9 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
     # ── Per-category breakdown ───────────────────────────────────────────────
 
     top_level_folders = {
-        _folder_name(fn[key])
+        folder_name(fn[key])
         for key, _ in _CATEGORY_META
-        if key in fn and _folder_name(fn[key])
+        if key in fn and folder_name(fn[key])
     }
     by_category: dict[str, list[dict]] = {}
     for theme in final_themes:

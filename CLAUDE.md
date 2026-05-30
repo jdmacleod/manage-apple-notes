@@ -115,13 +115,18 @@ The `moves` array drives `apply-proposal.applescript`. The `needs_review` array 
 
 ## Phased Implementation Status
 
-See `PLAN.md` for the full spec. Implementation phases:
+See `PLAN.md` for the current active plan and Phase 4. Detailed specs for completed
+phases (1–3c) are in `PLAN-archive.md`.
 
-1. **Phase 1** — Scaffold, `.gitignore`, pre-commit hook, config examples, README
-2. **Phase 2** — `export-notes.applescript`, `classify-notes.py`, `apply-proposal.applescript`
-3. **Phase 3** — `process-inbox.py`, `audit.py`, runbooks
-4. **Phase 3b** — `deduplicate_notes.py`, `apply-dedup-proposal.applescript`
-5. **Phase 4** — Scheduling via cron or launchd (optional)
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Scaffold, `.gitignore`, pre-commit hook, config examples | ✅ |
+| 2 | Export, classify, apply scripts | ✅ |
+| 2a–2b | Theme discovery, taxonomy drafting, nested subfolders | ✅ |
+| 3 | Maintenance: audit, repair, restore | ✅ |
+| 3b | Deduplication (three-pass funnel) | ✅ |
+| 3c | Hub/Home notes (strict mode) | ✅ |
+| 4 | Scheduling via cron or launchd | 🔲 |
 
 ## Documentation Update Pass
 

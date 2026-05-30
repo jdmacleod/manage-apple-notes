@@ -5,6 +5,13 @@ from __future__ import annotations
 APPLE_NOTES_MAX_DEPTH = 5
 
 
+def folder_name(entry: dict | str) -> str:
+    """Extract the folder name from a taxonomy entry (nested dict or legacy string)."""
+    if isinstance(entry, dict):
+        return str(entry.get("folder") or "")
+    return entry or ""
+
+
 def enumerate_paths(entry: dict | str, parent: str = "") -> list[str]:
     """Recursively collect every folder path defined under a taxonomy entry.
 

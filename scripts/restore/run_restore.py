@@ -17,7 +17,7 @@ from pathlib import Path
 
 from rich.console import Console
 
-from scripts.classify.classify_notes import load_settings
+from scripts.config import load_settings
 from scripts.run_logger import RunLogger, logs_dir_path
 
 console = Console()

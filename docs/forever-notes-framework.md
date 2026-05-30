@@ -89,11 +89,10 @@ Hub notes are created and updated by `uv run notes sync-hubs`.
 
 ### Tags
 
-`settings.local.yaml` exposes `tag_all_notes` and `tag_theme_notes` flags under
-`strict_mode`, but **tag application to classified notes is not yet implemented** —
-the classification pipeline does not currently append tags. Hub notes themselves do
-receive `#hub`, `#[theme]`, and `#ForeverNotes` tags in their body as part of
-`sync-hubs`. This section will be updated when tag application is implemented.
+**Not yet implemented.** `settings.local.yaml` includes `tag_all_notes`,
+`tag_theme_notes`, `tag_hub_notes`, and `update_hubs_after_classify` flags under
+`strict_mode`, but none of these are currently read by any script. Enabling them has
+no effect. This section will be updated when tag application is implemented.
 
 ---
 

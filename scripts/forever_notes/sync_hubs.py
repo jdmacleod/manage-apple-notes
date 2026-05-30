@@ -11,58 +11,21 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-import yaml
 from rich.console import Console
 
-from scripts.folder_utils import enumerate_paths, path_depth
+from scripts.config import find_latest_export, load_settings, load_taxonomy
+from scripts.folder_utils import enumerate_paths, folder_name, path_depth
 from scripts.run_logger import RunLogger, logs_dir_path
 
 console = Console()
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-CONFIG_DIR = REPO_ROOT / "config"
-EXPORTS_DIR = REPO_ROOT / "data" / "exports"
 
 HEAVY_ASTERISK = "✱"
 
 NOTESTORE_DB = (
     Path.home() / "Library" / "Group Containers" / "group.com.apple.notes" / "NoteStore.sqlite"
 )
-
-
-def _load_yaml(local_path: Path, example_path: Path) -> dict:
-    for path in (local_path, example_path):
-        if path.exists():
-            with open(path) as f:
-                return yaml.safe_load(f) or {}
-    return {}
-
-
-def load_settings() -> dict:
-    return _load_yaml(
-        CONFIG_DIR / "settings.local.yaml",
-        CONFIG_DIR / "settings.example.yaml",
-    )
-
-
-def load_taxonomy() -> dict:
-    return _load_yaml(
-        CONFIG_DIR / "taxonomy.local.yaml",
-        CONFIG_DIR / "taxonomy.example.yaml",
-    )
-
-
-def find_latest_export() -> Path:
-    files = sorted(EXPORTS_DIR.glob("notes-*.json"), reverse=True)
-    if not files:
-        raise FileNotFoundError(
-            f"No export files found in {EXPORTS_DIR}. Run 'uv run notes export' first."
-        )
-    return files[0]
-
-
-def _folder_name(entry: dict) -> str:
-    return str(entry.get("folder") or "") if isinstance(entry, dict) else str(entry)
 
 
 def _subfolders(entry: dict) -> list[dict]:
@@ -339,7 +302,7 @@ def _build_home_body(
     for cat_key, cat_val in cats.items():
         if not isinstance(cat_val, dict):
             continue
-        heading = _folder_name(cat_val) or cat_key.capitalize()
+        heading = folder_name(cat_val) or cat_key.capitalize()
         parts.append(f"<h2>{html.escape(heading)}</h2>")
         deep_paths = [p for p in enumerate_paths(cat_val) if path_depth(p) >= 2]
         if deep_paths:

@@ -12,7 +12,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.live import Live
 
-from scripts.classify.classify_notes import find_latest_export, load_settings
+from scripts.config import find_latest_export, load_settings
 from scripts.run_logger import RunLogger, logs_dir_path
 
 console = Console()

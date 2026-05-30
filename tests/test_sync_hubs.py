@@ -6,11 +6,11 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from scripts.folder_utils import folder_name
 from scripts.forever_notes.sync_hubs import (
     HEAVY_ASTERISK,
     _build_home_body,
     _build_theme_index,
-    _folder_name,
     _generate_hub_body,
     _hub_tag,
     _hub_title,
@@ -85,11 +85,11 @@ class TestNoteLink:
 
 
 class TestFolderNameAndSubfolders:
-    def test_folder_name_from_dict(self) -> None:
-        assert _folder_name({"folder": "Resources"}) == "Resources"
+    def testfolder_name_from_dict(self) -> None:
+        assert folder_name({"folder": "Resources"}) == "Resources"
 
-    def test_folder_name_from_string(self) -> None:
-        assert _folder_name("Resources") == "Resources"
+    def testfolder_name_from_string(self) -> None:
+        assert folder_name("Resources") == "Resources"
 
     def test_subfolders_dict_entries(self) -> None:
         entry = {"folder": "Resources", "subfolders": [{"name": "Reference"}, {"name": "Tools"}]}

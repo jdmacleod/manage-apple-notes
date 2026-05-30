@@ -69,7 +69,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"scripts/test_*.py" = ["E402"]  # test scripts import after setup code
+"scripts/dev_*.py" = ["E402"]   # dev smoke-test scripts import after setup code
 "scripts/cli.py" = ["E402"]     # load_dotenv() must run before sub-module imports
 
 [tool.ruff.format]
@@ -81,7 +81,7 @@ testpaths = ["tests"]
 addopts = "--cov=scripts --cov-report=term-missing --cov-report=xml --cov-fail-under=90"
 
 [tool.coverage.run]
-omit = ["scripts/test_*.py"]
+omit = ["scripts/dev_*.py"]
 
 [tool.coverage.report]
 exclude_lines = [

@@ -10,11 +10,10 @@ import pytest
 
 from scripts.classify.discover_themes import (
     _discover_batch,
-    _extract_json_object,
-    _is_context_overflow,
     inject_discover_taxonomy,
     run_discover,
 )
+from scripts.json_utils import extract_json_object, is_context_overflow
 
 
 class TestInjectDiscoverTaxonomy:
@@ -54,30 +53,30 @@ class TestInjectDiscoverTaxonomy:
 
 class TestExtractJsonObject:
     def test_plain_object(self) -> None:
-        result = _extract_json_object('{"themes": [{"name": "Tech"}]}')
+        result = extract_json_object('{"themes": [{"name": "Tech"}]}')
         assert result == {"themes": [{"name": "Tech"}]}
 
     def test_object_in_prose(self) -> None:
         text = 'Here is the result:\n{"themes": []}\nDone.'
-        result = _extract_json_object(text)
+        result = extract_json_object(text)
         assert result == {"themes": []}
 
     def test_object_in_code_fence(self) -> None:
         text = '```json\n{"themes": [{"name": "Health"}]}\n```'
-        result = _extract_json_object(text)
+        result = extract_json_object(text)
         assert result == {"themes": [{"name": "Health"}]}
 
     def test_no_object_raises(self) -> None:
         with pytest.raises(ValueError, match="No JSON object"):
-            _extract_json_object("No JSON here at all.")
+            extract_json_object("No JSON here at all.")
 
 
 class TestIsContextOverflow:
     def test_context_window_message(self) -> None:
-        assert _is_context_overflow(Exception("context window exceeded")) is True
+        assert is_context_overflow(Exception("context window exceeded")) is True
 
     def test_unrelated_message(self) -> None:
-        assert _is_context_overflow(Exception("network error")) is False
+        assert is_context_overflow(Exception("network error")) is False
 
 
 class TestDiscoverBatch:

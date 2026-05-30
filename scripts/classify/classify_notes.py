@@ -6,7 +6,6 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-import yaml
 from rich.console import Console
 from rich.progress import (
     BarColumn,
@@ -17,22 +16,23 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
+from scripts.config import find_latest_export, load_settings, load_taxonomy
 from scripts.folder_utils import (
     clamp_path,
     effective_max_depth,
     enumerate_paths,
+    folder_name,
     nesting_mode,
     path_depth,
 )
+from scripts.json_utils import extract_json_array, is_context_overflow
 from scripts.providers import LLMProvider, get_provider
 from scripts.run_logger import RunLogger, estimate_duration, logs_dir_path
 
 console = Console()
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-CONFIG_DIR = REPO_ROOT / "config"
 PROMPTS_DIR = REPO_ROOT / "prompts"
-EXPORTS_DIR = REPO_ROOT / "data" / "exports"
 PROPOSALS_DIR = REPO_ROOT / "data" / "proposals"
 
 # Approximate input token pricing per million tokens by model prefix
@@ -41,37 +41,6 @@ _PRICE_PER_M: dict[str, float] = {
     "claude-sonnet": 3.0,
     "claude-haiku": 0.25,
 }
-
-
-def _load_yaml(local_path: Path, example_path: Path) -> dict:
-    for path in (local_path, example_path):
-        if path.exists():
-            with open(path) as f:
-                return yaml.safe_load(f) or {}
-    return {}
-
-
-def load_settings() -> dict:
-    return _load_yaml(
-        CONFIG_DIR / "settings.local.yaml",
-        CONFIG_DIR / "settings.example.yaml",
-    )
-
-
-def load_taxonomy() -> dict:
-    return _load_yaml(
-        CONFIG_DIR / "taxonomy.local.yaml",
-        CONFIG_DIR / "taxonomy.example.yaml",
-    )
-
-
-def find_latest_export() -> Path:
-    files = sorted(EXPORTS_DIR.glob("notes-*.json"), reverse=True)
-    if not files:
-        raise FileNotFoundError(
-            f"No export files found in {EXPORTS_DIR}. Run export-notes.applescript first."
-        )
-    return files[0]
 
 
 def load_prompt_template() -> str:
@@ -85,13 +54,6 @@ def load_prompt_template() -> str:
         raise ValueError(f"Prompt template missing '{marker.strip()}' separator")
     system_part, _ = text.split(marker, 1)
     return system_part.strip()
-
-
-def _folder_name(entry: dict | str) -> str:
-    """Extract the folder name from a taxonomy entry (nested dict or legacy string)."""
-    if isinstance(entry, dict):
-        return str(entry.get("folder") or "")
-    return entry or ""
 
 
 def _subfolders(entry: dict | str) -> list[str]:
@@ -141,10 +103,10 @@ def inject_taxonomy(
         entry = fn.get(key)
         if not entry:
             continue
-        folder = _folder_name(entry)
-        if not folder:
+        fld = folder_name(entry)
+        if not fld:
             continue
-        lines.append(f"{folder} — {description}")
+        lines.append(f"{fld} — {description}")
 
         if mode != "flat":
             for path in enumerate_paths(entry):
@@ -155,37 +117,10 @@ def inject_taxonomy(
                 leaf = path.split("/")[-1]
                 lines.append(f"{indent}{leaf}  [{path}]")
 
-    catchall = _folder_name(fn.get("review")) or _folder_name(fn.get("inbox")) or "Inbox"
+    catchall = folder_name(fn.get("review")) or folder_name(fn.get("inbox")) or "Inbox"
 
     return system_prompt.replace("{CATEGORY_LIST}", "\n".join(lines)).replace(
         "{CATCHALL}", catchall
-    )
-
-
-def _extract_json_array(text: str) -> list:
-    """Extract a JSON array from an LLM response that may include prose or fences."""
-    if "```" in text:
-        start = text.find("[", text.find("```"))
-    else:
-        start = text.find("[")
-    end = text.rfind("]") + 1
-    if start == -1 or end == 0:
-        raise ValueError(f"No JSON array found in response:\n{text[:300]}")
-    result: list = json.loads(text[start:end])
-    return result
-
-
-def _is_context_overflow(exc: Exception) -> bool:
-    msg = str(exc).lower()
-    return any(
-        k in msg
-        for k in (
-            "exceed_context",
-            "context_length",
-            "context size",
-            "context window",
-            "maximum context",
-        )
     )
 
 
@@ -211,7 +146,7 @@ def classify_batch(
         system_prompt,
         json.dumps(batch_payload, indent=2, ensure_ascii=False),
     )
-    return _extract_json_array(text)
+    return extract_json_array(text)
 
 
 def classify_batch_resilient(
@@ -226,7 +161,7 @@ def classify_batch_resilient(
     try:
         return classify_batch(provider, notes_batch, system_prompt, settings)
     except Exception as exc:
-        is_recoverable = _is_context_overflow(exc) or isinstance(
+        is_recoverable = is_context_overflow(exc) or isinstance(
             exc, (ValueError, json.JSONDecodeError)
         )
         if is_recoverable and len(notes_batch) > 1:
@@ -272,7 +207,7 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
     )
 
     fn = taxonomy.get("forever_notes", {})
-    archive_folder = _folder_name(fn.get("archive", ""))
+    archive_folder = folder_name(fn.get("archive", ""))
     exclude_archive = settings.get("classify", {}).get("exclude_archive", True)
 
     archive_notes: list[dict] = []
@@ -334,7 +269,7 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
     if estimate:
         console.print(f"[dim]Estimated duration: {estimate}[/dim]")
 
-    review_folder = _folder_name(fn.get("review", ""))
+    review_folder = folder_name(fn.get("review", ""))
 
     moves: list[dict] = []
     needs_review: list[dict] = []

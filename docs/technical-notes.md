@@ -296,7 +296,8 @@ Approximate input token costs for the Anthropic provider:
 - ~700 tokens per note (title + 2000-char body)
 - ~1500 tokens per system prompt (shared across all notes in a batch)
 - A 300-note library at `batch_size: 10` → ~220k input tokens
-- Cost at `claude-sonnet-4-6` pricing (~$3/M input tokens, mid-2026): ~$0.66
+- Cost at `claude-opus-4-6` pricing (~$15/M input tokens, mid-2026): ~$3.30
+- Cost at `claude-sonnet-4-6` pricing (~$3/M input tokens, mid-2026): ~$0.66 (see `settings.example.yaml`)
 
 The `--dry-run` flag on `notes classify` and `notes discover` prints an estimate before
 any API calls are made.
@@ -340,6 +341,14 @@ categories that happen to share a theme.
 Running dedup before classification loses this placement signal entirely and produces more
 false positives (near-duplicate pairs that are actually intentionally distinct notes on a
 related theme but destined for different categories).
+
+### Hub note generation: LLM approach replaced by direct HTML
+
+An early implementation of `sync-hubs` used an LLM call to generate Hub note bodies from
+a `prompts/sync-hubs.md` template. This was retired when it became clear that Hub structure
+is deterministic (group notes by subfolder, render HTML list) and requires no inference.
+Hub and Home note bodies are now built directly by `_generate_hub_body()` and
+`_build_home_body()` in `scripts/forever_notes/sync_hubs.py`.
 
 ### Prompt caching (Anthropic)
 

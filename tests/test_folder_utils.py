@@ -7,11 +7,32 @@ from scripts.folder_utils import (
     clamp_path,
     effective_max_depth,
     enumerate_paths,
+    folder_name,
     max_taxonomy_depth,
     nesting_mode,
     path_components,
     path_depth,
 )
+
+
+class TestFolderName:
+    def test_dict_entry(self) -> None:
+        assert folder_name({"folder": "Inbox"}) == "Inbox"
+
+    def test_string_entry(self) -> None:
+        assert folder_name("Resources") == "Resources"
+
+    def test_dict_missing_folder_key(self) -> None:
+        assert folder_name({"name": "Tech"}) == ""
+
+    def test_dict_none_folder_value(self) -> None:
+        assert folder_name({"folder": None}) == ""
+
+    def test_empty_string(self) -> None:
+        assert folder_name("") == ""
+
+    def test_dict_empty_folder_value(self) -> None:
+        assert folder_name({"folder": ""}) == ""
 
 
 class TestEnumeratePaths:

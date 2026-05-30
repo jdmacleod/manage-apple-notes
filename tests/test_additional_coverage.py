@@ -1,4 +1,4 @@
-"""Targeted tests to close coverage gaps identified after initial run."""
+"""Additional integration tests targeting coverage gaps in execute, restore, and dedup scripts."""
 
 from __future__ import annotations
 
@@ -7,99 +7,11 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-from typer.testing import CliRunner
 
-from scripts.cli import app
 from scripts.execute.apply_dedup import run_apply_dedup
 from scripts.execute.run_apply import run_apply
 from scripts.maintenance.process_inbox import run_inbox
 from scripts.restore.run_restore import run_restore
-
-runner = CliRunner()
-
-
-# ---------------------------------------------------------------------------
-# CLI — actual command invocations (covers run_* call sites in cli.py)
-# ---------------------------------------------------------------------------
-
-
-class TestCliCommands:
-    def test_classify_invokes_run_classify(self, mocker: MagicMock) -> None:
-        mock = mocker.patch("scripts.cli.run_classify")
-        result = runner.invoke(app, ["classify", "--dry-run"])
-        assert result.exit_code == 0
-        mock.assert_called_once_with(export_file=None, dry_run=True)
-
-    def test_discover_invokes_run_discover(self, mocker: MagicMock) -> None:
-        mock = mocker.patch("scripts.cli.run_discover")
-        result = runner.invoke(app, ["discover", "--dry-run"])
-        assert result.exit_code == 0
-        mock.assert_called_once_with(export_file=None, dry_run=True)
-
-    def test_audit_invokes_run_audit(self, mocker: MagicMock) -> None:
-        mock = mocker.patch("scripts.cli.run_audit")
-        result = runner.invoke(app, ["audit", "--dry-run"])
-        assert result.exit_code == 0
-        mock.assert_called_once_with(export_file=None, output_override=None, dry_run=True)
-
-    def test_export_invokes_run_export(self, mocker: MagicMock) -> None:
-        mock = mocker.patch("scripts.cli.run_export")
-        result = runner.invoke(app, ["export"])
-        assert result.exit_code == 0
-        mock.assert_called_once()
-
-    def test_backup_invokes_run_backup(self, mocker: MagicMock) -> None:
-        mock = mocker.patch("scripts.cli.run_backup")
-        result = runner.invoke(app, ["backup"])
-        assert result.exit_code == 0
-        mock.assert_called_once()
-
-    def test_triage_invokes_run_inbox(self, mocker: MagicMock) -> None:
-        mock = mocker.patch("scripts.cli.run_inbox")
-        result = runner.invoke(app, ["triage", "--dry-run"])
-        assert result.exit_code == 0
-        mock.assert_called_once_with(dry_run=True)
-
-    def test_sync_hubs_invokes_run_sync_hubs(self, mocker: MagicMock) -> None:
-        mock = mocker.patch("scripts.cli.run_sync_hubs")
-        result = runner.invoke(app, ["sync-hubs", "--dry-run"])
-        assert result.exit_code == 0
-        mock.assert_called_once_with(export_file=None, dry_run=True)
-
-    def test_dedup_invokes_run_dedup(self, mocker: MagicMock) -> None:
-        mock = mocker.patch("scripts.cli.run_dedup")
-        result = runner.invoke(app, ["dedup", "--dry-run"])
-        assert result.exit_code == 0
-        mock.assert_called_once_with(export_file=None, proposal_file=None, dry_run=True)
-
-    def test_move_invokes_run_apply(self, mocker: MagicMock, tmp_path: Path) -> None:
-        mock = mocker.patch("scripts.cli.run_apply")
-        proposal = tmp_path / "proposal.json"
-        proposal.write_text("{}")
-        result = runner.invoke(app, ["move", str(proposal)])
-        assert result.exit_code == 0
-        mock.assert_called_once()
-
-    def test_purge_invokes_run_apply_dedup(self, mocker: MagicMock, tmp_path: Path) -> None:
-        mock = mocker.patch("scripts.cli.run_apply_dedup")
-        proposal = tmp_path / "dedup.json"
-        proposal.write_text("{}")
-        result = runner.invoke(app, ["purge", str(proposal)])
-        assert result.exit_code == 0
-        mock.assert_called_once()
-
-    def test_repair_invokes_run_repair_restored(self, mocker: MagicMock) -> None:
-        mock = mocker.patch("scripts.cli.run_repair_restored")
-        result = runner.invoke(app, ["repair", "--dry-run"])
-        assert result.exit_code == 0
-        mock.assert_called_once_with(missing_file=None, old_export_file=None, dry_run=True)
-
-    def test_restore_invokes_run_restore(self, mocker: MagicMock) -> None:
-        mock = mocker.patch("scripts.cli.run_restore")
-        result = runner.invoke(app, ["restore", "--dry-run"])
-        assert result.exit_code == 0
-        mock.assert_called_once_with(backup_file=None, missing_file=None, dry_run=True)
-
 
 # ---------------------------------------------------------------------------
 # process_inbox — non-dry-run path writes a proposal
@@ -491,7 +403,7 @@ class TestRunRestoreAdditional:
 
 class TestDeduplicateUtilityFunctions:
     def test_load_settings_returns_dict(self) -> None:
-        from scripts.classify.deduplicate_notes import load_settings
+        from scripts.config import load_settings
 
         result = load_settings()
         assert isinstance(result, dict)

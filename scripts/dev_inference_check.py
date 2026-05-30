@@ -16,13 +16,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from scripts.classify.classify_notes import (
-    _extract_json_array,
-    inject_taxonomy,
-    load_prompt_template,
-    load_settings,
-    load_taxonomy,
-)
+from scripts.classify.classify_notes import inject_taxonomy, load_prompt_template
+from scripts.config import load_settings, load_taxonomy
+from scripts.json_utils import extract_json_array
 from scripts.providers import LLMProvider, OllamaProvider, get_provider
 
 TEST_NOTE = [
@@ -56,7 +52,7 @@ def main() -> None:
         system_prompt,
         json.dumps(TEST_NOTE, indent=2, ensure_ascii=False),
     )
-    results = _extract_json_array(response)
+    results = extract_json_array(response)
     print(json.dumps(results, indent=2, ensure_ascii=False))
 
 

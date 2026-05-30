@@ -10,9 +10,6 @@ import pytest
 
 from scripts.classify.classify_notes import (
     _build_folder_path,
-    _extract_json_array,
-    _folder_name,
-    _is_context_overflow,
     _subfolder_str,
     _subfolders,
     classify_batch,
@@ -21,44 +18,46 @@ from scripts.classify.classify_notes import (
     price_per_million,
     run_classify,
 )
+from scripts.folder_utils import folder_name
+from scripts.json_utils import extract_json_array, is_context_overflow
 
 
 class TestExtractJsonArray:
     def test_plain_array(self) -> None:
-        result = _extract_json_array('[{"id": "1", "folder": "Inbox"}]')
+        result = extract_json_array('[{"id": "1", "folder": "Inbox"}]')
         assert result == [{"id": "1", "folder": "Inbox"}]
 
     def test_array_in_prose(self) -> None:
         text = 'Here are the results:\n[{"id": "1"}]\nEnd.'
-        result = _extract_json_array(text)
+        result = extract_json_array(text)
         assert result == [{"id": "1"}]
 
     def test_array_in_code_fence(self) -> None:
         text = '```json\n[{"id": "1"}]\n```'
-        result = _extract_json_array(text)
+        result = extract_json_array(text)
         assert result == [{"id": "1"}]
 
     def test_empty_array(self) -> None:
-        result = _extract_json_array("[]")
+        result = extract_json_array("[]")
         assert result == []
 
     def test_no_array_raises(self) -> None:
         with pytest.raises(ValueError, match="No JSON array"):
-            _extract_json_array("This is just prose with no JSON.")
+            extract_json_array("This is just prose with no JSON.")
 
 
 class TestIsContextOverflow:
     def test_detects_context_length(self) -> None:
         exc = Exception("context_length exceeded")
-        assert _is_context_overflow(exc) is True
+        assert is_context_overflow(exc) is True
 
     def test_detects_context_window(self) -> None:
         exc = Exception("maximum context window reached")
-        assert _is_context_overflow(exc) is True
+        assert is_context_overflow(exc) is True
 
     def test_unrelated_exception(self) -> None:
         exc = Exception("Rate limit exceeded")
-        assert _is_context_overflow(exc) is False
+        assert is_context_overflow(exc) is False
 
 
 class TestInjectTaxonomy:
@@ -165,11 +164,11 @@ class TestBuildFolderPath:
 
 
 class TestFolderNameAndSubfolders:
-    def test_folder_name_dict(self) -> None:
-        assert _folder_name({"folder": "Inbox"}) == "Inbox"
+    def testfolder_name_dict(self) -> None:
+        assert folder_name({"folder": "Inbox"}) == "Inbox"
 
-    def test_folder_name_string(self) -> None:
-        assert _folder_name("Inbox") == "Inbox"
+    def testfolder_name_string(self) -> None:
+        assert folder_name("Inbox") == "Inbox"
 
     def test_subfolders_from_dict(self) -> None:
         entry = {"folder": "Resources", "subfolders": ["Reference", "Tools"]}

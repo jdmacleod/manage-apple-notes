@@ -10,42 +10,19 @@ from datetime import UTC, datetime
 from itertools import combinations
 from pathlib import Path
 
-import yaml
 from rich.console import Console
 
+from scripts.config import find_latest_export, load_settings
+from scripts.json_utils import extract_json_array
 from scripts.providers import LLMProvider, get_provider
 from scripts.run_logger import RunLogger, logs_dir_path
 
 console = Console()
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-CONFIG_DIR = REPO_ROOT / "config"
 PROMPTS_DIR = REPO_ROOT / "prompts"
-EXPORTS_DIR = REPO_ROOT / "data" / "exports"
 PROPOSALS_DIR = REPO_ROOT / "data" / "proposals"
 DEDUP_PROPOSALS_DIR = REPO_ROOT / "data" / "dedup-proposals"
-
-
-def _load_yaml(local_path: Path, example_path: Path) -> dict:
-    for path in (local_path, example_path):
-        if path.exists():
-            with open(path) as f:
-                return yaml.safe_load(f) or {}
-    return {}
-
-
-def load_settings() -> dict:
-    return _load_yaml(
-        CONFIG_DIR / "settings.local.yaml",
-        CONFIG_DIR / "settings.example.yaml",
-    )
-
-
-def find_latest_export() -> Path:
-    files = sorted(EXPORTS_DIR.glob("notes-*.json"), reverse=True)
-    if not files:
-        raise FileNotFoundError(f"No export files found in {EXPORTS_DIR}. Run notes export first.")
-    return files[0]
 
 
 def find_latest_proposal() -> Path | None:
@@ -240,15 +217,7 @@ def pass3_llm(
         system_prompt,
         json.dumps(groups_payload, indent=2, ensure_ascii=False),
     )
-
-    if "```" in text:
-        start = text.find("[", text.find("```"))
-    else:
-        start = text.find("[")
-    end = text.rfind("]") + 1
-    if start == -1 or end == 0:
-        raise ValueError(f"No JSON array in LLM response:\n{text[:300]}")
-    result: list[dict] = json.loads(text[start:end])
+    result: list[dict] = extract_json_array(text)
     return result
 
 

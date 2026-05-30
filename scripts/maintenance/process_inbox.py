@@ -17,15 +17,13 @@ from rich.progress import (
 
 from scripts.classify.classify_notes import (
     PROPOSALS_DIR,
-    _folder_name,
     classify_batch,
-    find_latest_export,
     inject_taxonomy,
     load_prompt_template,
-    load_settings,
-    load_taxonomy,
     price_per_million,
 )
+from scripts.config import find_latest_export, load_settings, load_taxonomy
+from scripts.folder_utils import folder_name
 from scripts.providers import get_provider
 from scripts.run_logger import RunLogger, estimate_duration, logs_dir_path
 
@@ -37,7 +35,7 @@ def run_inbox(dry_run: bool) -> None:
     taxonomy = load_taxonomy()
     system_prompt = inject_taxonomy(load_prompt_template(), taxonomy, settings)
 
-    inbox_folder = _folder_name(taxonomy.get("forever_notes", {}).get("inbox", ""))
+    inbox_folder = folder_name(taxonomy.get("forever_notes", {}).get("inbox", ""))
     if not inbox_folder or inbox_folder.startswith("["):
         console.print(
             "[red]Inbox folder not configured.[/red] "
@@ -96,7 +94,7 @@ def run_inbox(dry_run: bool) -> None:
     if estimate:
         console.print(f"[dim]Estimated duration: {estimate}[/dim]")
 
-    review_folder = _folder_name(taxonomy.get("forever_notes", {}).get("review", ""))
+    review_folder = folder_name(taxonomy.get("forever_notes", {}).get("review", ""))
 
     moves: list[dict] = []
     needs_review: list[dict] = []
