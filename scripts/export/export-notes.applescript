@@ -44,6 +44,7 @@ property gSkippedCount : 0
 property gFieldSep : ""
 property gProgressFile : ""
 property gTotalCount : 0
+property gCurrentAccountName : ""
 
 -- ── Recursive folder processor ───────────────────────────────────────────────
 -- Called for each top-level folder and recurses into subfolders.
@@ -76,8 +77,8 @@ on processFolder(aFolder, folderPath)
 			-- folderName = leaf component of folderPath
 			set folderName to name of aFolder
 
-			-- One record = 9 fields joined by gFieldSep
-			set end of gNoteRecords to noteId & gFieldSep & noteTitle & gFieldSep & noteBody & gFieldSep & folderName & gFieldSep & folderPath & gFieldSep & createdStr & gFieldSep & modifiedStr & gFieldSep & wordCountStr & gFieldSep & attachmentCountStr
+			-- One record = 10 fields joined by gFieldSep
+			set end of gNoteRecords to noteId & gFieldSep & noteTitle & gFieldSep & noteBody & gFieldSep & folderName & gFieldSep & folderPath & gFieldSep & createdStr & gFieldSep & modifiedStr & gFieldSep & wordCountStr & gFieldSep & attachmentCountStr & gFieldSep & gCurrentAccountName
 
 			set gExportedCount to gExportedCount + 1
 
@@ -118,16 +119,22 @@ set progressFile to "/tmp/notes_export_progress.tmp"
 set fieldSep to character id 31
 set recordSep to character id 30
 
+-- Read primary account filter written by run_export.py before launching this script.
+-- Empty string means "export all accounts".
+set primaryAccountFilter to do shell script "cat /tmp/notes_export_account.tmp 2>/dev/null || true"
+
 -- ── Pass 1: count notes (fast — no body access) ──────────────────────────────
 
 set totalCount to 0
 tell application "Notes"
 	repeat with acct in accounts
-		repeat with aFolder in folders of acct
-			if name of aFolder is not "Recently Deleted" then
-				set totalCount to totalCount + (count notes of aFolder)
-			end if
-		end repeat
+		if primaryAccountFilter is "" or name of acct is primaryAccountFilter then
+			repeat with aFolder in folders of acct
+				if name of aFolder is not "Recently Deleted" then
+					set totalCount to totalCount + (count notes of aFolder)
+				end if
+			end repeat
+		end if
 	end repeat
 end tell
 
@@ -149,40 +156,43 @@ set gTotalCount to totalCount
 
 tell application "Notes"
 	repeat with acct in accounts
-		set allFolders to folders of acct
+		if primaryAccountFilter is "" or name of acct is primaryAccountFilter then
+			set allFolders to folders of acct
 
-		-- Build the set of subfolder names: iterate all folders and collect
-		-- the names of their direct children via 'folders of folder'.
-		-- Any folder whose name appears here is NOT a top-level folder.
-		set subNames to {}
-		repeat with f in allFolders
-			try
-				repeat with sub in folders of f
-					set end of subNames to name of sub
-				end repeat
-			end try
-		end repeat
+			-- Build the set of subfolder names: iterate all folders and collect
+			-- the names of their direct children via 'folders of folder'.
+			-- Any folder whose name appears here is NOT a top-level folder.
+			set subNames to {}
+			repeat with f in allFolders
+				try
+					repeat with sub in folders of f
+						set end of subNames to name of sub
+					end repeat
+				end try
+			end repeat
 
-		-- Walk down from each top-level folder.
-		-- Skip Recently Deleted entirely (count its notes as skipped).
-		repeat with f in allFolders
-			set fName to name of f
-			if fName is "Recently Deleted" then
-				set gSkippedCount to gSkippedCount + (count notes of f)
-			else
-				-- Top-level if its name is not found in the subfolder name set
-				set isChild to false
-				repeat with sn in subNames
-					if (contents of sn) is fName then
-						set isChild to true
-						exit repeat
+			-- Walk down from each top-level folder.
+			-- Skip Recently Deleted entirely (count its notes as skipped).
+			set gCurrentAccountName to name of acct
+			repeat with f in allFolders
+				set fName to name of f
+				if fName is "Recently Deleted" then
+					set gSkippedCount to gSkippedCount + (count notes of f)
+				else
+					-- Top-level if its name is not found in the subfolder name set
+					set isChild to false
+					repeat with sn in subNames
+						if (contents of sn) is fName then
+							set isChild to true
+							exit repeat
+						end if
+					end repeat
+					if not isChild then
+						my processFolder(f, fName)
 					end if
-				end repeat
-				if not isChild then
-					my processFolder(f, fName)
 				end if
-			end if
-		end repeat
+			end repeat
+		end if
 	end repeat
 end tell
 
@@ -212,6 +222,7 @@ for rec in data.split(chr(30)):
     nid, title, body, folder, folder_path = f[0], f[1], f[2], f[3], f[4]
     created, modified, wc = f[5], f[6], f[7]
     ac = f[8].strip() if len(f) > 8 else '0'
+    an = f[9].strip() if len(f) > 9 else ''
     notes.append({
         'id': nid,
         'title': title,
@@ -222,6 +233,7 @@ for rec in data.split(chr(30)):
         'modified': modified,
         'word_count': int(wc) if wc.isdigit() else 0,
         'attachment_count': int(ac) if ac.isdigit() else 0,
+        'account_name': an,
     })
 with open(sys.argv[2], 'w', encoding='utf-8') as out:
     json.dump(notes, out, indent=2, ensure_ascii=False)

@@ -18,8 +18,15 @@ from scripts.run_logger import RunLogger, logs_dir_path
 console = Console()
 
 _PROGRESS_FILE = Path("/tmp/notes_export_progress.tmp")
+_ACCOUNT_FILE = Path("/tmp/notes_export_account.tmp")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+
+def _filter_primary_account(notes: list[dict], account_name: str) -> tuple[list[dict], int]:
+    """Keep only notes from the named account. Returns (filtered_list, excluded_count)."""
+    kept = [n for n in notes if n.get("account_name", "") == account_name]
+    return kept, len(notes) - len(kept)
 
 
 def _strip_container_prefix(notes: list[dict], container_name: str) -> int:
@@ -55,6 +62,17 @@ def _read_export_progress() -> str:
 
 def run_export() -> Path:
     script = REPO_ROOT / "scripts" / "export" / "export-notes.applescript"
+    settings = load_settings()
+
+    # Write account filter to temp file so the AppleScript can apply it in both
+    # the count pass (Pass 1) and the export pass (Pass 2), keeping the progress
+    # denominator consistent with the final note count.
+    primary_account = settings.get("export", {}).get("primary_account", "")
+    if primary_account:
+        _ACCOUNT_FILE.write_text(primary_account)
+    else:
+        _ACCOUNT_FILE.unlink(missing_ok=True)
+
     _PROGRESS_FILE.unlink(missing_ok=True)
 
     proc = subprocess.Popen(
@@ -64,14 +82,16 @@ def run_export() -> Path:
         text=True,
     )
 
+    account_label = f" [dim]({primary_account})[/dim]" if primary_account else ""
     with Live(console=console, refresh_per_second=5, transient=True) as live:
         while proc.poll() is None:
             counter = _read_export_progress()
-            live.update(f"Exporting notes from Apple Notes… {counter}")
+            live.update(f"Exporting notes from Apple Notes…{account_label} {counter}")
             time.sleep(0.2)
 
     _stdout, stderr = proc.communicate()
     _PROGRESS_FILE.unlink(missing_ok=True)
+    _ACCOUNT_FILE.unlink(missing_ok=True)
 
     if proc.returncode != 0:
         error = (stderr or "unknown error").strip()
@@ -80,16 +100,31 @@ def run_export() -> Path:
     export_path = find_latest_export()
     notes = json.loads(export_path.read_text())
 
-    settings = load_settings()
+    needs_write = False
+
     cfg = settings.get("toplevel_folder", {})
     if cfg.get("enabled", False):
         container_name = cfg.get("name", "Library")
         patched = _strip_container_prefix(notes, container_name)
-        export_path.write_text(json.dumps(notes, indent=2, ensure_ascii=False))
+        needs_write = True
         if patched:
             console.print(
                 f"  [dim]Stripped '{container_name}/' prefix from {patched} folder path(s)[/dim]"
             )
+
+    # Fallback filter: catches any notes from other accounts that slipped through
+    # (e.g. if account_name is missing from older export data).
+    if primary_account:
+        notes, excluded = _filter_primary_account(notes, primary_account)
+        if excluded:
+            needs_write = True
+            console.print(
+                f"  [dim]Excluded {excluded} note(s) from other accounts "
+                f"(primary_account: '{primary_account}')[/dim]"
+            )
+
+    if needs_write:
+        export_path.write_text(json.dumps(notes, indent=2, ensure_ascii=False))
 
     console.print(f"[green]Exported[/green] {len(notes)} notes → {export_path}")
     RunLogger("export", logs_dir_path(settings)).finish(

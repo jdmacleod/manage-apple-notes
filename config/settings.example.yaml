@@ -46,6 +46,8 @@ export:
   include_body: true
   max_body_chars: 2000        # Truncate long notes for classification
   skip_empty: true
+  primary_account: ""         # Export only notes from this Apple Notes account (e.g. "iCloud").
+                              # Leave empty to export from all accounts.
 
 classify:
   exclude_archive: true   # Skip Archive notes during classification (added to no_change automatically)
