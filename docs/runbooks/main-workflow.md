@@ -21,7 +21,7 @@ uv run notes export
 
 Writes `data/exports/notes-YYYY-MM-DD.json` and prints the note count.
 
-### Step 2 — Discover themes (Pass 1)
+### Step 2 — Discover themes
 
 ```bash
 uv run notes discover --dry-run   # preview batch count and API cost
@@ -49,7 +49,7 @@ cp data/taxonomy-drafts/taxonomy-draft-YYYY-MM-DD.yaml config/taxonomy.local.yam
 
 To examine the raw theme-map instead: `data/theme-maps/themes-YYYY-MM-DD.json`
 
-### Step 3 — Classify (Pass 2)
+### Step 3 — Classify
 
 ```bash
 uv run notes classify --dry-run   # preview batch count and API cost
@@ -103,7 +103,7 @@ For targeted restoration of a specific subset of notes, create a
 Each move is logged: `[MOVED]` (green), `[SKIP]` (yellow), `[ERROR]` (red).
 To move from a specific proposal file: `uv run notes move data/proposals/proposal-YYYY-MM-DD.json`.
 
-### Step 5 — Deduplicate (Pass 3, optional)
+### Step 5 — Deduplicate (optional)
 
 Run after applying moves so that `proposed_folder_path` can be used as a similarity signal.
 
