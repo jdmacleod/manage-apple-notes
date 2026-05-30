@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -81,6 +82,74 @@ class TestOllamaProvider:
         )
         provider = OllamaProvider(model="llama3", dry_run=False)
         assert provider.name == "ollama"
+
+    def test_probe_model_found_passes(
+        self, mocker: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        mocker.patch("openai.OpenAI")
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(
+            {"models": [{"name": "llama3:latest"}, {"name": "mistral:latest"}]}
+        ).encode()
+        mocker.patch("urllib.request.urlopen").return_value.__enter__.return_value = mock_resp
+        provider = OllamaProvider(model="llama3", dry_run=False)
+        assert provider.model == "llama3"
+
+    def test_probe_model_not_found_exits(
+        self, mocker: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        mocker.patch("openai.OpenAI")
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(
+            {"models": [{"name": "mistral:latest"}]}
+        ).encode()
+        mocker.patch("urllib.request.urlopen").return_value.__enter__.return_value = mock_resp
+        with pytest.raises(SystemExit, match="not found in Ollama"):
+            OllamaProvider(model="llama3", dry_run=False)
+
+    def test_probe_no_models_pulled_exits(
+        self, mocker: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        mocker.patch("openai.OpenAI")
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps({"models": []}).encode()
+        mocker.patch("urllib.request.urlopen").return_value.__enter__.return_value = mock_resp
+        with pytest.raises(SystemExit, match="not found in Ollama"):
+            OllamaProvider(model="llama3", dry_run=False)
+
+    def test_classify_messages_connection_error_exits(self, mocker: MagicMock) -> None:
+        import openai
+
+        mock_openai = mocker.patch("openai.OpenAI")
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = openai.APIConnectionError(
+            request=MagicMock()
+        )
+        mock_openai.return_value = mock_client
+
+        provider = OllamaProvider(model="llama3", dry_run=True)
+        with pytest.raises(SystemExit, match="Lost connection to Ollama"):
+            provider.classify_messages("system", "user")
+
+    def test_classify_messages_timeout_exits(self, mocker: MagicMock) -> None:
+        import openai
+
+        mock_openai = mocker.patch("openai.OpenAI")
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = openai.APITimeoutError(
+            request=MagicMock()
+        )
+        mock_openai.return_value = mock_client
+
+        provider = OllamaProvider(model="llama3", dry_run=True)
+        with pytest.raises(SystemExit, match="Lost connection to Ollama"):
+            provider.classify_messages("system", "user")
 
 
 class TestGetProvider:

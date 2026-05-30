@@ -13,7 +13,7 @@ from pathlib import Path
 
 from rich.console import Console
 
-from scripts.config import find_latest_export, load_settings, load_taxonomy
+from scripts.config import find_latest_export, load_settings, load_taxonomy, local_taxonomy_exists
 from scripts.folder_utils import enumerate_paths, folder_name, path_depth
 from scripts.run_logger import RunLogger, logs_dir_path
 
@@ -353,6 +353,12 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
     min_count = int(thresholds.get("min_notes_for_hub", 3))
 
     taxonomy = load_taxonomy()
+    if not local_taxonomy_exists():
+        console.print(
+            "[yellow]Warning:[/yellow] config/taxonomy.local.yaml not found — "
+            "hub notes cannot be generated without real folder names.\n"
+            "  cp config/taxonomy.example.yaml config/taxonomy.local.yaml"
+        )
 
     if export_file:
         export_path = Path(export_file)

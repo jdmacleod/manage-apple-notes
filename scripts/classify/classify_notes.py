@@ -16,7 +16,7 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
-from scripts.config import find_latest_export, load_settings, load_taxonomy
+from scripts.config import find_latest_export, load_settings, load_taxonomy, local_taxonomy_exists
 from scripts.folder_utils import (
     clamp_path,
     effective_max_depth,
@@ -172,7 +172,14 @@ def classify_batch_resilient(
             return classify_batch_resilient(
                 provider, notes_batch[:mid], system_prompt, settings
             ) + classify_batch_resilient(provider, notes_batch[mid:], system_prompt, settings)
-        console.print(f"[yellow]Warning:[/yellow] skipping note — batch of 1 failed: {exc}")
+        if is_recoverable:
+            # Recursively split down to a single note and it still failed — skip it.
+            console.print(f"[yellow]Warning:[/yellow] skipping note — failed at batch size 1: {exc}")
+        else:
+            console.print(
+                f"[yellow]Warning:[/yellow] skipping batch of {len(notes_batch)}"
+                f" ({type(exc).__name__}) — {exc}"
+            )
         return []
 
 
@@ -190,6 +197,13 @@ def _build_folder_path(folder: str, subfolder: str | None) -> str:
 def run_classify(export_file: str | None, dry_run: bool) -> None:
     settings = load_settings()
     taxonomy = load_taxonomy()
+    if not local_taxonomy_exists():
+        console.print(
+            "[yellow]Warning:[/yellow] config/taxonomy.local.yaml not found — "
+            "folder names are example placeholders.\n"
+            "  Proposals will reference folders that do not exist in Apple Notes.\n"
+            "  cp config/taxonomy.example.yaml config/taxonomy.local.yaml"
+        )
     system_prompt_template = load_prompt_template()
     system_prompt = inject_taxonomy(system_prompt_template, taxonomy, settings)
 

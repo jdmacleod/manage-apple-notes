@@ -12,7 +12,7 @@ from pathlib import Path
 from rich.console import Console
 
 from scripts.classify.classify_notes import _CATEGORY_META
-from scripts.config import find_latest_export, load_settings, load_taxonomy
+from scripts.config import find_latest_export, load_settings, load_taxonomy, local_taxonomy_exists
 from scripts.folder_utils import (
     effective_max_depth,
     enumerate_paths,
@@ -113,6 +113,12 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
     settings = load_settings()
     logger = RunLogger("audit", logs_dir_path(settings))
     taxonomy = load_taxonomy()
+    if not local_taxonomy_exists():
+        console.print(
+            "[yellow]Warning:[/yellow] config/taxonomy.local.yaml not found — "
+            "audit results will not reflect your actual Apple Notes folder structure.\n"
+            "  cp config/taxonomy.example.yaml config/taxonomy.local.yaml"
+        )
     fn = taxonomy.get("forever_notes", {})
 
     archive_folder = folder_name(fn.get("archive", ""))

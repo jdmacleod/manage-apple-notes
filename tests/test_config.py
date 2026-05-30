@@ -7,29 +7,57 @@ from pathlib import Path
 
 import pytest
 
-from scripts.config import find_latest_export, load_settings, load_taxonomy
+from scripts.config import find_latest_export, load_settings, load_taxonomy, local_taxonomy_exists
 
 
 class TestLoadSettings:
-    def test_returns_dict(self) -> None:
+    def test_returns_dict_when_local_present(self, tmp_path: Path, mocker) -> None:
+        local = tmp_path / "settings.local.yaml"
+        local.write_text("llm:\n  provider: anthropic\n")
+        mocker.patch("scripts.config.CONFIG_DIR", tmp_path)
         result = load_settings()
         assert isinstance(result, dict)
+        assert result.get("llm", {}).get("provider") == "anthropic"
 
     def test_returns_empty_dict_when_no_files(self, tmp_path: Path, mocker) -> None:
         mocker.patch("scripts.config.CONFIG_DIR", tmp_path)
         result = load_settings()
         assert result == {}
+
+    def test_warns_to_stderr_when_no_local_file(
+        self, tmp_path: Path, mocker, capsys
+    ) -> None:
+        mocker.patch("scripts.config.CONFIG_DIR", tmp_path)
+        load_settings()
+        captured = capsys.readouterr()
+        assert "settings.local.yaml" in captured.err
+        assert "cp config/settings.example.yaml" in captured.err
 
 
 class TestLoadTaxonomy:
-    def test_returns_dict(self) -> None:
+    def test_returns_dict_when_local_present(self, tmp_path: Path, mocker) -> None:
+        local = tmp_path / "taxonomy.local.yaml"
+        local.write_text("forever_notes:\n  inbox:\n    folder: Inbox\n")
+        mocker.patch("scripts.config.CONFIG_DIR", tmp_path)
         result = load_taxonomy()
         assert isinstance(result, dict)
+        assert result["forever_notes"]["inbox"]["folder"] == "Inbox"
 
     def test_returns_empty_dict_when_no_files(self, tmp_path: Path, mocker) -> None:
         mocker.patch("scripts.config.CONFIG_DIR", tmp_path)
         result = load_taxonomy()
         assert result == {}
+
+
+class TestLocalTaxonomyExists:
+    def test_returns_true_when_local_file_present(self, tmp_path: Path, mocker) -> None:
+        (tmp_path / "taxonomy.local.yaml").write_text("forever_notes: {}\n")
+        mocker.patch("scripts.config.CONFIG_DIR", tmp_path)
+        assert local_taxonomy_exists() is True
+
+    def test_returns_false_when_local_file_absent(self, tmp_path: Path, mocker) -> None:
+        mocker.patch("scripts.config.CONFIG_DIR", tmp_path)
+        assert local_taxonomy_exists() is False
 
 
 class TestFindLatestExport:

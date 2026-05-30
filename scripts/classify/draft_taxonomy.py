@@ -10,7 +10,7 @@ from pathlib import Path
 import yaml
 from rich.console import Console
 
-from scripts.config import load_settings, load_taxonomy
+from scripts.config import load_settings, load_taxonomy, local_taxonomy_exists
 from scripts.folder_utils import enumerate_paths
 from scripts.run_logger import RunLogger, logs_dir_path
 
@@ -141,6 +141,8 @@ def _build_output(
 def run_draft(theme_map_file: str | None, dry_run: bool) -> None:
     settings = load_settings()
     taxonomy = load_taxonomy()
+    if not local_taxonomy_exists():
+        console.print("[dim]No existing taxonomy found — draft will suggest folder paths from scratch.[/dim]")
 
     theme_map_path = Path(theme_map_file) if theme_map_file else find_latest_theme_map()
     if not theme_map_path.exists():

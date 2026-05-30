@@ -304,7 +304,7 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
             progress.advance(task)
 
         if raw_theme_lists:
-            progress.update(task, description="Synthesising themes...")
+            progress.update(task, description="Synthesizing themes...")
             all_raw = [theme for batch_list in raw_theme_lists for theme in batch_list]
             try:
                 synthesis_response = provider.classify_messages(
@@ -399,9 +399,10 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
 
     console.print("\n[bold]Next steps:[/bold]")
     console.print(f"  1. Review {output_path}")
-    console.print("  2. Edit theme names, merge/split as needed")
-    console.print("  3. Add approved subfolders to config/taxonomy.local.yaml")
-    console.print("  4. Run: uv run notes classify")
+    console.print("  2. Edit theme names, merge or split as needed")
+    console.print("  3. Run: uv run notes draft  — generates a draft taxonomy YAML from this theme map")
+    console.print("  4. Review the draft, then copy to config/taxonomy.local.yaml")
+    console.print("  5. Run: uv run notes classify")
 
     logger.finish(
         summary={

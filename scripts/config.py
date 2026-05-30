@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import yaml
@@ -20,10 +21,16 @@ def _load_yaml(local_path: Path, example_path: Path) -> dict:
 
 
 def load_settings() -> dict:
-    return _load_yaml(
-        CONFIG_DIR / "settings.local.yaml",
-        CONFIG_DIR / "settings.example.yaml",
-    )
+    local = CONFIG_DIR / "settings.local.yaml"
+    example = CONFIG_DIR / "settings.example.yaml"
+    if not local.exists():
+        print(
+            "Warning: config/settings.local.yaml not found — using example defaults.\n"
+            "  To configure your LLM provider and preferences:\n"
+            "  cp config/settings.example.yaml config/settings.local.yaml",
+            file=sys.stderr,
+        )
+    return _load_yaml(local, example)
 
 
 def load_taxonomy() -> dict:
@@ -31,6 +38,11 @@ def load_taxonomy() -> dict:
         CONFIG_DIR / "taxonomy.local.yaml",
         CONFIG_DIR / "taxonomy.example.yaml",
     )
+
+
+def local_taxonomy_exists() -> bool:
+    """Return True if config/taxonomy.local.yaml is present."""
+    return (CONFIG_DIR / "taxonomy.local.yaml").exists()
 
 
 def find_latest_export() -> Path:

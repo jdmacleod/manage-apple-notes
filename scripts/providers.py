@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import urllib.error
@@ -61,15 +62,33 @@ class OllamaProvider:
         base_url = raw if raw.endswith("/v1") else f"{raw}/v1"
         self._client = openai.OpenAI(base_url=base_url, api_key="ollama", timeout=timeout)
         self._model = os.environ.get("OLLAMA_MODEL", model)
+        self._raw_url = raw
         if not dry_run:
             self._probe(raw)
 
     def _probe(self, raw: str) -> None:
         root = raw[:-3].rstrip("/") if raw.endswith("/v1") else raw
         try:
-            urllib.request.urlopen(f"{root}/api/tags", timeout=3)
+            with urllib.request.urlopen(f"{root}/api/tags", timeout=3) as resp:
+                # Ollama returns 200 with a JSON model list — check the model is available.
+                # llama.cpp returns a non-200 (caught below as HTTPError) — no check possible.
+                try:
+                    data = json.loads(resp.read().decode())
+                    available = [m.get("name", "") for m in data.get("models", [])]
+                    if not any(
+                        m == self._model or m.startswith(f"{self._model}:")
+                        for m in available
+                    ):
+                        available_str = ", ".join(available) if available else "(none pulled)"
+                        sys.exit(
+                            f"Model {self._model!r} not found in Ollama.\n"
+                            f"  Available: {available_str}\n"
+                            f"  Pull it with: ollama pull {self._model}"
+                        )
+                except (ValueError, KeyError):
+                    pass  # unexpected response format — assume server is ok
         except urllib.error.HTTPError:
-            pass  # server responded — Ollama is up
+            pass  # server responded with an error — Ollama is up, or llama.cpp
         except (urllib.error.URLError, OSError):
             sys.exit(f"Ollama is not responding at {raw}\nIs Ollama running?  Try: ollama serve")
 
@@ -84,15 +103,24 @@ class OllamaProvider:
     def classify_messages(
         self, system_prompt: str, user_content: str, max_tokens: int = 4096
     ) -> str:
-        response = self._client.chat.completions.create(
-            model=self._model,
-            max_tokens=max_tokens,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content},
-            ],
-        )
-        return response.choices[0].message.content or ""
+        import openai
+
+        try:
+            response = self._client.chat.completions.create(
+                model=self._model,
+                max_tokens=max_tokens,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content},
+                ],
+            )
+            return response.choices[0].message.content or ""
+        except (openai.APIConnectionError, openai.APITimeoutError) as exc:
+            sys.exit(
+                f"Lost connection to Ollama at {self._raw_url}\n"
+                f"  Is Ollama still running?  Try: ollama serve\n"
+                f"  ({type(exc).__name__})"
+            )
 
 
 def get_provider(settings: dict, dry_run: bool = False) -> LLMProvider:
