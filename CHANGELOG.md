@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `notes export` — export all notes from Apple Notes as structured JSON
 - `notes backup` — timestamped text-only snapshot of all notes to `data/backups/`
 - `notes discover` — AI-powered theme discovery; outputs theme maps for taxonomy review
+- `notes draft` — generate an editable taxonomy YAML from discovery results; merges new paths into a copy of the current taxonomy for human review before classifying
 - `notes classify` — AI classification of notes into the user-defined folder taxonomy
 - `notes move` — move notes in Apple Notes per a human-reviewed classification proposal
 - `notes triage` — focused classification of Inbox notes only
