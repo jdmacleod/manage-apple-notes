@@ -21,6 +21,7 @@ from scripts.classify.classify_notes import (
 from scripts.folder_utils import (
     effective_max_depth,
     enumerate_paths,
+    has_taxonomy_ancestor,
     nesting_mode,
     path_depth,
 )
@@ -161,7 +162,8 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
         "Duplicate titles",
         f"Stale inbox — {inbox_folder!r} older than {inbox_stale_days} days",
         f"Stale fleeting — {fleeting_folder!r} older than {fleeting_stale_days} days",
-        "Orphaned notes — not in any taxonomy folder",
+        "Untracked folders — children of taxonomy paths, not yet in taxonomy",
+        "Uncategorized notes — no taxonomy relationship",
         f"Subfolder candidates — flat folders with >{min_subfolder} notes sharing a theme",
     ]
 
@@ -240,11 +242,24 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
             and d < fleeting_cutoff
         ]
 
-        orphaned_notes = [
-            n
-            for n in notes
-            if (n.get("folder_path") or n.get("folder", "")) not in all_taxonomy_paths
-            and n.get("folder", "") not in all_taxonomy_paths
+        untracked_folder_notes: list[dict] = []
+        uncategorized_notes: list[dict] = []
+        for n in notes:
+            path = n.get("folder_path") or n.get("folder", "")
+            folder = n.get("folder", "")
+            if path in all_taxonomy_paths or folder in all_taxonomy_paths:
+                continue
+            if has_taxonomy_ancestor(path, all_taxonomy_paths):
+                untracked_folder_notes.append(n)
+            else:
+                uncategorized_notes.append(n)
+
+        untracked_by_folder = Counter(
+            n.get("folder_path") or n.get("folder", "") for n in untracked_folder_notes
+        )
+        untracked_folder_rows = [
+            {"folder_path": fp, "note_count": cnt}
+            for fp, cnt in sorted(untracked_by_folder.items())
         ]
 
         max_depth = effective_max_depth(settings)
@@ -404,14 +419,24 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
         *_md_table(stale_fleeting, [("Title", "title"), ("Modified", "modified")]),
         "---",
         "",
-        "## Orphaned Notes — not in any taxonomy folder",
+        "## Untracked Folders — in Apple Notes, not defined in taxonomy",
         "",
-        f"Found {len(orphaned_notes)} notes.",
+        f"Found {len(untracked_folder_rows)} folder(s) with {len(untracked_folder_notes)} note(s).",
         "",
-        "These notes are in folders not defined in the taxonomy. Run `notes classify` "
-        "to get move proposals, or add the folders to `taxonomy.local.yaml`.",
+        "These folders sit under known taxonomy categories but aren't in `taxonomy.local.yaml`. "
+        "They may be intentional manual additions. Add them to the taxonomy or run `notes discover`.",
         "",
-        *_md_table(orphaned_notes, [("Title", "title"), ("Folder", "folder")]),
+        *_md_table(untracked_folder_rows, [("Folder", "folder_path"), ("Notes", "note_count")]),
+        "---",
+        "",
+        "## Uncategorized Notes — no taxonomy relationship",
+        "",
+        f"Found {len(uncategorized_notes)} notes.",
+        "",
+        "These notes are in folders with no connection to the taxonomy (e.g. the container "
+        "root or a completely foreign folder). Run `notes classify` to organize them.",
+        "",
+        *_md_table(uncategorized_notes, [("Title", "title"), ("Folder", "folder")]),
         "---",
         "",
         f"## Subfolder Candidates — flat folders with >{min_subfolder} notes sharing a theme",
@@ -437,7 +462,8 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
     console.print(f"  Duplicate titles:   {len(duplicate_groups)}")
     console.print(f"  Stale inbox:        {len(stale_inbox)}")
     console.print(f"  Stale fleeting:     {len(stale_fleeting)}")
-    console.print(f"  Orphaned:           {len(orphaned_notes)}")
+    console.print(f"  Untracked folders:  {len(untracked_folder_rows)} folder(s), {len(untracked_folder_notes)} note(s)")
+    console.print(f"  Uncategorized:      {len(uncategorized_notes)}")
     console.print(f"  Subfolder candid.:  {len(subfolder_candidates)}")
 
     logger.finish(
@@ -449,7 +475,9 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
             "duplicate_title_groups": len(duplicate_groups),
             "stale_inbox": len(stale_inbox),
             "stale_fleeting": len(stale_fleeting),
-            "orphaned": len(orphaned_notes),
+            "untracked_folders": len(untracked_folder_rows),
+            "untracked_folder_notes": len(untracked_folder_notes),
+            "uncategorized": len(uncategorized_notes),
             "subfolder_candidates": len(subfolder_candidates),
         },
         dry_run=False,

@@ -217,7 +217,8 @@ class TestRunAudit:
             "Duplicate Titles",
             "Stale Inbox",
             "Stale Fleeting",
-            "Orphaned Notes",
+            "Untracked Folders",
+            "Uncategorized Notes",
             "Subfolder Candidates",
         ]:
             assert section in content, f"Missing section: {section}"
@@ -427,17 +428,18 @@ class TestRunAudit:
         untitled_section = content.split("Untitled Notes")[1].split("---")[0]
         assert "Found 1" in untitled_section
 
-    def test_orphaned_notes_detected(
+    def test_uncategorized_notes_detected(
         self,
         mocker: MagicMock,
         tmp_path: Path,
         minimal_settings: dict,
         minimal_taxonomy: dict,
     ) -> None:
+        # RandomFolder has no taxonomy ancestor → uncategorized, not untracked
         notes = [
             {
                 "id": "o1",
-                "title": "Orphan note",
+                "title": "Uncategorized note",
                 "body": "in a random folder",
                 "folder": "RandomFolder",
                 "folder_path": "RandomFolder",
@@ -454,7 +456,7 @@ class TestRunAudit:
         ]
         export_file = tmp_path / "notes-test.json"
         export_file.write_text(json.dumps(notes))
-        report_path = tmp_path / "audit-orphan.md"
+        report_path = tmp_path / "audit-uncategorized.md"
 
         mocker.patch("scripts.maintenance.audit.load_settings", return_value=minimal_settings)
         mocker.patch("scripts.maintenance.audit.load_taxonomy", return_value=minimal_taxonomy)
@@ -462,9 +464,109 @@ class TestRunAudit:
         run_audit(export_file=str(export_file), output_override=str(report_path), dry_run=False)
 
         content = report_path.read_text()
-        orphan_section = content.split("## Orphaned Notes")[1].split("\n---\n")[0]
-        assert "Orphan note" in orphan_section
-        assert "Normal note" not in orphan_section
+        uncategorized_section = content.split("## Uncategorized Notes")[1].split("\n---\n")[0]
+        assert "Uncategorized note" in uncategorized_section
+        assert "Normal note" not in uncategorized_section
+
+    def test_untracked_folder_appears_as_folder_row(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+        minimal_taxonomy: dict,
+    ) -> None:
+        # Resources is in minimal_taxonomy; Resources/Photography is not → untracked folder
+        notes = [
+            {
+                "id": "u1",
+                "title": "Photo note",
+                "body": "landscape shot",
+                "folder": "Photography",
+                "folder_path": "Resources/Photography",
+                "modified": datetime.now().isoformat(),
+            },
+        ]
+        export_file = tmp_path / "notes-test.json"
+        export_file.write_text(json.dumps(notes))
+        report_path = tmp_path / "audit-untracked.md"
+
+        mocker.patch("scripts.maintenance.audit.load_settings", return_value=minimal_settings)
+        mocker.patch("scripts.maintenance.audit.load_taxonomy", return_value=minimal_taxonomy)
+
+        run_audit(export_file=str(export_file), output_override=str(report_path), dry_run=False)
+
+        content = report_path.read_text()
+        untracked_section = content.split("## Untracked Folders")[1].split("\n---\n")[0]
+        assert "Resources/Photography" in untracked_section
+        # Should appear as a folder row, not in uncategorized
+        uncategorized_section = content.split("## Uncategorized Notes")[1].split("\n---\n")[0]
+        assert "Photo note" not in uncategorized_section
+
+    def test_untracked_folder_groups_by_folder(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+        minimal_taxonomy: dict,
+    ) -> None:
+        # Two notes in the same untracked folder → one table row with count 2
+        notes = [
+            {
+                "id": f"u{i}",
+                "title": f"Photo note {i}",
+                "body": "content",
+                "folder": "Photography",
+                "folder_path": "Resources/Photography",
+                "modified": datetime.now().isoformat(),
+            }
+            for i in range(2)
+        ]
+        export_file = tmp_path / "notes-test.json"
+        export_file.write_text(json.dumps(notes))
+        report_path = tmp_path / "audit-grouped.md"
+
+        mocker.patch("scripts.maintenance.audit.load_settings", return_value=minimal_settings)
+        mocker.patch("scripts.maintenance.audit.load_taxonomy", return_value=minimal_taxonomy)
+
+        run_audit(export_file=str(export_file), output_override=str(report_path), dry_run=False)
+
+        content = report_path.read_text()
+        untracked_section = content.split("## Untracked Folders")[1].split("\n---\n")[0]
+        # Count of 2 should appear, and the folder path should appear only once
+        assert "Resources/Photography" in untracked_section
+        assert untracked_section.count("Resources/Photography") == 1
+        assert "2" in untracked_section
+
+    def test_fully_foreign_folder_is_uncategorized(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+        minimal_taxonomy: dict,
+    ) -> None:
+        # Random/Stuff — parent "Random" is not in taxonomy → uncategorized
+        notes = [
+            {
+                "id": "f1",
+                "title": "Foreign note",
+                "body": "content",
+                "folder": "Stuff",
+                "folder_path": "Random/Stuff",
+                "modified": datetime.now().isoformat(),
+            },
+        ]
+        export_file = tmp_path / "notes-test.json"
+        export_file.write_text(json.dumps(notes))
+        report_path = tmp_path / "audit-foreign.md"
+
+        mocker.patch("scripts.maintenance.audit.load_settings", return_value=minimal_settings)
+        mocker.patch("scripts.maintenance.audit.load_taxonomy", return_value=minimal_taxonomy)
+
+        run_audit(export_file=str(export_file), output_override=str(report_path), dry_run=False)
+
+        content = report_path.read_text()
+        uncategorized_section = content.split("## Uncategorized Notes")[1].split("\n---\n")[0]
+        assert "Foreign note" in uncategorized_section
 
     def test_taxonomy_subfolder_notes_not_orphaned(
         self,
@@ -493,8 +595,9 @@ class TestRunAudit:
         run_audit(export_file=str(export_file), output_override=str(report_path), dry_run=False)
 
         content = report_path.read_text()
-        orphan_section = content.split("Orphaned Notes")[1].split("---")[0]
-        assert "Subfolder note" not in orphan_section
+        # Should not appear in either untracked or uncategorized sections
+        assert "Subfolder note" not in content.split("## Untracked Folders")[1].split("\n---\n")[0]
+        assert "Subfolder note" not in content.split("## Uncategorized Notes")[1].split("\n---\n")[0]
 
     def test_statistics_section_contains_category_counts(
         self,

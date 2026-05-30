@@ -199,7 +199,8 @@ To specify a custom output path: `uv run notes audit --output /path/to/report.md
 | **Duplicate Titles** | Same or similar title in multiple notes | Merge or rename to clarify |
 | **Stale Inbox** | In Inbox >7 days | Process via `notes triage` or delete |
 | **Stale Fleeting** | In Fleeting >30 days (Forever Notes taxonomy only) | Promote to Permanent/Literature or delete |
-| **Orphaned Notes** | Not in any taxonomy-defined folder | Run `notes classify` for move proposals, or add folder to taxonomy |
+| **Untracked Folders** | Folders under taxonomy categories, not yet in taxonomy | Add to `taxonomy.local.yaml`, or run `notes discover` to incorporate |
+| **Uncategorized Notes** | No connection to the taxonomy (container root, foreign folder) | Run `notes classify` to get move proposals |
 | **Subfolder Candidates** | Flat folders large enough for subfolders | Run `notes discover`, add subfolders to taxonomy |
 
 For bulk moves, create a proposal JSON manually (matching the `proposal-YYYY-MM-DD.json`

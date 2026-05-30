@@ -66,3 +66,13 @@ def nesting_mode(settings: dict | None) -> str:
     if not settings:
         return "natural"
     return str(settings.get("folder_nesting") or "natural")
+
+
+def has_taxonomy_ancestor(path: str, all_taxonomy_paths: set[str]) -> bool:
+    """Return True if any strict ancestor prefix of path is a known taxonomy path.
+
+    Checks prefixes of length 1 up to len(parts)-1, so the full path itself is
+    not rechecked (caller has already confirmed it is not in the taxonomy).
+    """
+    parts = path.split("/")
+    return any("/".join(parts[:i]) in all_taxonomy_paths for i in range(1, len(parts)))
