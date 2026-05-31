@@ -71,7 +71,11 @@ deduplication:
   default_resolution: "review"   # conservative default: flag for human, don't auto-delete
 
 thresholds:
-  min_notes_for_subfolder: 8     # themes with fewer notes stay flat — used by discover/classify
+  min_notes_for_subfolder: 8     # minimum note count before a NEW subfolder is proposed (discover/draft)
+                                  # folders that already exist in your library are always honoured regardless
+                                  # of this value — the threshold only gates creation of new structure
+                                  # audit uses this inversely: flat folders ABOVE this count → subfolder candidate
+                                  # (subfolder candidate check is suppressed when reorganization_mode: conservative)
   min_notes_for_hub: 3           # subfolders with fewer notes don't get a Hub note in sync-hubs
   max_folder_depth: 3            # absolute ceiling on proposed nesting (Apple Notes max: 5)
   inactive_project_days: 90      # notes in Projects not modified longer than this → flag for review

@@ -318,6 +318,117 @@ class TestRunDraft:
         assert "inbox" in fn or "resources" in fn
 
 
+class TestRunDraftThresholdBypass:
+    """Existing paths in the export folder tree bypass min_notes_for_subfolder."""
+
+    def test_below_threshold_included_when_path_exists_in_export(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_taxonomy: dict,
+        minimal_settings: dict,
+    ) -> None:
+        # Create a real export file so export_folder_tree picks up "Resources/Recipes"
+        export_file = tmp_path / "notes-2026-01-01.json"
+        export_file.write_text(
+            json.dumps(
+                [
+                    {
+                        "id": "n1",
+                        "title": "Pasta",
+                        "body": "recipe",
+                        "folder_path": "Resources/Recipes",
+                    }
+                ]
+            )
+        )
+
+        theme_map_file = tmp_path / "themes-test.json"
+        theme_map_file.write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-01-01T00:00:00+00:00",
+                    "source_export": str(export_file),
+                    "total_notes": 1,
+                    "subfolder_threshold": 8,
+                    "established_paths": [],
+                    "themes": [
+                        {
+                            "name": "Recipes",
+                            "suggested_path": "Resources/Recipes",
+                            "estimated_count": 1,  # well below threshold of 8
+                        }
+                    ],
+                    "new_paths": [],
+                    "above_threshold": 0,
+                    "below_threshold": 1,
+                }
+            )
+        )
+        _patch_draft(mocker, tmp_path, minimal_taxonomy, minimal_settings)
+
+        run_draft(theme_map_file=str(theme_map_file), dry_run=False)
+
+        drafts = list((tmp_path / "drafts").glob("*.yaml"))
+        assert len(drafts) == 1, "Draft should be written even though count is below threshold"
+        content = drafts[0].read_text()
+        assert "Resources/Recipes" in content
+
+    def test_below_threshold_excluded_when_no_matching_export_path(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_taxonomy: dict,
+        minimal_settings: dict,
+    ) -> None:
+        # Export only has "Resources/Cooking" — theme suggests "Resources/Tiny" (not in export)
+        export_file = tmp_path / "notes-2026-01-01.json"
+        export_file.write_text(
+            json.dumps(
+                [
+                    {
+                        "id": "n1",
+                        "title": "Pasta",
+                        "body": "recipe",
+                        "folder_path": "Resources/Cooking",
+                    }
+                ]
+            )
+        )
+
+        theme_map_file = tmp_path / "themes-test.json"
+        theme_map_file.write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-01-01T00:00:00+00:00",
+                    "source_export": str(export_file),
+                    "total_notes": 1,
+                    "subfolder_threshold": 8,
+                    "established_paths": [],
+                    "themes": [
+                        {
+                            "name": "Tiny Theme",
+                            "suggested_path": "Resources/Tiny",
+                            "estimated_count": 2,  # below threshold, not in export
+                        }
+                    ],
+                    "new_paths": [],
+                    "above_threshold": 0,
+                    "below_threshold": 1,
+                }
+            )
+        )
+        _patch_draft(mocker, tmp_path, minimal_taxonomy, minimal_settings)
+
+        run_draft(theme_map_file=str(theme_map_file), dry_run=False)
+
+        # Should still be excluded — not in export tree and below threshold
+        drafts = (
+            list((tmp_path / "drafts").glob("*.yaml")) if (tmp_path / "drafts").exists() else []
+        )
+        assert drafts == []
+
+
 class TestTopLevelFolders:
     def test_extracts_unique_top_level(self) -> None:
         paths = ["Areas/Finance", "Areas/Household", "Resources/Cooking", "Archive"]

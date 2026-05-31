@@ -393,3 +393,73 @@ class TestRunAuditUntrackedFolders:
         assert (
             "Subfolder note" not in content.split("## Uncategorized Notes")[1].split("\n---\n")[0]
         )
+
+
+class TestRunAuditConservativeMode:
+    def test_subfolder_candidates_suppressed_in_conservative_mode(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+        minimal_taxonomy: dict,
+    ) -> None:
+        # 10 notes in Resources all sharing a theme — would normally trigger subfolder candidates
+        notes = [
+            {
+                "id": f"r{i}",
+                "title": f"Recipe note {i}",
+                "body": "recipe cooking food ingredient",
+                "folder": "Resources",
+                "folder_path": "Resources",
+                "modified": datetime.now().isoformat(),
+            }
+            for i in range(10)
+        ]
+        export_file = tmp_path / "notes-test.json"
+        export_file.write_text(json.dumps(notes))
+        report_path = tmp_path / "audit-conservative.md"
+
+        conservative_settings = {**minimal_settings, "reorganization_mode": "conservative"}
+        mocker.patch("scripts.maintenance.audit.load_settings", return_value=conservative_settings)
+        mocker.patch("scripts.maintenance.audit.load_taxonomy", return_value=minimal_taxonomy)
+
+        run_audit(export_file=str(export_file), output_override=str(report_path), dry_run=False)
+
+        content = report_path.read_text()
+        subfolder_section = content.split("## Subfolder Candidates")[1]
+        assert "conservative" in subfolder_section.lower()
+        assert "Recipe note" not in subfolder_section
+
+    def test_subfolder_candidates_shown_in_standard_mode(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+        minimal_taxonomy: dict,
+    ) -> None:
+        # Same 10 notes, but standard mode → subfolder candidates appear
+        notes = [
+            {
+                "id": f"r{i}",
+                "title": f"Recipe note {i}",
+                "body": "recipe cooking food ingredient",
+                "folder": "Resources",
+                "folder_path": "Resources",
+                "modified": datetime.now().isoformat(),
+            }
+            for i in range(10)
+        ]
+        export_file = tmp_path / "notes-test.json"
+        export_file.write_text(json.dumps(notes))
+        report_path = tmp_path / "audit-standard.md"
+
+        standard_settings = {**minimal_settings, "reorganization_mode": "standard"}
+        mocker.patch("scripts.maintenance.audit.load_settings", return_value=standard_settings)
+        mocker.patch("scripts.maintenance.audit.load_taxonomy", return_value=minimal_taxonomy)
+
+        run_audit(export_file=str(export_file), output_override=str(report_path), dry_run=False)
+
+        content = report_path.read_text()
+        subfolder_section = content.split("## Subfolder Candidates")[1]
+        # The section header should show the threshold and candidate count
+        assert "flat folders" in subfolder_section

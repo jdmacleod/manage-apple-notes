@@ -209,20 +209,32 @@ def run_draft(theme_map_file: str | None, dry_run: bool) -> None:
 
     theme_map: dict = json.loads(theme_map_path.read_text())
 
+    # ── Export folder tree — used for threshold bypass and bootstrap ──────────
+    # Load once here so both the bootstrap block and the candidate_paths filter
+    # can use it.  Paths that already exist in the user's library bypass the
+    # min_notes_for_subfolder threshold: the threshold prevents creating thin new
+    # folders, not recognising ones the user deliberately created.
+    source_export_path = theme_map.get("source_export", "")
+    export_path = (
+        Path(source_export_path)
+        if source_export_path and Path(source_export_path).exists()
+        else None
+    )
+    if export_path:
+        _export_notes: list[dict] = json.loads(export_path.read_text())
+        export_folder_tree: set[str] = {
+            fp for n in _export_notes if (fp := n.get("folder_path") or n.get("folder", ""))
+        }
+    else:
+        _export_notes = []
+        export_folder_tree = set()
+
     # ── Bootstrap: map actual Apple Notes folders to taxonomy roles ───────────
     # When no taxonomy.local.yaml exists, use an LLM call to infer the taxonomy
     # from the actual folder structure in the export rather than the generic example.
     if not local_taxonomy_exists():
-        source_export = theme_map.get("source_export", "")
-        export_path = (
-            Path(source_export) if source_export and Path(source_export).exists() else None
-        )
-
         if export_path:
-            all_notes: list[dict] = json.loads(export_path.read_text())
-            folder_paths = sorted(
-                {fp for n in all_notes if (fp := n.get("folder_path") or n.get("folder", ""))}
-            )
+            folder_paths = sorted(export_folder_tree)
             top_level = _top_level_folders(folder_paths)
 
             tl_cfg = settings.get("toplevel_folder", {})
@@ -265,7 +277,11 @@ def run_draft(theme_map_file: str | None, dry_run: bool) -> None:
     candidate_paths = [
         t["suggested_path"]
         for t in themes
-        if (t.get("estimated_count") or 0) >= threshold and t.get("suggested_path")
+        if t.get("suggested_path")
+        and (
+            (t.get("estimated_count") or 0) >= threshold
+            or t["suggested_path"] in export_folder_tree
+        )
     ]
     new_paths = sorted(set(candidate_paths) - established)
 

@@ -12,7 +12,13 @@ from pathlib import Path
 from rich.console import Console
 
 from scripts.classify.classify_notes import _CATEGORY_META
-from scripts.config import find_latest_export, load_settings, load_taxonomy, local_taxonomy_exists
+from scripts.config import (
+    find_latest_export,
+    load_settings,
+    load_taxonomy,
+    local_taxonomy_exists,
+    reorganization_mode,
+)
 from scripts.folder_utils import (
     effective_max_depth,
     enumerate_paths,
@@ -266,9 +272,10 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
 
         max_depth = effective_max_depth(settings)
         mode = nesting_mode(settings)
+        reorg_mode = reorganization_mode(settings)
         subfolder_candidates = (
             _find_subfolder_candidates(notes, category_folders, min_subfolder, max_depth)
-            if mode != "flat"
+            if mode != "flat" and reorg_mode != "conservative"
             else []
         )
 
@@ -441,16 +448,32 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
         *_md_table(uncategorized_notes, [("Title", "title"), ("Folder", "folder")]),
         "---",
         "",
-        f"## Subfolder Candidates — flat folders with >{min_subfolder} notes sharing a theme",
-        "",
-        "These folders are large enough to benefit from subfolders. Run `notes discover`",
-        "for a full theme analysis, then add subfolders to `taxonomy.local.yaml`.",
-        "",
-        f"Found {len(subfolder_candidates)} candidate(s).",
-        "",
-        *_md_table(
-            subfolder_candidates,
-            [("Folder", "folder"), ("Notes", "note_count"), ("Theme Signals", "theme_signals")],
+        *(
+            [
+                f"## Subfolder Candidates — flat folders with >{min_subfolder} notes sharing a theme",
+                "",
+                "These folders are large enough to benefit from subfolders. Run `notes discover`",
+                "for a full theme analysis, then add subfolders to `taxonomy.local.yaml`.",
+                "",
+                f"Found {len(subfolder_candidates)} candidate(s).",
+                "",
+                *_md_table(
+                    subfolder_candidates,
+                    [
+                        ("Folder", "folder"),
+                        ("Notes", "note_count"),
+                        ("Theme Signals", "theme_signals"),
+                    ],
+                ),
+            ]
+            if reorg_mode != "conservative"
+            else [
+                "## Subfolder Candidates",
+                "",
+                "Skipped — `reorganization_mode` is `conservative`. "
+                "Your existing folder structure is preserved as-is.",
+                "",
+            ]
         ),
     ]
 
@@ -468,7 +491,10 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
         f"  Untracked folders:  {len(untracked_folder_rows)} folder(s), {len(untracked_folder_notes)} note(s)"
     )
     console.print(f"  Uncategorized:      {len(uncategorized_notes)}")
-    console.print(f"  Subfolder candid.:  {len(subfolder_candidates)}")
+    if reorg_mode == "conservative":
+        console.print("  Subfolder candid.:  (skipped — conservative mode)")
+    else:
+        console.print(f"  Subfolder candid.:  {len(subfolder_candidates)}")
 
     logger.finish(
         summary={
