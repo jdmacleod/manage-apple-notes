@@ -10,6 +10,7 @@ import pytest
 
 from scripts.classify.discover_themes import (
     _discover_batch,
+    _export_folder_tree,
     inject_discover_taxonomy,
     run_discover,
 )
@@ -79,6 +80,88 @@ class TestInjectDiscoverTaxonomy:
     def test_conservatism_guidance_default_is_standard(self, minimal_taxonomy: dict) -> None:
         result = inject_discover_taxonomy("{CONSERVATISM_GUIDANCE}", minimal_taxonomy)
         assert result.strip() == ""
+
+    # Export folder tree injection tests
+    def test_notes_none_falls_back_to_taxonomy_paths(self, minimal_taxonomy: dict) -> None:
+        # minimal_taxonomy has Resources/Reference as a subfolder; with notes=None,
+        # the established block should show that taxonomy path as the fallback.
+        result = inject_discover_taxonomy("{ESTABLISHED_PATHS}", minimal_taxonomy, notes=None)
+        assert "Resources/Reference" in result
+        assert "currently exist in your Apple Notes library" in result
+
+    def test_notes_provided_standard_shows_folder_list(self, minimal_taxonomy: dict) -> None:
+        notes = [
+            {"folder_path": "Areas/Finance"},
+            {"folder_path": "Resources/Cooking"},
+            {"folder_path": "Areas/Finance"},  # duplicate — should appear once
+        ]
+        result = inject_discover_taxonomy(
+            "{ESTABLISHED_PATHS}",
+            minimal_taxonomy,
+            {"reorganization_mode": "standard"},
+            notes=notes,
+        )
+        assert "Areas/Finance" in result
+        assert "Resources/Cooking" in result
+        assert result.count("Areas/Finance") == 1
+        assert "Prefer existing names" in result
+
+    def test_notes_provided_conservative_uses_strong_framing(self, minimal_taxonomy: dict) -> None:
+        notes = [{"folder_path": "Areas/Finance"}, {"folder_path": "Resources/Cooking"}]
+        result = inject_discover_taxonomy(
+            "{ESTABLISHED_PATHS}",
+            minimal_taxonomy,
+            {"reorganization_mode": "conservative"},
+            notes=notes,
+        )
+        assert "deliberate organizational structure" in result
+        assert "Areas/Finance" in result
+
+    def test_notes_provided_full_mode_ignores_notes(self, minimal_taxonomy: dict) -> None:
+        notes = [{"folder_path": "Areas/Finance"}, {"folder_path": "Resources/Cooking"}]
+        result = inject_discover_taxonomy(
+            "{ESTABLISHED_PATHS}",
+            minimal_taxonomy,
+            {"reorganization_mode": "full"},
+            notes=notes,
+        )
+        assert "No subfolder paths are established yet" in result
+        assert "Areas/Finance" not in result
+
+    def test_notes_empty_folder_paths_falls_back_to_taxonomy(self, minimal_taxonomy: dict) -> None:
+        # When all notes have empty/missing folder_path, export_paths is empty and the
+        # taxonomy fallback kicks in — minimal_taxonomy has Resources/Reference as a subfolder.
+        notes = [{"folder_path": ""}, {"folder_path": None}, {"title": "no folder"}]
+        result = inject_discover_taxonomy(
+            "{ESTABLISHED_PATHS}",
+            minimal_taxonomy,
+            {"reorganization_mode": "standard"},
+            notes=notes,
+        )
+        assert "Resources/Reference" in result
+
+
+class TestExportFolderTree:
+    def test_returns_sorted_unique_paths(self) -> None:
+        notes = [
+            {"folder_path": "Resources/Cooking"},
+            {"folder_path": "Areas/Finance"},
+            {"folder_path": "Resources/Cooking"},
+        ]
+        assert _export_folder_tree(notes) == ["Areas/Finance", "Resources/Cooking"]
+
+    def test_filters_empty_strings(self) -> None:
+        notes = [{"folder_path": ""}, {"folder_path": "Areas/Finance"}, {"folder": ""}]
+        assert _export_folder_tree(notes) == ["Areas/Finance"]
+
+    def test_falls_back_to_folder_key(self) -> None:
+        notes = [{"folder": "Inbox"}, {"folder_path": "Areas/Finance"}]
+        result = _export_folder_tree(notes)
+        assert "Inbox" in result
+        assert "Areas/Finance" in result
+
+    def test_empty_notes_returns_empty(self) -> None:
+        assert _export_folder_tree([]) == []
 
 
 class TestExtractJsonObject:

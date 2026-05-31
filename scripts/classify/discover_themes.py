@@ -80,10 +80,16 @@ def _established_paths(taxonomy: dict) -> list[str]:
     )
 
 
+def _export_folder_tree(notes: list[dict]) -> list[str]:
+    """Return all unique, non-empty folder paths present in the export, sorted."""
+    return sorted({fp for n in notes if (fp := n.get("folder_path") or n.get("folder", ""))})
+
+
 def inject_discover_taxonomy(
     system_prompt: str,
     taxonomy: dict,
     settings: dict | None = None,
+    notes: list[dict] | None = None,
 ) -> str:
     """Replace {CATEGORIES}, {ESTABLISHED_PATHS}, and {NESTING_GUIDANCE} in the discover prompt."""
     fn = taxonomy.get("taxonomy", {})
@@ -114,29 +120,44 @@ def inject_discover_taxonomy(
             f"Add one additional tier only where a clear theme cluster warrants it."
         )
 
-    if mode == "flat" or discover_mode == "full":
+    reorg_mode = reorganization_mode(settings)
+
+    if mode == "flat" or discover_mode == "full" or reorg_mode == "full":
         established_block = (
             "No subfolder paths are established yet. "
             "Propose suggested_path values freely where theme clusters warrant them."
         )
     else:
-        paths = _established_paths(taxonomy)
+        # Prefer export folder tree (actual Apple Notes structure) as the primary anchor;
+        # fall back to taxonomy-defined paths when no notes are supplied (e.g. tests).
+        export_paths = _export_folder_tree(notes) if notes is not None else []
+        taxonomy_paths = _established_paths(taxonomy)
+        paths = export_paths or taxonomy_paths
+
         if paths:
             path_list = "\n".join(f"  - {p}" for p in paths)
-            established_block = (
-                "The following folder paths are already established in this taxonomy:\n"
-                f"{path_list}\n\n"
-                "For each theme, choose a suggested_path from this list wherever one fits. "
-                "Only propose a path NOT in this list when the theme has no adequate home "
-                "among the established paths. Prefer existing names over synonyms."
-            )
+            if reorg_mode == "conservative":
+                established_block = (
+                    "The following folders currently exist in your Apple Notes library:\n"
+                    f"{path_list}\n\n"
+                    "These represent your deliberate organizational structure. "
+                    "For each theme, prefer a suggested_path that maps to one of these existing paths. "
+                    "Only propose a new path when the theme clearly has no appropriate home "
+                    "among these existing folders."
+                )
+            else:
+                established_block = (
+                    "The following folders currently exist in your Apple Notes library:\n"
+                    f"{path_list}\n\n"
+                    "For each theme, prefer a suggested_path that maps to one of these existing paths. "
+                    "Only propose a new path when no existing path fits the theme well. "
+                    "Prefer existing names and structure over synonyms or new hierarchies."
+                )
         else:
             established_block = (
                 "No subfolder paths are established yet. "
                 "Propose suggested_path values freely where theme clusters warrant them."
             )
-
-    reorg_mode = reorganization_mode(settings)
     conservatism = _CONSERVATISM_GUIDANCE.get(reorg_mode, "")
 
     return (
@@ -174,7 +195,6 @@ def _discover_batch(provider: LLMProvider, system_prompt: str, batch: list) -> l
 def run_discover(export_file: str | None, dry_run: bool) -> None:
     settings = load_settings()
     taxonomy = load_taxonomy()
-    system_prompt = inject_discover_taxonomy(load_discover_prompt(), taxonomy, settings)
 
     export_path = Path(export_file) if export_file else find_latest_export()
     if not export_path.exists():
@@ -182,6 +202,9 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
         raise SystemExit(1)
 
     all_notes = json.loads(export_path.read_text())
+    system_prompt = inject_discover_taxonomy(
+        load_discover_prompt(), taxonomy, settings, notes=all_notes
+    )
 
     llm_cfg = settings.get("llm") or settings.get("claude", {})
     sample_size = llm_cfg.get("theme_discovery_sample", _DEFAULT_SAMPLE)
@@ -300,6 +323,19 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
     reorg_mode = reorganization_mode(settings)
     conservatism_guidance = _CONSERVATISM_GUIDANCE.get(reorg_mode, "")
 
+    # Give the synthesis step the same holistic folder context as the batch prompt so it
+    # doesn't drift to generic names when merging results from multiple batches.
+    export_folders = _export_folder_tree(all_notes)
+    if export_folders and reorg_mode != "full":
+        folder_list = ", ".join(export_folders[:30])
+        folder_anchor = (
+            f"The existing Apple Notes folder structure is: {folder_list}. "
+            "Prefer suggested_path values drawn from this list. "
+            "Only deviate when a strong theme cluster genuinely lacks an appropriate home here."
+        )
+    else:
+        folder_anchor = ""
+
     synthesis_prompt = (
         "You received theme lists from multiple batches of notes. "
         "Merge, deduplicate, and consolidate into a single ranked list. "
@@ -309,6 +345,7 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
         f"{nesting_guidance} "
         f"{top_level_constraint} "
         f"{anchor_guidance} "
+        + (f"{folder_anchor} " if folder_anchor else "")
         + (f"{conservatism_guidance} " if conservatism_guidance else "")
         + "Every theme must include a suggested_path field. "
         "Return a JSON object with a single 'themes' array using the same schema as before."
