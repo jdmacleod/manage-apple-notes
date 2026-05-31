@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `notes revert [proposal]` — new command that reverses a previous `notes move` run; reads `current_folder` from the proposal and moves notes back to their original folders; supports `--dry-run`; defaults to the most recent proposal in `data/proposals/`
+- `notes move` dry-run output now includes the source folder for each note — `[DRY RUN] "title" (Inbox) → Resources/Technical` — making it easier to identify which note will move when titles are not unique
 - `notes draft` now bootstraps the initial taxonomy from your actual Apple Notes folder structure when no `taxonomy.local.yaml` exists — one LLM call maps your top-level folders (e.g. `Archive`, `Areas`, `Resources`) to the standard taxonomy roles, so the draft reflects your real library instead of the generic example template
 - `notes discover` now injects the complete Apple Notes folder tree (all unique `folder_path` values from the export) into the batch and synthesis prompts as the primary anchor for `suggested_path` values — previously the LLM only saw folder paths scattered in individual note summaries per batch, with no holistic view of existing structure
 - `reorganization_mode` setting in `settings.local.yaml` — controls how aggressively `notes discover` and `notes classify` propose changes:
@@ -30,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `notes move` no longer silently moves the wrong note when the ID fallback finds multiple notes with the same title — the ambiguous entries are now skipped with an `[AMBIGUOUS]` warning; fulfilled the CLAUDE.md promise of "logging any ambiguities"
 - `notes discover` synthesis step no longer silently falls back to the raw theme list — the JSON extractor was using `rfind("}")` to find the end of the LLM response, so trailing prose like "I merged {15} themes" caused a parse error every run; replaced with `JSONDecoder.raw_decode()` which stops at the correct boundary
 - Output filenames (`themes-YYYY-MM-DD.json`, `proposal-YYYY-MM-DD.json`, etc.) now use local time to match the export filename, which also uses local time — previously UTC was used, producing a next-day date for users in negative-UTC timezones (e.g. North America evenings)
 - `notes export` now correctly builds full folder paths for notes nested more than one subfolder level deep on macOS Sequoia (`container of folder` is broken on Sequoia; the export script now walks down using `folders of folder` instead)

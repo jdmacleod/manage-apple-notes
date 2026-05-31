@@ -116,6 +116,34 @@ class TestRunApply:
         run_apply(proposal_file=None, dry_run=False)
         mock_popen.assert_called_once()
 
+    def test_ambiguous_line_increments_skipped(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+    ) -> None:
+        proposal = tmp_path / "proposal-test.json"
+        proposal.write_text(json.dumps({"moves": []}))
+
+        mock_popen = mocker.patch("subprocess.Popen")
+        mock_proc = MagicMock()
+        mock_proc.stdout.readline.side_effect = [
+            '[AMBIGUOUS] "Meeting Notes": 2 notes match in folder "Inbox" — skipping to avoid wrong move\n',
+            "",
+        ]
+        mock_proc.returncode = 0
+        mock_proc.wait.return_value = 0
+        mock_popen.return_value = mock_proc
+
+        mock_logger = mocker.patch("scripts.execute.run_apply.RunLogger")
+        instance = mock_logger.return_value
+        mocker.patch("scripts.execute.run_apply.load_settings", return_value=minimal_settings)
+
+        run_apply(proposal_file=str(proposal), dry_run=False)
+
+        finish_call = instance.finish.call_args
+        assert finish_call[1]["summary"]["skipped"] == 1
+
     def test_nonzero_exit_code_raises(
         self,
         mocker: MagicMock,

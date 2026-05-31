@@ -78,7 +78,18 @@ uv run notes move --dry-run    # preview every move with colored output
 uv run notes move              # move notes per approved proposal
 ```
 
-If notes go missing after a move run:
+If you want to reverse the move (return notes to their original folders):
+
+```bash
+uv run notes revert --dry-run    # preview what would move back
+uv run notes revert              # move notes back per the same proposal
+```
+
+`revert` reads the proposal's `current_folder` values and moves everything back.
+It is all-or-nothing by default; to reverse a subset, edit the proposal file and
+remove the entries you want to keep in their new location, then run `notes revert`.
+
+If notes went missing (not just moved to the wrong place):
 
 ```bash
 uv run notes restore --dry-run   # preview what would be recreated
@@ -100,7 +111,9 @@ For targeted restoration of a specific subset of notes, create a
 `data/missing-notes-YYYY-MM-DD.json` file manually and pass it with
 `uv run notes restore --missing data/missing-notes-YYYY-MM-DD.json`.
 
-Each move is logged: `[MOVED]` (green), `[SKIP]` (yellow), `[ERROR]` (red).
+Each move is logged: `[MOVED]` (green), `[SKIP]` / `[AMBIGUOUS]` (yellow), `[ERROR]` (red).
+`[AMBIGUOUS]` means the ID fallback found multiple notes with the same title — those notes are
+skipped to avoid moving the wrong one. Rename the duplicates in Apple Notes and re-run.
 To move from a specific proposal file: `uv run notes move data/proposals/proposal-YYYY-MM-DD.json`.
 
 ### Step 5 — Deduplicate (optional)

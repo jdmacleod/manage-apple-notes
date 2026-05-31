@@ -42,7 +42,7 @@ def _strip_container_prefix(notes: list[dict], container_name: str) -> int:
     for note in notes:
         fp = note.get("folder_path", "")
         if fp.startswith(prefix):
-            note["folder_path"] = fp[len(prefix):]
+            note["folder_path"] = fp[len(prefix) :]
             patched += 1
     return patched
 

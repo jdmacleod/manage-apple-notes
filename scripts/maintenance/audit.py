@@ -141,9 +141,7 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
 
     # Collect known top-level category folder names for subfolder candidate check
     category_folders = {
-        folder_name(v)
-        for v in fn.values()
-        if folder_name(v) and not folder_name(v).startswith("[")
+        folder_name(v) for v in fn.values() if folder_name(v) and not folder_name(v).startswith("[")
     }
 
     export_path = Path(export_file) if export_file else find_latest_export()
@@ -156,7 +154,9 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
     date_str = now.strftime("%Y-%m-%d")
     report_path = Path(output_override) if output_override else REPORTS_DIR / f"audit-{date_str}.md"
 
-    proj_label = f"in {projects_folder!r}" if projects_folder else "(projects folder not configured)"
+    proj_label = (
+        f"in {projects_folder!r}" if projects_folder else "(projects folder not configured)"
+    )
     checks = [
         f"Inactive projects — {proj_label}, not modified >{inactive_project_days} days",
         "Untitled notes — no meaningful title",
@@ -464,7 +464,9 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
     console.print(f"  Duplicate titles:   {len(duplicate_groups)}")
     console.print(f"  Stale inbox:        {len(stale_inbox)}")
     console.print(f"  Stale fleeting:     {len(stale_fleeting)}")
-    console.print(f"  Untracked folders:  {len(untracked_folder_rows)} folder(s), {len(untracked_folder_notes)} note(s)")
+    console.print(
+        f"  Untracked folders:  {len(untracked_folder_rows)} folder(s), {len(untracked_folder_notes)} note(s)"
+    )
     console.print(f"  Uncategorized:      {len(uncategorized_notes)}")
     console.print(f"  Subfolder candid.:  {len(subfolder_candidates)}")
 

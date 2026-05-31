@@ -108,7 +108,7 @@ for m in p.get('moves',[]):
 				end if
 
 				if dryRun then
-					log "[DRY RUN] \"" & noteTitle & "\" → " & displayPath
+					log "[DRY RUN] \"" & noteTitle & "\" (" & currentFolder & ") → " & displayPath
 					set moveCount to moveCount + 1
 				else
 					try
@@ -125,7 +125,12 @@ for m in p.get('moves',[]):
 								try
 									if currentFolder is not "" then
 										set matches to (every note of folder currentFolder whose name is noteTitle)
-										if (count matches) > 0 then set targetNote to item 1 of matches
+										if (count matches) = 1 then
+											set targetNote to item 1 of matches
+										else if (count matches) > 1 then
+											log "[AMBIGUOUS] \"" & noteTitle & "\": " & (count matches) & " notes match in folder \"" & currentFolder & "\" — skipping to avoid wrong move"
+											set skipCount to skipCount + 1
+										end if
 									end if
 								end try
 							end if
@@ -136,7 +141,12 @@ for m in p.get('moves',[]):
 							if targetNote is missing value then
 								try
 									set matches to (every note whose name is noteTitle)
-									if (count matches) > 0 then set targetNote to item 1 of matches
+									if (count matches) = 1 then
+										set targetNote to item 1 of matches
+									else if (count matches) > 1 then
+										log "[AMBIGUOUS] \"" & noteTitle & "\": " & (count matches) & " notes with this title exist — skipping to avoid wrong move"
+										set skipCount to skipCount + 1
+									end if
 								end try
 							end if
 

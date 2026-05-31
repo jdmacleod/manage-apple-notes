@@ -9,6 +9,7 @@ from scripts.classify.discover_themes import run_discover
 from scripts.classify.draft_taxonomy import run_draft
 from scripts.execute.apply_dedup import run_apply_dedup
 from scripts.execute.run_apply import run_apply
+from scripts.execute.run_revert import run_revert
 from scripts.export.run_export import run_backup, run_export
 from scripts.forever_notes.sync_hubs import run_sync_hubs
 from scripts.maintenance.audit import run_audit
@@ -146,6 +147,22 @@ def move(
 ) -> None:
     """Move notes in Apple Notes according to an approved proposal."""
     run_apply(proposal_file=proposal_file, dry_run=dry_run)
+
+
+@app.command()
+def revert(
+    proposal_file: str | None = typer.Argument(
+        default=None,
+        help="Proposal JSON to reverse. Defaults to most recent file in data/proposals/.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Preview moves without touching Notes.",
+    ),
+) -> None:
+    """Reverse a previous move — returns notes to their original folders."""
+    run_revert(proposal_file=proposal_file, dry_run=dry_run)
 
 
 @app.command()

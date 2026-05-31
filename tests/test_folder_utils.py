@@ -140,15 +140,11 @@ class TestPathComponents:
 
 class TestMaxTaxonomyDepth:
     def test_flat_taxonomy(self) -> None:
-        taxonomy = {
-            "taxonomy": {"inbox": {"folder": "Inbox"}, "archive": {"folder": "Archive"}}
-        }
+        taxonomy = {"taxonomy": {"inbox": {"folder": "Inbox"}, "archive": {"folder": "Archive"}}}
         assert max_taxonomy_depth(taxonomy) == 1
 
     def test_two_level_taxonomy(self) -> None:
-        taxonomy = {
-            "taxonomy": {"resources": {"folder": "Resources", "subfolders": ["Cooking"]}}
-        }
+        taxonomy = {"taxonomy": {"resources": {"folder": "Resources", "subfolders": ["Cooking"]}}}
         assert max_taxonomy_depth(taxonomy) == 2
 
     def test_three_level_taxonomy(self) -> None:

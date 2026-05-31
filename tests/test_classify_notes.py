@@ -85,9 +85,7 @@ class TestInjectTaxonomy:
 
     def test_subfolders_listed(self) -> None:
         taxonomy = {
-            "taxonomy": {
-                "resources": {"folder": "Resources", "subfolders": ["Reference", "Tools"]}
-            }
+            "taxonomy": {"resources": {"folder": "Resources", "subfolders": ["Reference", "Tools"]}}
         }
         result = inject_taxonomy("{CATEGORY_LIST}", taxonomy)
         assert "Reference" in result
@@ -96,9 +94,7 @@ class TestInjectTaxonomy:
 
     def test_flat_mode_no_subfolders(self) -> None:
         taxonomy = {
-            "taxonomy": {
-                "resources": {"folder": "Resources", "subfolders": ["Reference", "Tools"]}
-            }
+            "taxonomy": {"resources": {"folder": "Resources", "subfolders": ["Reference", "Tools"]}}
         }
         result = inject_taxonomy("{CATEGORY_LIST}", taxonomy, {"folder_nesting": "flat"})
         assert "Resources" in result
@@ -176,17 +172,13 @@ class TestConservativeModePostProcessing:
         mocker.patch("scripts.classify.classify_notes.load_settings", return_value=settings)
         mocker.patch("scripts.classify.classify_notes.load_taxonomy", return_value=taxonomy)
         mocker.patch("scripts.classify.classify_notes.local_taxonomy_exists", return_value=True)
-        mocker.patch(
-            "scripts.classify.classify_notes.PROPOSALS_DIR", tmp_path / "proposals"
-        )
+        mocker.patch("scripts.classify.classify_notes.PROPOSALS_DIR", tmp_path / "proposals")
 
         mock_provider = mocker.MagicMock()
         mock_provider.name = "mock"
         mock_provider.model = "mock-model"
         mock_provider.classify_messages.return_value = __import__("json").dumps(llm_results)
-        mocker.patch(
-            "scripts.classify.classify_notes.get_provider", return_value=mock_provider
-        )
+        mocker.patch("scripts.classify.classify_notes.get_provider", return_value=mock_provider)
         mocker.patch("scripts.classify.classify_notes.RunLogger")
 
         run_classify(export_file=str(export_file), dry_run=False)
@@ -217,9 +209,7 @@ class TestConservativeModePostProcessing:
                 "reason": "fits better here",
             }
         ]
-        proposal = self._run_conservative_classify(
-            mocker, tmp_path, notes, llm_results, taxonomy
-        )
+        proposal = self._run_conservative_classify(mocker, tmp_path, notes, llm_results, taxonomy)
         assert len(proposal["moves"]) == 0
         assert any(n["id"] == "p1" for n in proposal["needs_review"])
         assert any("[conservative]" in n.get("reason", "") for n in proposal["needs_review"])
@@ -246,9 +236,7 @@ class TestConservativeModePostProcessing:
                 "reason": "clearly a permanent note",
             }
         ]
-        proposal = self._run_conservative_classify(
-            mocker, tmp_path, notes, llm_results, taxonomy
-        )
+        proposal = self._run_conservative_classify(mocker, tmp_path, notes, llm_results, taxonomy)
         assert any(n["id"] == "p1" for n in proposal["moves"])
         assert len(proposal["needs_review"]) == 0
 
@@ -273,9 +261,7 @@ class TestConservativeModePostProcessing:
                 "reason": "reference material",
             }
         ]
-        proposal = self._run_conservative_classify(
-            mocker, tmp_path, notes, llm_results, taxonomy
-        )
+        proposal = self._run_conservative_classify(mocker, tmp_path, notes, llm_results, taxonomy)
         assert any(n["id"] == "p1" for n in proposal["moves"])
         assert len(proposal["needs_review"]) == 0
 

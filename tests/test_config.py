@@ -30,9 +30,7 @@ class TestLoadSettings:
         result = load_settings()
         assert result == {}
 
-    def test_warns_to_stderr_when_no_local_file(
-        self, tmp_path: Path, mocker, capsys
-    ) -> None:
+    def test_warns_to_stderr_when_no_local_file(self, tmp_path: Path, mocker, capsys) -> None:
         mocker.patch("scripts.config.CONFIG_DIR", tmp_path)
         load_settings()
         captured = capsys.readouterr()

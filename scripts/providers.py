@@ -76,8 +76,7 @@ class OllamaProvider:
                     data = json.loads(resp.read().decode())
                     available = [m.get("name", "") for m in data.get("models", [])]
                     if not any(
-                        m == self._model or m.startswith(f"{self._model}:")
-                        for m in available
+                        m == self._model or m.startswith(f"{self._model}:") for m in available
                     ):
                         available_str = ", ".join(available) if available else "(none pulled)"
                         sys.exit(

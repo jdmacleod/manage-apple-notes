@@ -104,9 +104,7 @@ class TestOllamaProvider:
         monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
         mocker.patch("openai.OpenAI")
         mock_resp = MagicMock()
-        mock_resp.read.return_value = json.dumps(
-            {"models": [{"name": "mistral:latest"}]}
-        ).encode()
+        mock_resp.read.return_value = json.dumps({"models": [{"name": "mistral:latest"}]}).encode()
         mocker.patch("urllib.request.urlopen").return_value.__enter__.return_value = mock_resp
         with pytest.raises(SystemExit, match="not found in Ollama"):
             OllamaProvider(model="llama3", dry_run=False)

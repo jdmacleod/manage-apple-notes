@@ -110,8 +110,9 @@ Apple Notes identifies notes with `x-coredata://UUID/ICNote/pNNNN` URIs. These I
 - **Are not portable** between accounts or iCloud containers
 
 Scripts in this project match on ID first, then fall back to title + folder if the ID is
-not found, logging any ambiguities. Never treat a stored `x-coredata://` ID as a permanent
-stable identifier.
+not found. When the title fallback finds more than one matching note, it logs `[AMBIGUOUS]`
+and skips that note rather than moving the wrong one. Never treat a stored `x-coredata://`
+ID as a permanent stable identifier.
 
 ### Note-to-note links: current status and limitations
 

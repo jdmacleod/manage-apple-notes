@@ -178,7 +178,10 @@ class TestRunAuditOtherChecks:
 
         content = report_path.read_text()
         assert "Old project note" in content
-        assert "Active project note" not in content.split("## Inactive Projects")[1].split("\n---\n")[0]
+        assert (
+            "Active project note"
+            not in content.split("## Inactive Projects")[1].split("\n---\n")[0]
+        )
 
     def test_untitled_notes_detected(
         self,

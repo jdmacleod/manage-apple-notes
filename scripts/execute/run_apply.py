@@ -62,6 +62,12 @@ def run_apply(proposal_file: str | None, dry_run: bool) -> None:
             console.print(f"[yellow]{line}[/yellow]")
             logger.event("move", line=line, status="SKIP")
             skipped += 1
+        elif line.startswith("[AMBIGUOUS]"):
+            console.print(f"[yellow]{line}[/yellow]")
+            logger.event("move", line=line, status="AMBIGUOUS")
+            skipped += 1
+        elif line.startswith("[DRY RUN]"):
+            console.print(f"[cyan]{line}[/cyan]")
         elif line.startswith("[ERROR]"):
             console.print(f"[red]{line}[/red]")
             logger.event("move", line=line, status="ERROR")
