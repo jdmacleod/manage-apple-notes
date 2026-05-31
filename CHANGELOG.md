@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `notes export` now includes `account_name` in each note record
+- `primary_account` filter in `settings.local.yaml` — limits export to a single named iCloud account (useful for multi-account setups)
+- Ollama startup check now verifies the configured model is available; exits with an actionable message listing available models and the `ollama pull` command if the model is missing (llama.cpp is unaffected — the check is skipped when the server does not return an Ollama-format model list)
+- Warning printed to stderr when `settings.local.yaml` is absent — includes the copy command to create one
+- Per-command warnings when `taxonomy.local.yaml` is absent: `notes classify`, `notes audit`, and `notes sync-hubs` warn that folder names are placeholders; `notes draft` prints a neutral info message (discovery is expected to run before a local taxonomy exists)
+
+### Changed
+
+- `notes audit` report now separates **Untracked Folders** (subfolders nested under known taxonomy categories but not yet in `taxonomy.local.yaml`) from **Uncategorized Notes** (notes in folders with no taxonomy ancestor at all) — previously both appeared under a single "Uncategorized" section
+- Ollama mid-run connection loss now exits with a clear "Lost connection to Ollama" message and `ollama serve` guidance instead of a raw API error
+- `notes discover` post-run next steps now directs users to `notes draft` before editing the taxonomy, matching the recommended workflow
+
+### Fixed
+
+- `notes export` now correctly builds full folder paths for notes nested more than one subfolder level deep on macOS Sequoia (`container of folder` is broken on Sequoia; the export script now walks down using `folders of folder` instead)
+- `notes export` now correctly reports `folder_path` for all nesting depths on macOS Sequoia (previously truncated after the first subfolder level)
+
 ## [0.1.0] - 2026-05-29
 
 ### Added
