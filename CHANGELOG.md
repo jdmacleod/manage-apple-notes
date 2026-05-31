@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `notes draft` now bootstraps the initial taxonomy from your actual Apple Notes folder structure when no `taxonomy.local.yaml` exists — one LLM call maps your top-level folders (e.g. `Archive`, `Areas`, `Resources`) to the standard taxonomy roles, so the draft reflects your real library instead of the generic example template
+- `notes discover` now injects the complete Apple Notes folder tree (all unique `folder_path` values from the export) into the batch and synthesis prompts as the primary anchor for `suggested_path` values — previously the LLM only saw folder paths scattered in individual note summaries per batch, with no holistic view of existing structure
 - `reorganization_mode` setting in `settings.local.yaml` — controls how aggressively `notes discover` and `notes classify` propose changes:
   - `"conservative"`: most notes are already organized; only propose moves with high confidence for notes outside Inbox/Fleeting; discovery requires strong evidence before suggesting new paths
   - `"standard"`: default — classify all notes, anchoring to existing taxonomy paths
