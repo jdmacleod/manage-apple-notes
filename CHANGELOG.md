@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `reorganization_mode` setting in `settings.local.yaml` — controls how aggressively `notes discover` and `notes classify` propose changes:
+  - `"conservative"`: most notes are already organized; only propose moves with high confidence for notes outside Inbox/Fleeting; discovery requires strong evidence before suggesting new paths
+  - `"standard"`: default — classify all notes, anchoring to existing taxonomy paths
+  - `"full"`: treat the library as raw material; reclassify from scratch without anchoring to current locations
 - `notes export` now includes `account_name` in each note record
 - `primary_account` filter in `settings.local.yaml` — limits export to a single named iCloud account (useful for multi-account setups)
 - Ollama startup check now verifies the configured model is available; exits with an actionable message listing available models and the `ollama pull` command if the model is missing (llama.cpp is unaffected — the check is skipped when the server does not return an Ollama-format model list)
@@ -17,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Taxonomy YAML files use `taxonomy:` as the root key instead of `forever_notes:` — rename the key in `config/taxonomy.local.yaml` if upgrading from an earlier version
 - `notes audit` report now separates **Untracked Folders** (subfolders nested under known taxonomy categories but not yet in `taxonomy.local.yaml`) from **Uncategorized Notes** (notes in folders with no taxonomy ancestor at all) — previously both appeared under a single "Uncategorized" section
 - Ollama mid-run connection loss now exits with a clear "Lost connection to Ollama" message and `ollama serve` guidance instead of a raw API error
 - `notes discover` post-run next steps now directs users to `notes draft` before editing the taxonomy, matching the recommended workflow

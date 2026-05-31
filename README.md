@@ -10,6 +10,8 @@ Scripts and workflows for organizing Apple Notes using AI-powered classification
 
 The pipeline is: **export → discover themes → AI classify → human review → apply**. Nothing touches your notes until you approve a proposal.
 
+Set `reorganization_mode` in `settings.local.yaml` to control how aggressively the pipeline proposes changes — from `"conservative"` (only high-confidence moves for notes outside Inbox/Fleeting) through `"standard"` (default) to `"full"` (reclassify from scratch).
+
 ## Prerequisites
 
 - macOS with Apple Notes
@@ -32,6 +34,8 @@ git config core.hooksPath .git-hooks
 cp config/taxonomy.example.yaml config/taxonomy.local.yaml
 cp config/settings.example.yaml config/settings.local.yaml
 # Edit both files with your actual Apple Notes folder names.
+# Taxonomy files use "taxonomy:" as the root key — if upgrading from an earlier version,
+# rename "forever_notes:" to "taxonomy:" in your taxonomy.local.yaml.
 # If all your taxonomy folders live inside a single container folder in Apple Notes
 # (e.g. "Library"), set toplevel_folder.enabled: true and update toplevel_folder.name
 # in settings.local.yaml to match.
