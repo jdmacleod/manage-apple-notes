@@ -1,0 +1,90 @@
+// Bridge from Python subprocess to Apple's on-device Foundation Models framework.
+//
+// Protocol (stdin → stdout):
+//   in:  {"system": "...", "user": "...", "max_tokens": 4096}
+//   out: plain-text response on stdout
+//
+// Exit codes:
+//   0 — success
+//   1 — general error (bad input, unexpected failure)
+//   2 — Apple Intelligence unavailable (device/settings)
+//   3 — context window exceeded (reduce batch_size in settings.local.yaml)
+
+import Foundation
+import FoundationModels
+
+struct Input: Decodable {
+    let system: String
+    let user: String
+    let max_tokens: Int?
+}
+
+@available(macOS 26, *)
+func run() async {
+    switch SystemLanguageModel.default.availability {
+    case .available:
+        break
+    case .unavailable(let reason):
+        let msg: String
+        switch reason {
+        case .deviceNotEligible:
+            msg = "device not eligible — Apple Intelligence requires an M-series Mac"
+        case .appleIntelligenceNotEnabled:
+            msg = "Apple Intelligence is not enabled — turn it on in System Settings → Apple Intelligence & Siri"
+        case .modelNotReady:
+            msg = "Apple Intelligence model is not ready — it may still be downloading"
+        @unknown default:
+            msg = "Apple Intelligence unavailable (\(reason))"
+        }
+        fputs("error: \(msg)\n", stderr)
+        exit(2)
+    }
+
+    let inputData = FileHandle.standardInput.readDataToEndOfFile()
+    let input: Input
+    do {
+        input = try JSONDecoder().decode(Input.self, from: inputData)
+    } catch {
+        fputs("error: failed to decode input JSON: \(error)\n", stderr)
+        exit(1)
+    }
+
+    // Cap response tokens conservatively — total context is 4096 (system + user + response).
+    // The system prompt alone is typically 1000–1500 tokens; leave headroom for the response.
+    let maxResponse = min(input.max_tokens ?? 4096, 800)
+
+    let session = LanguageModelSession {
+        input.system
+    }
+
+    do {
+        let options = GenerationOptions(maximumResponseTokens: maxResponse)
+        let response = try await session.respond(to: input.user, options: options)
+        print(response.content)
+    } catch {
+        let desc = "\(error)"
+        if desc.contains("exceededContextWindowSize") || desc.contains("contextWindowSize") {
+            fputs(
+                "error: context window exceeded (4096 tokens total).\n"
+                    + "  Set batch_size: 1 in settings.local.yaml when using the apple provider.\n",
+                stderr
+            )
+            exit(3)
+        }
+        fputs("error: generation failed: \(error)\n", stderr)
+        exit(1)
+    }
+}
+
+// Bridge async → sync for a command-line executable.
+let semaphore = DispatchSemaphore(value: 0)
+Task {
+    if #available(macOS 26, *) {
+        await run()
+    } else {
+        fputs("error: macOS 26 or later is required for Apple Intelligence\n", stderr)
+        exit(2)
+    }
+    semaphore.signal()
+}
+semaphore.wait()

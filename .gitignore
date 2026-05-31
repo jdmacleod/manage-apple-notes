@@ -28,3 +28,6 @@ coverage.xml
 dist/
 *.egg-info/
 
+# Swift build artifacts
+swift/apple-llm/.build/
+

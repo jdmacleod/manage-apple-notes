@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
-from scripts.providers import AnthropicProvider, OllamaProvider, get_provider
+from scripts.providers import AnthropicProvider, AppleProvider, OllamaProvider, get_provider
 
 
 class TestAnthropicProvider:
@@ -150,6 +151,59 @@ class TestOllamaProvider:
             provider.classify_messages("system", "user")
 
 
+class TestAppleProvider:
+    def test_probe_missing_binary_exits(self, tmp_path: Path) -> None:
+        missing = str(tmp_path / "apple-llm")
+        with pytest.raises(SystemExit):
+            AppleProvider(binary_path=missing, dry_run=False)
+
+    def test_probe_skipped_in_dry_run(self, tmp_path: Path) -> None:
+        missing = str(tmp_path / "apple-llm")
+        provider = AppleProvider(binary_path=missing, dry_run=True)
+        assert provider.name == "apple"
+
+    def test_name_and_model_properties(self, tmp_path: Path) -> None:
+        provider = AppleProvider(binary_path=str(tmp_path / "apple-llm"), dry_run=True)
+        assert provider.name == "apple"
+        assert provider.model == "on-device"
+
+    def test_classify_messages_success(self, mocker: MagicMock, tmp_path: Path) -> None:
+        mock_run = mocker.patch("scripts.providers.subprocess.run")
+        mock_run.return_value = MagicMock(returncode=0, stdout="classified output", stderr="")
+        provider = AppleProvider(binary_path=str(tmp_path / "apple-llm"), dry_run=True)
+        result = provider.classify_messages("system prompt", "user content")
+        assert result == "classified output"
+
+    def test_classify_messages_context_overflow(self, mocker: MagicMock, tmp_path: Path) -> None:
+        mock_run = mocker.patch("scripts.providers.subprocess.run")
+        mock_run.return_value = MagicMock(
+            returncode=3, stdout="", stderr="error: context window exceeded"
+        )
+        provider = AppleProvider(binary_path=str(tmp_path / "apple-llm"), dry_run=True)
+        with pytest.raises(RuntimeError, match="apple_context_overflow"):
+            provider.classify_messages("system", "user")
+
+    def test_classify_messages_unavailable_exits(self, mocker: MagicMock, tmp_path: Path) -> None:
+        mock_run = mocker.patch("scripts.providers.subprocess.run")
+        mock_run.return_value = MagicMock(
+            returncode=2, stdout="", stderr="error: Apple Intelligence is not enabled"
+        )
+        provider = AppleProvider(binary_path=str(tmp_path / "apple-llm"), dry_run=True)
+        with pytest.raises(SystemExit):
+            provider.classify_messages("system", "user")
+
+    def test_classify_messages_general_error_raises(
+        self, mocker: MagicMock, tmp_path: Path
+    ) -> None:
+        mock_run = mocker.patch("scripts.providers.subprocess.run")
+        mock_run.return_value = MagicMock(
+            returncode=1, stdout="", stderr="error: generation failed"
+        )
+        provider = AppleProvider(binary_path=str(tmp_path / "apple-llm"), dry_run=True)
+        with pytest.raises(RuntimeError, match="apple-llm exited 1"):
+            provider.classify_messages("system", "user")
+
+
 class TestGetProvider:
     def test_anthropic_key_returns_anthropic_provider(
         self, mocker: MagicMock, monkeypatch: pytest.MonkeyPatch
@@ -190,3 +244,12 @@ class TestGetProvider:
 
         provider = get_provider({}, dry_run=True)
         assert provider.name == "anthropic"
+
+    def test_apple_provider_setting(
+        self, mocker: MagicMock, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        binary = str(tmp_path / "apple-llm")
+        settings = {"llm": {"provider": "apple", "apple_llm_binary": binary}}
+        provider = get_provider(settings, dry_run=True)
+        assert provider.name == "apple"
