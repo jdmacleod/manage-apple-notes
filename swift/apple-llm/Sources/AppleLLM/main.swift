@@ -76,15 +76,19 @@ func run() async {
     }
 }
 
-// Bridge async → sync for a command-line executable.
-let semaphore = DispatchSemaphore(value: 0)
-Task {
-    if #available(macOS 26, *) {
-        await run()
-    } else {
-        fputs("error: macOS 26 or later is required for Apple Intelligence\n", stderr)
-        exit(2)
+// FoundationModels uses XPC callbacks that require the main run loop to be live.
+// Blocking the main thread with a semaphore starves those callbacks, so the async
+// Task never fires.  dispatchMain() runs GCD's event loop on the main thread,
+// allowing XPC responses through.  Each exit path in run() calls exit() explicitly.
+DispatchQueue.main.async {
+    Task {
+        if #available(macOS 26, *) {
+            await run()
+            exit(0)
+        } else {
+            fputs("error: macOS 26 or later is required for Apple Intelligence\n", stderr)
+            exit(2)
+        }
     }
-    semaphore.signal()
 }
-semaphore.wait()
+dispatchMain()
