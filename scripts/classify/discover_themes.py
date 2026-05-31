@@ -246,6 +246,7 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
         console.print("+ 1 synthesis call\n")
         console.print(f"Provider:       {provider.name}")
         console.print(f"Model:          {model}")
+        console.print(f"Mode:           {reorganization_mode(settings)}")
         console.print(f"Est. tokens:    ~{est_total_tokens:,}")
         console.print(f"Est. cost:      {cost_str}")
         estimate = estimate_duration("discover", len(summaries), logs_dir_path(settings))
@@ -267,6 +268,7 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
         return
 
     logger = RunLogger("discover", logs_dir_path(settings))
+    console.print(f"[dim]Mode: {reorganization_mode(settings)}[/dim]")
     estimate = estimate_duration("discover", len(summaries), logs_dir_path(settings))
     if estimate:
         console.print(f"[dim]Estimated duration: {estimate}[/dim]")
