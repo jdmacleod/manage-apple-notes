@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Protocol, runtime_checkable
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 @runtime_checkable
@@ -122,6 +126,54 @@ class OllamaProvider:
             )
 
 
+class AppleProvider:
+    """On-device Apple Intelligence via a compiled Swift CLI bridge (macOS 26+)."""
+
+    def __init__(self, binary_path: str, dry_run: bool = False) -> None:
+        self._binary = binary_path
+        self._model = "on-device"
+        if not dry_run:
+            self._probe()
+
+    def _probe(self) -> None:
+        if not Path(self._binary).is_file():
+            sys.exit(
+                f"Apple LLM binary not found: {self._binary}\n"
+                "  Build it with:\n"
+                "    swift build -c release --package-path swift/apple-llm\n"
+                "  Then set llm.provider: apple in config/settings.local.yaml"
+            )
+
+    @property
+    def name(self) -> str:
+        return "apple"
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    def classify_messages(
+        self, system_prompt: str, user_content: str, max_tokens: int = 4096
+    ) -> str:
+        payload = json.dumps(
+            {"system": system_prompt, "user": user_content, "max_tokens": max_tokens}
+        )
+        result = subprocess.run(
+            [self._binary],
+            input=payload,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode == 2:
+            sys.exit(f"Apple Intelligence not available: {result.stderr.strip()}")
+        if result.returncode == 3:
+            raise RuntimeError("apple_context_overflow")
+        if result.returncode != 0:
+            raise RuntimeError(f"apple-llm exited {result.returncode}: {result.stderr.strip()}")
+        return result.stdout
+
+
 def get_provider(settings: dict, dry_run: bool = False) -> LLMProvider:
     llm_cfg = settings.get("llm") or settings.get("claude", {})
     # OLLAMA_BASE_URL in the environment takes precedence over settings.local.yaml
@@ -135,4 +187,10 @@ def get_provider(settings: dict, dry_run: bool = False) -> LLMProvider:
     if provider_name == "ollama":
         timeout = float(llm_cfg.get("request_timeout", 1200))
         return OllamaProvider(model, timeout=timeout, dry_run=dry_run)
+    if provider_name == "apple":
+        default_binary = str(
+            _REPO_ROOT / "swift" / "apple-llm" / ".build" / "release" / "apple-llm"
+        )
+        binary = llm_cfg.get("apple_llm_binary", default_binary)
+        return AppleProvider(binary, dry_run=dry_run)
     return AnthropicProvider(model)

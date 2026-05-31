@@ -18,7 +18,7 @@ Set `reorganization_mode` in `settings.local.yaml` to control how aggressively t
 - **Terminal Automation permission** — export, move, restore, and hub-sync commands run AppleScript via `osascript`, which requires your terminal app to be allowed to control Notes. Grant it in **System Settings → Privacy & Security → Automation** — enable the Notes checkbox under your terminal app (Terminal, iTerm2, etc.). macOS will prompt the first time a script runs; if the prompt never appears, open System Settings and add it manually.
 - **Full Disk Access (some commands)** — commands that read `NoteStore.sqlite` directly (such as note-to-note link insertion) require Full Disk Access for your terminal app. Grant it in **System Settings → Privacy & Security → Full Disk Access**, run the relevant commands, then revoke it when done if you prefer a conservative security posture. See [Technical Notes: Full Disk Access requirement](docs/technical-notes.md#full-disk-access-requirement) for step-by-step instructions.
 - [uv](https://docs.astral.sh/uv/) (`brew install uv` or `curl -LsSf https://astral.sh/uv/install.sh | sh`)
-- An LLM provider: an [Anthropic API key](https://console.anthropic.com) (cloud) **or** [Ollama](https://ollama.com) running locally
+- An LLM provider: an [Anthropic API key](https://console.anthropic.com) (cloud), [Ollama](https://ollama.com) running locally, **or** Apple Intelligence on-device (macOS 26+, see [Apple Intelligence provider](#apple-intelligence-provider))
 
 ## Setup
 
@@ -99,6 +99,7 @@ Full documentation lives in the [`docs/`](docs/) directory.
 |----------|-------------------------------|------------------|------|-------|
 | [Anthropic API](https://console.anthropic.com) | Yes — note text is sent to Anthropic's servers for inference and is subject to [Anthropic's privacy policy](https://www.anthropic.com/legal/privacy) | Low — API key only | Pay per use with token credits | Fast |
 | [Ollama](https://ollama.com) (local) | No — inference runs entirely on your machine | Medium — install Ollama, pull a model | No cost, model runs locally | Slower, but depends on your hardware |
+| Apple Intelligence (on-device) | No — inference runs on your Apple Silicon chip | Medium — macOS 26+, Apple Intelligence enabled, compile Swift tool | No cost | Fast on Apple Silicon |
 
 Regardless of provider, this repo is public and personal data is kept out of git:
 
@@ -108,6 +109,31 @@ Regardless of provider, this repo is public and personal data is kept out of git
 - A pre-commit hook blocks accidental commits of private files
 
 See [`config/taxonomy.example.yaml`](config/taxonomy.example.yaml) (Forever Notes / Zettelkasten), [`config/taxonomy.para.yaml`](config/taxonomy.para.yaml) (PARA method), and [`config/settings.example.yaml`](config/settings.example.yaml) for the committed templates.
+
+## Apple Intelligence provider
+
+Run classification entirely on-device using Apple's Foundation Models framework — no API key or Ollama required.
+
+**Requirements:** macOS 26+, Apple Silicon Mac, Apple Intelligence enabled in System Settings → Apple Intelligence & Siri, Xcode 26.
+
+**One-time build:**
+
+```bash
+# From the repo root — requires Xcode 26 command-line tools
+swift build -c release --package-path swift/apple-llm
+```
+
+The binary is placed at `swift/apple-llm/.build/release/apple-llm` (gitignored).
+
+**Configure `settings.local.yaml`:**
+
+```yaml
+llm:
+  provider: "apple"
+  batch_size: 1          # required — context window is 4096 tokens total
+```
+
+The `batch_size: 1` constraint is important: the 4096-token context window must accommodate the system prompt (~1200 tokens), the note being classified, and the response. See [Technical Notes: Apple Intelligence provider](docs/technical-notes.md#apple-intelligence-provider) for details.
 
 ## Contributing
 

@@ -424,3 +424,83 @@ OLLAMA_MODEL=llama3.1:8b
 Then in `settings.local.yaml` set `batch_size: 10` under the `llm:` key. The
 `OLLAMA_BASE_URL` env var activates the Ollama provider automatically — no need to change
 `llm.provider` in settings.
+
+---
+
+## Apple Intelligence Provider
+
+### Why a Swift CLI bridge is required
+
+Apple's `FoundationModels` framework is Swift-only — it cannot be called directly from
+Python. The solution is a thin Swift CLI tool at `swift/apple-llm/` that:
+
+1. Checks `SystemLanguageModel.default.availability` and exits with code 2 if unavailable
+2. Reads a JSON object from stdin (`{"system": "...", "user": "...", "max_tokens": N}`)
+3. Creates a `LanguageModelSession` with the system prompt as instructions
+4. Calls `session.respond(to:)` asynchronously
+5. Writes the plain-text response to stdout
+
+The Python `AppleProvider.classify_messages()` calls this binary via `subprocess.run()`,
+which blocks until the process exits — bridging Swift's async API to the synchronous
+Python interface naturally.
+
+### Requirements
+
+- **macOS 26 or later** — `FoundationModels` is only available on macOS 26+
+- **Apple Silicon Mac** — Apple Intelligence requires an M-series chip
+- **Apple Intelligence enabled** — enable in System Settings → Apple Intelligence & Siri
+- **Xcode 26** — required to compile the Swift package (`swift build`)
+
+### Building the CLI tool
+
+```bash
+# From the repo root
+swift build -c release --package-path swift/apple-llm
+
+# Binary is placed at:
+swift/apple-llm/.build/release/apple-llm
+```
+
+The `.build/` directory is gitignored. The binary must be compiled on the machine where
+it will run — it cannot be committed to or distributed from the repo.
+
+### Context window constraint and batch_size
+
+Apple's on-device model has a **4096-token total context window** shared by:
+- System prompt (~1000–1500 tokens for the classification prompt)
+- User content (the batch of notes to classify)
+- Generated response
+
+At ~3–4 characters per token, a single note with a 2000-character body uses roughly
+500–700 tokens. With the system prompt occupying ~1200 tokens, there is room for roughly
+one note and a compact response within the 4096-token ceiling.
+
+**Always set `batch_size: 1`** in `settings.local.yaml` when using the Apple provider:
+
+```yaml
+llm:
+  provider: "apple"
+  batch_size: 1
+```
+
+If the context window is exceeded, the Swift tool exits with code 3 and the Python
+provider raises `RuntimeError("apple_context_overflow")`. The pipeline logs this as a
+batch error and continues.
+
+### Exit codes
+
+| Code | Meaning | Python behavior |
+|------|---------|-----------------|
+| 0 | Success | Returns stdout as response text |
+| 1 | General error | Raises `RuntimeError` with stderr message |
+| 2 | Apple Intelligence unavailable | Calls `sys.exit()` — halts the pipeline |
+| 3 | Context window exceeded | Raises `RuntimeError("apple_context_overflow")` |
+
+### macOS 26.4+ context size API
+
+Apple added `SystemLanguageModel.contextSize` (the available token capacity) and
+`tokenCount(for:)` (precise token counting for a given input) in macOS 26.4, both
+back-deployed to all macOS 26.x versions. A future improvement to the Swift tool could
+use these to compute the exact available response budget dynamically, rather than capping
+`maximumResponseTokens` at 800. The current conservative cap is safe for all macOS 26.x
+versions.

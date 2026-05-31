@@ -27,7 +27,7 @@ toplevel_folder:
   enabled: true          # set to false to place folders at the account root
   name: "Library"        # name of the container folder in Apple Notes
 
-# provider: "anthropic" (default, cloud) or "ollama" (local)
+# provider: "anthropic" (default, cloud), "ollama" (local), or "apple" (on-device, macOS 26+)
 llm:
   provider: "anthropic"
   model: "claude-opus-4-6"        # or claude-sonnet-4-6 for cost/speed tradeoff
@@ -42,6 +42,15 @@ llm:
 #   model: "llama3"           # overridden by OLLAMA_MODEL env var if set
 #   batch_size: 5             # smaller batches work better for local models
 #   request_timeout: 1200     # seconds; default 1200 (20 min) for local inference
+
+# Apple Intelligence example (on-device, macOS 26+, Apple Silicon, Apple Intelligence enabled):
+# Build the CLI tool first — see README for instructions.
+# IMPORTANT: use batch_size: 1 — the 4096-token total context window is tight;
+#            system prompt + notes + response must all fit within that limit.
+# llm:
+#   provider: "apple"
+#   batch_size: 1
+#   apple_llm_binary: "swift/apple-llm/.build/release/apple-llm"  # default path
 
 paths:
   exports_dir: "data/exports"
