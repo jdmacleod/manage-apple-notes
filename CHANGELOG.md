@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `notes discover` synthesis step no longer silently falls back to the raw theme list — the JSON extractor was using `rfind("}")` to find the end of the LLM response, so trailing prose like "I merged {15} themes" caused a parse error every run; replaced with `JSONDecoder.raw_decode()` which stops at the correct boundary
+- Output filenames (`themes-YYYY-MM-DD.json`, `proposal-YYYY-MM-DD.json`, etc.) now use local time to match the export filename, which also uses local time — previously UTC was used, producing a next-day date for users in negative-UTC timezones (e.g. North America evenings)
 - `notes export` now correctly builds full folder paths for notes nested more than one subfolder level deep on macOS Sequoia (`container of folder` is broken on Sequoia; the export script now walks down using `folders of folder` instead)
 - `notes export` now correctly reports `folder_path` for all nesting depths on macOS Sequoia (previously truncated after the first subfolder level)
 
