@@ -76,12 +76,7 @@ def _established_paths(taxonomy: dict) -> list[str]:
     """Return all subfolder paths (depth ≥ 2) currently defined in the taxonomy."""
     fn = taxonomy.get("taxonomy", {})
     return sorted(
-        {
-            p
-            for entry in fn.values()
-            for p in enumerate_paths(entry)
-            if path_depth(p) >= 2
-        }
+        {p for entry in fn.values() for p in enumerate_paths(entry) if path_depth(p) >= 2}
     )
 
 
@@ -236,7 +231,9 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
         console.print(f"\nOutput would be written to: {THEME_MAPS_DIR}/themes-{date_str}.json")
         console.print("\nNext steps after reviewing the theme map:")
         console.print("  1. Edit theme names, merge or split as needed")
-        console.print("  2. Run: uv run notes draft  — generates a draft taxonomy YAML from this theme map")
+        console.print(
+            "  2. Run: uv run notes draft  — generates a draft taxonomy YAML from this theme map"
+        )
         console.print("  3. Review the draft, then copy to config/taxonomy.local.yaml")
         console.print("  4. Run: uv run notes classify")
         RunLogger("discover", logs_dir_path(settings)).finish(
@@ -290,9 +287,7 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
     # category list here prevents the synthesis LLM from drifting to generic names (e.g.
     # "Permanent/Topic" instead of the user's actual folder name "Notes/Topic").
     category_names = [
-        folder_name(fn[key])
-        for key, _ in _CATEGORY_META
-        if key in fn and folder_name(fn[key])
+        folder_name(fn[key]) for key, _ in _CATEGORY_META if key in fn and folder_name(fn[key])
     ]
     top_level_constraint = (
         f"The valid top-level folder names are exactly: {', '.join(category_names)}. "
@@ -402,16 +397,14 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
     }
 
     THEME_MAPS_DIR.mkdir(parents=True, exist_ok=True)
-    date_str = datetime.now(UTC).strftime("%Y-%m-%d")
+    date_str = datetime.now().strftime("%Y-%m-%d")
     output_path = THEME_MAPS_DIR / f"themes-{date_str}.json"
     output_path.write_text(json.dumps(theme_map, indent=2, ensure_ascii=False))
 
     # ── Per-category breakdown ───────────────────────────────────────────────
 
     top_level_folders = {
-        folder_name(fn[key])
-        for key, _ in _CATEGORY_META
-        if key in fn and folder_name(fn[key])
+        folder_name(fn[key]) for key, _ in _CATEGORY_META if key in fn and folder_name(fn[key])
     }
     by_category: dict[str, list[dict]] = {}
     for theme in final_themes:
@@ -420,9 +413,7 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
         bucket = top if top in top_level_folders else "Uncategorised"
         by_category.setdefault(bucket, []).append(theme)
 
-    existing_count = sum(
-        1 for t in final_themes if t.get("suggested_path") in established_set
-    )
+    existing_count = sum(1 for t in final_themes if t.get("suggested_path") in established_set)
     new_count = len(final_themes) - existing_count
 
     console.print(f"\n[green]Done.[/green] Theme map written to [bold]{output_path}[/bold]")
@@ -444,7 +435,9 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
     console.print("\n[bold]Next steps:[/bold]")
     console.print(f"  1. Review {output_path}")
     console.print("  2. Edit theme names, merge or split as needed")
-    console.print("  3. Run: uv run notes draft  — generates a draft taxonomy YAML from this theme map")
+    console.print(
+        "  3. Run: uv run notes draft  — generates a draft taxonomy YAML from this theme map"
+    )
     console.print("  4. Review the draft, then copy to config/taxonomy.local.yaml")
     console.print("  5. Run: uv run notes classify")
 

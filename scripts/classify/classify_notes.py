@@ -197,7 +197,9 @@ def classify_batch_resilient(
             ) + classify_batch_resilient(provider, notes_batch[mid:], system_prompt, settings)
         if is_recoverable:
             # Recursively split down to a single note and it still failed — skip it.
-            console.print(f"[yellow]Warning:[/yellow] skipping note — failed at batch size 1: {exc}")
+            console.print(
+                f"[yellow]Warning:[/yellow] skipping note — failed at batch size 1: {exc}"
+            )
         else:
             console.print(
                 f"[yellow]Warning:[/yellow] skipping batch of {len(notes_batch)}"
@@ -418,7 +420,7 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
         )
 
     PROPOSALS_DIR.mkdir(parents=True, exist_ok=True)
-    date_str = datetime.now(UTC).strftime("%Y-%m-%d")
+    date_str = datetime.now().strftime("%Y-%m-%d")
     output_path = PROPOSALS_DIR / f"proposal-{date_str}.json"
 
     proposal = {

@@ -172,7 +172,7 @@ def run_inbox(dry_run: bool) -> None:
             progress.advance(task)
 
     PROPOSALS_DIR.mkdir(parents=True, exist_ok=True)
-    date_str = datetime.now(UTC).strftime("%Y-%m-%d")
+    date_str = datetime.now().strftime("%Y-%m-%d")
     output_path = PROPOSALS_DIR / f"inbox-{date_str}.json"
 
     proposal = {

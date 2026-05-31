@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -42,7 +42,11 @@ def _insert_subfolder(entry: dict, parts: list[str]) -> bool:
     entry["subfolders"] = subfolders
 
     for i, item in enumerate(subfolders):
-        name = item if isinstance(item, str) else (item.get("name", "") if isinstance(item, dict) else "")
+        name = (
+            item
+            if isinstance(item, str)
+            else (item.get("name", "") if isinstance(item, dict) else "")
+        )
         if name == target:
             if len(parts) == 1:
                 return False  # already exists at this level
@@ -60,9 +64,7 @@ def _insert_subfolder(entry: dict, parts: list[str]) -> bool:
     return True
 
 
-def merge_new_paths(
-    taxonomy: dict, new_paths: list[str]
-) -> tuple[dict, list[str], list[str]]:
+def merge_new_paths(taxonomy: dict, new_paths: list[str]) -> tuple[dict, list[str], list[str]]:
     """Merge new folder paths into a deep copy of the taxonomy.
 
     Returns (updated_taxonomy, added_paths, skipped_paths).
@@ -142,7 +144,9 @@ def run_draft(theme_map_file: str | None, dry_run: bool) -> None:
     settings = load_settings()
     taxonomy = load_taxonomy()
     if not local_taxonomy_exists():
-        console.print("[dim]No existing taxonomy found — draft will suggest folder paths from scratch.[/dim]")
+        console.print(
+            "[dim]No existing taxonomy found — draft will suggest folder paths from scratch.[/dim]"
+        )
 
     theme_map_path = Path(theme_map_file) if theme_map_file else find_latest_theme_map()
     if not theme_map_path.exists():
@@ -179,7 +183,7 @@ def run_draft(theme_map_file: str | None, dry_run: bool) -> None:
     already_present = [p for p in skipped if "/" in p and p.split("/")[0] in category_folders]
     no_match = [p for p in skipped if "/" not in p or p.split("/")[0] not in category_folders]
 
-    date_str = datetime.now(UTC).strftime("%Y-%m-%d")
+    date_str = datetime.now().strftime("%Y-%m-%d")
     output = _build_output(updated_taxonomy, added, skipped, theme_map_path.name, date_str)
 
     if dry_run:
@@ -197,7 +201,11 @@ def run_draft(theme_map_file: str | None, dry_run: bool) -> None:
                 "  then re-run: uv run notes draft"
             )
         RunLogger("draft", logs_dir_path(settings)).finish(
-            summary={"added": len(added), "already_present": len(already_present), "no_match": len(no_match)},
+            summary={
+                "added": len(added),
+                "already_present": len(already_present),
+                "no_match": len(no_match),
+            },
             dry_run=True,
             params={"theme_map": str(theme_map_path)},
         )
@@ -230,7 +238,11 @@ def run_draft(theme_map_file: str | None, dry_run: bool) -> None:
     )
 
     RunLogger("draft", logs_dir_path(settings)).finish(
-        summary={"added": len(added), "already_present": len(already_present), "no_match": len(no_match)},
+        summary={
+            "added": len(added),
+            "already_present": len(already_present),
+            "no_match": len(no_match),
+        },
         dry_run=False,
         params={"theme_map": str(theme_map_path), "output": str(output_path)},
     )

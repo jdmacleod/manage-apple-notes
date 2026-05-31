@@ -100,6 +100,13 @@ class TestExtractJsonObject:
         with pytest.raises(ValueError, match="No JSON object"):
             extract_json_object("No JSON here at all.")
 
+    def test_trailing_braces_in_prose_ignored(self) -> None:
+        # LLM synthesis responses often add prose like "I merged {N} themes" after the JSON.
+        # rfind("}") would have grabbed that brace; raw_decode stops at the correct boundary.
+        text = '{"themes": []}\nI merged {15} themes from {3} batches.'
+        result = extract_json_object(text)
+        assert result == {"themes": []}
+
 
 class TestIsContextOverflow:
     def test_context_window_message(self) -> None:

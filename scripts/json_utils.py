@@ -11,10 +11,14 @@ def extract_json_array(text: str) -> list:
         start = text.find("[", text.find("```"))
     else:
         start = text.find("[")
-    end = text.rfind("]") + 1
-    if start == -1 or end == 0:
+    if start == -1:
         raise ValueError(f"No JSON array found in response:\n{text[:300]}")
-    result: list = json.loads(text[start:end])
+    try:
+        result, _ = json.JSONDecoder().raw_decode(text, start)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"No JSON array found in response:\n{text[:300]}") from exc
+    if not isinstance(result, list):
+        raise ValueError(f"Expected JSON array, got {type(result).__name__}")
     return result
 
 
@@ -24,10 +28,14 @@ def extract_json_object(text: str) -> dict:
         start = text.find("{", text.find("```"))
     else:
         start = text.find("{")
-    end = text.rfind("}") + 1
-    if start == -1 or end == 0:
+    if start == -1:
         raise ValueError(f"No JSON object found in response:\n{text[:300]}")
-    result: dict = json.loads(text[start:end])
+    try:
+        result, _ = json.JSONDecoder().raw_decode(text, start)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"No JSON object found in response:\n{text[:300]}") from exc
+    if not isinstance(result, dict):
+        raise ValueError(f"Expected JSON object, got {type(result).__name__}")
     return result
 
 
