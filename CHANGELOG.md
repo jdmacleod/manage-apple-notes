@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-31
+
 ### Added
 
 - `--json` flag on all 14 commands — routes human-readable output to stderr and emits a compact JSON summary to stdout; designed for LLM agents and shell scripts that need structured results without parsing Rich-formatted text. Shape: `{"status": "ok"|"error", "command": "...", "dry_run": bool, "output_file": "...|null", "log_file": "...|null", "summary": {...}}`. Composable with `--dry-run`.
@@ -73,6 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pre-commit hook blocking accidental commits of personal config and note data
 - Pytest test suite with ≥90% line coverage
 
-[Unreleased]: https://github.com/jdmacleod/manage-apple-notes/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/jdmacleod/manage-apple-notes/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/jdmacleod/manage-apple-notes/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/jdmacleod/manage-apple-notes/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jdmacleod/manage-apple-notes/releases/tag/v0.1.0
