@@ -52,49 +52,53 @@ class TestCliCommands:
         mock = mocker.patch("scripts.cli.run_classify")
         result = runner.invoke(app, ["classify", "--dry-run"])
         assert result.exit_code == 0
-        mock.assert_called_once_with(export_file=None, dry_run=True)
+        mock.assert_called_once_with(export_file=None, dry_run=True, json_output=False)
 
     def test_discover_invokes_run_discover(self, mocker: MagicMock) -> None:
         mock = mocker.patch("scripts.cli.run_discover")
         result = runner.invoke(app, ["discover", "--dry-run"])
         assert result.exit_code == 0
-        mock.assert_called_once_with(export_file=None, dry_run=True)
+        mock.assert_called_once_with(export_file=None, dry_run=True, json_output=False)
 
     def test_audit_invokes_run_audit(self, mocker: MagicMock) -> None:
         mock = mocker.patch("scripts.cli.run_audit")
         result = runner.invoke(app, ["audit", "--dry-run"])
         assert result.exit_code == 0
-        mock.assert_called_once_with(export_file=None, output_override=None, dry_run=True)
+        mock.assert_called_once_with(
+            export_file=None, output_override=None, dry_run=True, json_output=False
+        )
 
     def test_export_invokes_run_export(self, mocker: MagicMock) -> None:
         mock = mocker.patch("scripts.cli.run_export")
         result = runner.invoke(app, ["export"])
         assert result.exit_code == 0
-        mock.assert_called_once()
+        mock.assert_called_once_with(json_output=False)
 
     def test_backup_invokes_run_backup(self, mocker: MagicMock) -> None:
         mock = mocker.patch("scripts.cli.run_backup")
         result = runner.invoke(app, ["backup"])
         assert result.exit_code == 0
-        mock.assert_called_once()
+        mock.assert_called_once_with(json_output=False)
 
     def test_triage_invokes_run_inbox(self, mocker: MagicMock) -> None:
         mock = mocker.patch("scripts.cli.run_inbox")
         result = runner.invoke(app, ["triage", "--dry-run"])
         assert result.exit_code == 0
-        mock.assert_called_once_with(dry_run=True)
+        mock.assert_called_once_with(dry_run=True, json_output=False)
 
     def test_sync_hubs_invokes_run_sync_hubs(self, mocker: MagicMock) -> None:
         mock = mocker.patch("scripts.cli.run_sync_hubs")
         result = runner.invoke(app, ["sync-hubs", "--dry-run"])
         assert result.exit_code == 0
-        mock.assert_called_once_with(export_file=None, dry_run=True)
+        mock.assert_called_once_with(export_file=None, dry_run=True, json_output=False)
 
     def test_dedup_invokes_run_dedup(self, mocker: MagicMock) -> None:
         mock = mocker.patch("scripts.cli.run_dedup")
         result = runner.invoke(app, ["dedup", "--dry-run"])
         assert result.exit_code == 0
-        mock.assert_called_once_with(export_file=None, proposal_file=None, dry_run=True)
+        mock.assert_called_once_with(
+            export_file=None, proposal_file=None, dry_run=True, json_output=False
+        )
 
     def test_move_invokes_run_apply(self, mocker: MagicMock, tmp_path: Path) -> None:
         mock = mocker.patch("scripts.cli.run_apply")
@@ -116,10 +120,14 @@ class TestCliCommands:
         mock = mocker.patch("scripts.cli.run_repair_restored")
         result = runner.invoke(app, ["repair", "--dry-run"])
         assert result.exit_code == 0
-        mock.assert_called_once_with(missing_file=None, old_export_file=None, dry_run=True)
+        mock.assert_called_once_with(
+            missing_file=None, old_export_file=None, dry_run=True, json_output=False
+        )
 
     def test_restore_invokes_run_restore(self, mocker: MagicMock) -> None:
         mock = mocker.patch("scripts.cli.run_restore")
         result = runner.invoke(app, ["restore", "--dry-run"])
         assert result.exit_code == 0
-        mock.assert_called_once_with(backup_file=None, missing_file=None, dry_run=True)
+        mock.assert_called_once_with(
+            backup_file=None, missing_file=None, dry_run=True, json_output=False
+        )

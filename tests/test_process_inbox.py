@@ -11,6 +11,57 @@ import pytest
 from scripts.maintenance.process_inbox import run_inbox
 
 
+class TestRunInboxJsonOutput:
+    def test_json_output_no_inbox_emits_error(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        taxonomy_no_inbox = {"taxonomy": {}}
+        mocker.patch(
+            "scripts.maintenance.process_inbox.load_settings", return_value=minimal_settings
+        )
+        mocker.patch(
+            "scripts.maintenance.process_inbox.load_taxonomy", return_value=taxonomy_no_inbox
+        )
+
+        with pytest.raises(SystemExit):
+            run_inbox(dry_run=False, json_output=True)
+
+        out = json.loads(capsys.readouterr().out)
+        assert out["status"] == "error"
+        assert out["command"] == "triage"
+
+    def test_json_output_no_notes_emits_summary(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        notes: list = []
+        export_file = tmp_path / "notes-test.json"
+        export_file.write_text(json.dumps(notes))
+
+        taxonomy = {"taxonomy": {"inbox": {"folder": "Inbox"}}}
+        mocker.patch(
+            "scripts.maintenance.process_inbox.load_settings", return_value=minimal_settings
+        )
+        mocker.patch("scripts.maintenance.process_inbox.load_taxonomy", return_value=taxonomy)
+        mocker.patch(
+            "scripts.maintenance.process_inbox.find_latest_export", return_value=export_file
+        )
+
+        run_inbox(dry_run=False, json_output=True)
+
+        out = json.loads(capsys.readouterr().out)
+        assert out["status"] == "ok"
+        assert out["command"] == "triage"
+        assert out["summary"]["notes_processed"] == 0
+
+
 class TestRunInbox:
     def test_no_inbox_folder_exits(
         self,

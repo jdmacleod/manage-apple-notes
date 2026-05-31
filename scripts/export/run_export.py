@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.live import Live
 
 from scripts.config import find_latest_export, load_settings
+from scripts.json_output import emit_result
 from scripts.run_logger import RunLogger, logs_dir_path
 
 console = Console()
@@ -60,7 +61,13 @@ def _read_export_progress() -> str:
         return ""
 
 
-def run_export() -> Path:
+def run_export(json_output: bool = False, _emit: bool = True) -> Path:
+    """Export Apple Notes.
+
+    _emit controls whether a JSON result is printed when json_output=True.
+    Set _emit=False when called from run_backup (which emits its own JSON).
+    """
+    con = Console(stderr=True) if json_output else console
     script = REPO_ROOT / "scripts" / "export" / "export-notes.applescript"
     settings = load_settings()
 
@@ -83,7 +90,7 @@ def run_export() -> Path:
     )
 
     account_label = f" [dim]({primary_account})[/dim]" if primary_account else ""
-    with Live(console=console, refresh_per_second=5, transient=True) as live:
+    with Live(console=con, refresh_per_second=5, transient=True) as live:
         while proc.poll() is None:
             counter = _read_export_progress()
             live.update(f"Exporting notes from Apple Notes…{account_label} {counter}")
@@ -95,7 +102,10 @@ def run_export() -> Path:
 
     if proc.returncode != 0:
         error = (stderr or "unknown error").strip()
-        console.print(f"[red]Export failed:[/red]\n{error}")
+        if json_output and _emit:
+            emit_result("export", status="error", error=error)
+        else:
+            con.print(f"[red]Export failed:[/red]\n{error}")
         raise SystemExit(1)
     export_path = find_latest_export()
     notes = json.loads(export_path.read_text())
@@ -108,7 +118,7 @@ def run_export() -> Path:
         patched = _strip_container_prefix(notes, container_name)
         needs_write = True
         if patched:
-            console.print(
+            con.print(
                 f"  [dim]Stripped '{container_name}/' prefix from {patched} folder path(s)[/dim]"
             )
 
@@ -118,7 +128,7 @@ def run_export() -> Path:
         notes, excluded = _filter_primary_account(notes, primary_account)
         if excluded:
             needs_write = True
-            console.print(
+            con.print(
                 f"  [dim]Excluded {excluded} note(s) from other accounts "
                 f"(primary_account: '{primary_account}')[/dim]"
             )
@@ -126,31 +136,41 @@ def run_export() -> Path:
     if needs_write:
         export_path.write_text(json.dumps(notes, indent=2, ensure_ascii=False))
 
-    console.print(f"[green]Exported[/green] {len(notes)} notes → {export_path}")
-    RunLogger("export", logs_dir_path(settings)).finish(
-        summary={"notes_exported": len(notes)},
+    con.print(f"[green]Exported[/green] {len(notes)} notes → {export_path}")
+    export_summary: dict[str, object] = {"notes_exported": len(notes)}
+    log_file = RunLogger("export", logs_dir_path(settings)).finish(
+        summary=export_summary,
         params={"export_file": str(export_path)},
     )
+    if json_output and _emit:
+        emit_result("export", output_file=export_path, log_file=log_file, summary=export_summary)
     return export_path
 
 
-def run_backup() -> None:
+def run_backup(json_output: bool = False) -> None:
     """Export notes and copy to data/backups/ with a timestamped filename."""
-    export_path = run_export()
+    con = Console(stderr=True) if json_output else console
+    export_path = run_export(json_output=json_output, _emit=False)
     backup_dir = REPO_ROOT / "data" / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
     backup_path = backup_dir / f"backup-{timestamp}.json"
     shutil.copy2(export_path, backup_path)
-    console.print(f"[green]Backup saved[/green] → {backup_path}")
-    console.print(
+    con.print(f"[green]Backup saved[/green] → {backup_path}")
+    con.print(
         "[dim]Note: this backup captures text content only — images, attachments, "
         "and formatting are not included. For full media backup use Time Machine or "
         "a clone of ~/Library/Group Containers/group.com.apple.notes/[/dim]"
     )
     settings = load_settings()
     notes = json.loads(backup_path.read_text())
-    RunLogger("backup", logs_dir_path(settings)).finish(
-        summary={"notes_exported": len(notes), "backup_path": str(backup_path)},
+    backup_summary: dict[str, object] = {
+        "notes_exported": len(notes),
+        "backup_path": str(backup_path),
+    }
+    log_file = RunLogger("backup", logs_dir_path(settings)).finish(
+        summary=backup_summary,
         params={"export_file": str(export_path)},
     )
+    if json_output:
+        emit_result("backup", output_file=backup_path, log_file=log_file, summary=backup_summary)

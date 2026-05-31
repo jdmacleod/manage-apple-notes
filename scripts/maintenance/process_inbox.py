@@ -24,23 +24,29 @@ from scripts.classify.classify_notes import (
 )
 from scripts.config import find_latest_export, load_settings, load_taxonomy
 from scripts.folder_utils import folder_name
+from scripts.json_output import emit_result
 from scripts.providers import get_provider
 from scripts.run_logger import RunLogger, estimate_duration, logs_dir_path
 
 console = Console()
 
 
-def run_inbox(dry_run: bool) -> None:
+def run_inbox(dry_run: bool, json_output: bool = False) -> None:
+    con = Console(stderr=True) if json_output else console
     settings = load_settings()
     taxonomy = load_taxonomy()
     system_prompt = inject_taxonomy(load_prompt_template(), taxonomy, settings)
 
     inbox_folder = folder_name(taxonomy.get("taxonomy", {}).get("inbox", ""))
     if not inbox_folder or inbox_folder.startswith("["):
-        console.print(
-            "[red]Inbox folder not configured.[/red] "
-            "Set 'taxonomy.inbox' in config/taxonomy.local.yaml."
-        )
+        msg = "Inbox folder not configured. Set 'taxonomy.inbox' in config/taxonomy.local.yaml."
+        if json_output:
+            emit_result("triage", status="error", dry_run=dry_run, error=msg)
+        else:
+            con.print(
+                "[red]Inbox folder not configured.[/red] "
+                "Set 'taxonomy.inbox' in config/taxonomy.local.yaml."
+            )
         raise SystemExit(1)
 
     export_path = find_latest_export()
@@ -48,8 +54,10 @@ def run_inbox(dry_run: bool) -> None:
     notes = [n for n in all_notes if n.get("folder", "") == inbox_folder]
 
     if not notes:
-        console.print(f"[yellow]No notes found in inbox folder[/yellow] {inbox_folder!r}")
-        console.print(f"(Export: {export_path})")
+        con.print(f"[yellow]No notes found in inbox folder[/yellow] {inbox_folder!r}")
+        con.print(f"(Export: {export_path})")
+        if json_output:
+            emit_result("triage", dry_run=dry_run, summary={"notes_processed": 0, "moves": 0})
         return
 
     llm_cfg = settings.get("llm") or settings.get("claude", {})
@@ -70,29 +78,37 @@ def run_inbox(dry_run: bool) -> None:
         )
         date_str = datetime.now().strftime("%Y-%m-%d")
 
-        console.print("[bold]Dry run — no API calls will be made.[/bold]\n")
-        console.print(f"Inbox folder: {inbox_folder!r}  (from taxonomy config)")
-        console.print(f"Notes found:  {len(notes)}")
-        console.print(f"Batches:      {len(batches)}  (batch size: {batch_size})\n")
-        console.print(f"Provider:     {provider.name}")
-        console.print(f"Model:        {model}")
-        console.print(f"Est. tokens:  ~{est_total_tokens:,}")
-        console.print(f"Est. cost:    {cost_str}")
+        con.print("[bold]Dry run — no API calls will be made.[/bold]\n")
+        con.print(f"Inbox folder: {inbox_folder!r}  (from taxonomy config)")
+        con.print(f"Notes found:  {len(notes)}")
+        con.print(f"Batches:      {len(batches)}  (batch size: {batch_size})\n")
+        con.print(f"Provider:     {provider.name}")
+        con.print(f"Model:        {model}")
+        con.print(f"Est. tokens:  ~{est_total_tokens:,}")
+        con.print(f"Est. cost:    {cost_str}")
         estimate = estimate_duration("triage", len(notes), logs_dir_path(settings))
         if estimate:
-            console.print(f"Est. time:    {estimate}")
-        console.print(f"\nOutput would be written to: {PROPOSALS_DIR}/inbox-{date_str}.json")
-        RunLogger("triage", logs_dir_path(settings)).finish(
+            con.print(f"Est. time:    {estimate}")
+        con.print(f"\nOutput would be written to: {PROPOSALS_DIR}/inbox-{date_str}.json")
+        log_file = RunLogger("triage", logs_dir_path(settings)).finish(
             summary={"notes_processed": len(notes), "batches": len(batches)},
             dry_run=True,
             params={"model": model, "batch_size": batch_size},
         )
+        if json_output:
+            emit_result(
+                "triage",
+                dry_run=True,
+                output_file=PROPOSALS_DIR / f"inbox-{date_str}.json",
+                log_file=log_file,
+                summary={"notes_processed": len(notes), "batches": len(batches)},
+            )
         return
 
     logger = RunLogger("triage", logs_dir_path(settings))
     estimate = estimate_duration("triage", len(notes), logs_dir_path(settings))
     if estimate:
-        console.print(f"[dim]Estimated duration: {estimate}[/dim]")
+        con.print(f"[dim]Estimated duration: {estimate}[/dim]")
 
     review_folder = folder_name(taxonomy.get("taxonomy", {}).get("review", ""))
 
@@ -108,7 +124,7 @@ def run_inbox(dry_run: bool) -> None:
         TaskProgressColumn(),
         TimeElapsedColumn(),
         TimeRemainingColumn(elapsed_when_finished=True),
-        console=console,
+        console=con,
         speed_estimate_period=3600.0,
     ) as progress:
         task = progress.add_task("Processing inbox...", total=len(batches))
@@ -185,19 +201,22 @@ def run_inbox(dry_run: bool) -> None:
     }
     output_path.write_text(json.dumps(proposal, indent=2, ensure_ascii=False))
 
-    console.print(f"\n[green]Done.[/green] Proposal written to [bold]{output_path}[/bold]")
-    console.print(f"  Moves:        {len(moves)}")
-    console.print(f"  Needs review: {len(needs_review)}")
-    console.print(f"  No change:    {len(no_change)}")
+    con.print(f"\n[green]Done.[/green] Proposal written to [bold]{output_path}[/bold]")
+    con.print(f"  Moves:        {len(moves)}")
+    con.print(f"  Needs review: {len(needs_review)}")
+    con.print(f"  No change:    {len(no_change)}")
 
-    logger.finish(
-        summary={
-            "notes_processed": len(notes),
-            "moves": len(moves),
-            "needs_review": len(needs_review),
-            "no_change": len(no_change),
-            "batch_errors": batch_errors,
-        },
+    summary: dict[str, object] = {
+        "notes_processed": len(notes),
+        "moves": len(moves),
+        "needs_review": len(needs_review),
+        "no_change": len(no_change),
+        "batch_errors": batch_errors,
+    }
+    log_file = logger.finish(
+        summary=summary,
         dry_run=False,
         params={"model": model, "batch_size": batch_size},
     )
+    if json_output:
+        emit_result("triage", output_file=output_path, log_file=log_file, summary=summary)

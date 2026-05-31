@@ -8,6 +8,7 @@ from pathlib import Path
 from rich.console import Console
 
 from scripts.config import load_settings
+from scripts.json_output import emit_result
 from scripts.run_logger import RunLogger, logs_dir_path
 
 console = Console()
@@ -23,18 +24,27 @@ def find_latest_proposal() -> Path:
     return files[-1]
 
 
-def run_apply(proposal_file: str | None, dry_run: bool) -> None:
+def run_apply(proposal_file: str | None, dry_run: bool, json_output: bool = False) -> None:
+    con = Console(stderr=True) if json_output else console
+
     if proposal_file:
         path = Path(proposal_file)
     else:
         try:
             path = find_latest_proposal()
         except FileNotFoundError as exc:
-            console.print(f"[red]{exc}[/red]")
+            if json_output:
+                emit_result("move", status="error", dry_run=dry_run, error=str(exc))
+            else:
+                con.print(f"[red]{exc}[/red]")
             raise SystemExit(1) from exc
 
     if not path.exists():
-        console.print(f"[red]Proposal not found:[/red] {path}")
+        msg = f"Proposal not found: {path}"
+        if json_output:
+            emit_result("move", status="error", dry_run=dry_run, error=msg)
+        else:
+            con.print(f"[red]Proposal not found:[/red] {path}")
         raise SystemExit(1)
 
     settings = load_settings()
@@ -55,31 +65,30 @@ def run_apply(proposal_file: str | None, dry_run: bool) -> None:
     for line in iter(proc.stdout.readline, ""):
         line = line.rstrip()
         if line.startswith("[MOVED]"):
-            console.print(f"[green]{line}[/green]")
+            con.print(f"[green]{line}[/green]")
             logger.event("move", line=line, status="MOVED")
             moved += 1
         elif line.startswith("[SKIP]"):
-            console.print(f"[yellow]{line}[/yellow]")
+            con.print(f"[yellow]{line}[/yellow]")
             logger.event("move", line=line, status="SKIP")
             skipped += 1
         elif line.startswith("[AMBIGUOUS]"):
-            console.print(f"[yellow]{line}[/yellow]")
+            con.print(f"[yellow]{line}[/yellow]")
             logger.event("move", line=line, status="AMBIGUOUS")
             skipped += 1
         elif line.startswith("[DRY RUN]"):
-            console.print(f"[cyan]{line}[/cyan]")
+            con.print(f"[cyan]{line}[/cyan]")
         elif line.startswith("[ERROR]"):
-            console.print(f"[red]{line}[/red]")
+            con.print(f"[red]{line}[/red]")
             logger.event("move", line=line, status="ERROR")
             logger.error(line)
             errors += 1
         elif line:
-            console.print(line)
+            con.print(line)
     proc.wait()
-    logger.finish(
-        summary={"moved": moved, "skipped": skipped, "errors": errors},
-        dry_run=dry_run,
-        params={"proposal_file": str(path)},
-    )
+    summary: dict[str, object] = {"moved": moved, "skipped": skipped, "errors": errors}
+    log_file = logger.finish(summary=summary, dry_run=dry_run, params={"proposal_file": str(path)})
+    if json_output:
+        emit_result("move", dry_run=dry_run, log_file=log_file, summary=summary)
     if proc.returncode != 0:
         raise SystemExit(proc.returncode)

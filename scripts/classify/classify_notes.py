@@ -31,6 +31,7 @@ from scripts.folder_utils import (
     nesting_mode,
     path_depth,
 )
+from scripts.json_output import emit_result
 from scripts.json_utils import extract_json_array, is_context_overflow
 from scripts.providers import LLMProvider, get_provider
 from scripts.run_logger import RunLogger, estimate_duration, logs_dir_path
@@ -177,8 +178,10 @@ def classify_batch_resilient(
     notes_batch: list[dict],
     system_prompt: str,
     settings: dict,
+    con: Console | None = None,
 ) -> list[dict]:
     """Classify a batch; on context overflow or truncated output, split and retry."""
+    _con = con or console
     if not notes_batch:
         return []
     try:
@@ -189,19 +192,18 @@ def classify_batch_resilient(
         )
         if is_recoverable and len(notes_batch) > 1:
             mid = len(notes_batch) // 2
-            console.print(
+            _con.print(
                 f"[yellow]Batch failed ({type(exc).__name__}) — splitting ({len(notes_batch)} → {mid}+{len(notes_batch) - mid})[/yellow]"
             )
             return classify_batch_resilient(
-                provider, notes_batch[:mid], system_prompt, settings
-            ) + classify_batch_resilient(provider, notes_batch[mid:], system_prompt, settings)
-        if is_recoverable:
-            # Recursively split down to a single note and it still failed — skip it.
-            console.print(
-                f"[yellow]Warning:[/yellow] skipping note — failed at batch size 1: {exc}"
+                provider, notes_batch[:mid], system_prompt, settings, con=_con
+            ) + classify_batch_resilient(
+                provider, notes_batch[mid:], system_prompt, settings, con=_con
             )
+        if is_recoverable:
+            _con.print(f"[yellow]Warning:[/yellow] skipping note — failed at batch size 1: {exc}")
         else:
-            console.print(
+            _con.print(
                 f"[yellow]Warning:[/yellow] skipping batch of {len(notes_batch)}"
                 f" ({type(exc).__name__}) — {exc}"
             )
@@ -219,11 +221,12 @@ def _build_folder_path(folder: str, subfolder: str | None) -> str:
     return f"{folder}/{subfolder}" if subfolder else folder
 
 
-def run_classify(export_file: str | None, dry_run: bool) -> None:
+def run_classify(export_file: str | None, dry_run: bool, json_output: bool = False) -> None:
+    con = Console(stderr=True) if json_output else console
     settings = load_settings()
     taxonomy = load_taxonomy()
     if not local_taxonomy_exists():
-        console.print(
+        con.print(
             "[yellow]Warning:[/yellow] config/taxonomy.local.yaml not found — "
             "folder names are example placeholders.\n"
             "  Proposals will reference folders that do not exist in Apple Notes.\n"
@@ -234,7 +237,11 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
 
     export_path = Path(export_file) if export_file else find_latest_export()
     if not export_path.exists():
-        console.print(f"[red]Export file not found:[/red] {export_path}")
+        msg = f"Export file not found: {export_path}"
+        if json_output:
+            emit_result("classify", status="error", dry_run=dry_run, error=msg)
+        else:
+            con.print(f"[red]Export file not found:[/red] {export_path}")
         raise SystemExit(1)
 
     all_notes = json.loads(export_path.read_text())
@@ -260,7 +267,7 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
         archive_notes = [n for n in notes if _is_archive(n)]
         notes = [n for n in notes if not _is_archive(n)]
         if archive_notes:
-            console.print(
+            con.print(
                 f"  [dim]Skipping {len(archive_notes)} Archive note(s) "
                 f"(classify.exclude_archive = true)[/dim]"
             )
@@ -284,29 +291,37 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
         )
         date_str = datetime.now().strftime("%Y-%m-%d")
 
-        console.print("[bold]Dry run — no API calls will be made.[/bold]\n")
-        console.print(f"Export:       {export_path}")
-        console.print(f"Notes found:  {len(all_notes)}  ({len(notes)} after filtering)")
-        console.print(f"Batches:      {len(batches)}  (batch size: {batch_size})\n")
-        console.print(f"Provider:     {provider.name}")
-        console.print(f"Model:        {model}")
-        console.print(f"Est. tokens:  ~{est_total_tokens:,}  (~{est_tokens_per_batch:,}/batch)")
-        console.print(f"Est. cost:    {cost_str}")
+        con.print("[bold]Dry run — no API calls will be made.[/bold]\n")
+        con.print(f"Export:       {export_path}")
+        con.print(f"Notes found:  {len(all_notes)}  ({len(notes)} after filtering)")
+        con.print(f"Batches:      {len(batches)}  (batch size: {batch_size})\n")
+        con.print(f"Provider:     {provider.name}")
+        con.print(f"Model:        {model}")
+        con.print(f"Est. tokens:  ~{est_total_tokens:,}  (~{est_tokens_per_batch:,}/batch)")
+        con.print(f"Est. cost:    {cost_str}")
         estimate = estimate_duration("classify", len(notes), logs_dir_path(settings))
         if estimate:
-            console.print(f"Est. time:    {estimate}")
-        console.print(f"\nOutput would be written to: {PROPOSALS_DIR}/proposal-{date_str}.json")
-        RunLogger("classify", logs_dir_path(settings)).finish(
+            con.print(f"Est. time:    {estimate}")
+        con.print(f"\nOutput would be written to: {PROPOSALS_DIR}/proposal-{date_str}.json")
+        log_file = RunLogger("classify", logs_dir_path(settings)).finish(
             summary={"notes_processed": len(notes), "batches": len(batches)},
             dry_run=True,
             params={"export_file": str(export_path), "model": model, "batch_size": batch_size},
         )
+        if json_output:
+            emit_result(
+                "classify",
+                dry_run=True,
+                output_file=PROPOSALS_DIR / f"proposal-{date_str}.json",
+                log_file=log_file,
+                summary={"notes_processed": len(notes), "batches": len(batches)},
+            )
         return
 
     logger = RunLogger("classify", logs_dir_path(settings))
     estimate = estimate_duration("classify", len(notes), logs_dir_path(settings))
     if estimate:
-        console.print(f"[dim]Estimated duration: {estimate}[/dim]")
+        con.print(f"[dim]Estimated duration: {estimate}[/dim]")
 
     review_folder = folder_name(fn.get("review", ""))
 
@@ -331,12 +346,12 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
         TaskProgressColumn(),
         TimeElapsedColumn(),
         TimeRemainingColumn(elapsed_when_finished=True),
-        console=console,
+        console=con,
         speed_estimate_period=3600.0,
     ) as progress:
         task = progress.add_task("Classifying...", total=len(batches))
         for i, batch in enumerate(batches):
-            results = classify_batch_resilient(provider, batch, system_prompt, settings)
+            results = classify_batch_resilient(provider, batch, system_prompt, settings, con=con)
             if not results:
                 logger.event("batch", batch=i + 1, count=len(batch), status="error")
                 batch_errors += 1
@@ -432,19 +447,22 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
     }
     output_path.write_text(json.dumps(proposal, indent=2, ensure_ascii=False))
 
-    console.print(f"\n[green]Done.[/green] Proposal written to [bold]{output_path}[/bold]")
-    console.print(f"  Moves:        {len(moves)}")
-    console.print(f"  Needs review: {len(needs_review)}")
-    console.print(f"  No change:    {len(no_change)}")
+    con.print(f"\n[green]Done.[/green] Proposal written to [bold]{output_path}[/bold]")
+    con.print(f"  Moves:        {len(moves)}")
+    con.print(f"  Needs review: {len(needs_review)}")
+    con.print(f"  No change:    {len(no_change)}")
 
-    logger.finish(
-        summary={
-            "notes_processed": len(notes),
-            "moves": len(moves),
-            "needs_review": len(needs_review),
-            "no_change": len(no_change),
-            "batch_errors": batch_errors,
-        },
+    summary: dict[str, object] = {
+        "notes_processed": len(notes),
+        "moves": len(moves),
+        "needs_review": len(needs_review),
+        "no_change": len(no_change),
+        "batch_errors": batch_errors,
+    }
+    log_file = logger.finish(
+        summary=summary,
         dry_run=False,
         params={"export_file": str(export_path), "model": model, "batch_size": batch_size},
     )
+    if json_output:
+        emit_result("classify", output_file=output_path, log_file=log_file, summary=summary)

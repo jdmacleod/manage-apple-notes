@@ -17,6 +17,7 @@ from pathlib import Path
 from rich.console import Console
 
 from scripts.config import load_settings
+from scripts.json_output import emit_result
 from scripts.run_logger import RunLogger, logs_dir_path
 
 console = Console()
@@ -81,7 +82,9 @@ def run_repair_restored(
     missing_file: str | None = None,
     old_export_file: str | None = None,
     dry_run: bool = False,
+    json_output: bool = False,
 ) -> None:
+    con = Console(stderr=True) if json_output else console
     settings = load_settings()
     logger = RunLogger("repair", logs_dir_path(settings))
     # Resolve missing-notes file
@@ -91,18 +94,20 @@ def run_repair_restored(
     else:
         missing_path = _find_missing_notes_file()
         if missing_path is None:
-            console.print(
-                "[red]No missing-notes-*.json file found in data/. Pass --missing-file explicitly.[/red]"
-            )
+            msg = "No missing-notes-*.json file found in data/. Pass --missing-file explicitly."
+            if json_output:
+                emit_result("repair", status="error", dry_run=dry_run, error=msg)
+            else:
+                con.print(f"[red]{msg}[/red]")
             raise SystemExit(1)
 
-    console.print(f"Missing notes file: [dim]{missing_path.name}[/dim]")
+    con.print(f"Missing notes file: [dim]{missing_path.name}[/dim]")
     with open(missing_path) as f:
         missing_data = json.load(f)
     missing_notes = (
         missing_data.get("notes", missing_data) if isinstance(missing_data, dict) else missing_data
     )
-    console.print(f"  {len(missing_notes)} notes listed as restored")
+    con.print(f"  {len(missing_notes)} notes listed as restored")
 
     # Resolve old export (source of original content)
     old_path: Path | None
@@ -113,12 +118,14 @@ def run_repair_restored(
         current = current_exports[0] if current_exports else None
         old_path = _find_old_export(current) if current else None
         if old_path is None:
-            console.print(
-                "[red]Could not find an earlier export to use as source. Pass --old-export explicitly.[/red]"
-            )
+            msg = "Could not find an earlier export to use as source. Pass --old-export explicitly."
+            if json_output:
+                emit_result("repair", status="error", dry_run=dry_run, error=msg)
+            else:
+                con.print(f"[red]{msg}[/red]")
             raise SystemExit(1)
 
-    console.print(f"Original content source: [dim]{old_path.name}[/dim]")
+    con.print(f"Original content source: [dim]{old_path.name}[/dim]")
     with open(old_path) as f:
         old_notes_list: list[dict] = json.load(f)
 
@@ -133,9 +140,9 @@ def run_repair_restored(
                 old_by_title[t].append(body)
 
     if dry_run:
-        console.print("[dim](dry-run — no writes)[/dim]")
+        con.print("[dim](dry-run — no writes)[/dim]")
 
-    console.print()
+    con.print()
 
     repaired = skipped = errors = 0
     seen_titles: set[str] = set()
@@ -148,7 +155,7 @@ def run_repair_restored(
 
         bodies = old_by_title.get(title)
         if not bodies:
-            console.print(f"  [yellow]SKIP[/yellow]  {title!r} — not found in old export")
+            con.print(f"  [yellow]SKIP[/yellow]  {title!r} — not found in old export")
             skipped += 1
             continue
 
@@ -159,31 +166,34 @@ def run_repair_restored(
         status = _repair_note(title, new_html, dry_run)
 
         if "error" in status.lower():
-            console.print(f"  [red]ERROR[/red] {title!r} — {status}")
+            con.print(f"  [red]ERROR[/red] {title!r} — {status}")
             logger.event("note", title=title, status="ERROR", detail=status)
             logger.error(f"{title!r}: {status}")
             errors += 1
         elif dry_run:
             lines = original_body.count("\n") + 1
-            console.print(f"  [cyan][DRY RUN][/cyan] {title!r} — {lines} lines → HTML")
+            con.print(f"  [cyan][DRY RUN][/cyan] {title!r} — {lines} lines → HTML")
             logger.event("note", title=title, status="DRY_RUN")
             repaired += 1
         else:
-            console.print(f"  [green]OK[/green]    {title!r} — {status}")
+            con.print(f"  [green]OK[/green]    {title!r} — {status}")
             logger.event("note", title=title, status="REPAIRED")
             repaired += 1
 
-    console.print(
+    con.print(
         f"\n[bold]Done.[/bold] {repaired} repaired"
         + (f", {skipped} skipped (not in old export)" if skipped else "")
         + (f", {errors} errors" if errors else "")
         + ("." if not dry_run else " (dry-run — no changes written).")
     )
-    logger.finish(
-        summary={"repaired": repaired, "skipped": skipped, "errors": errors},
+    repair_summary: dict[str, object] = {"repaired": repaired, "skipped": skipped, "errors": errors}
+    log_file = logger.finish(
+        summary=repair_summary,
         dry_run=dry_run,
         params={
             "missing_file": str(missing_path) if missing_path else None,
             "old_export_file": str(old_path) if old_path else None,
         },
     )
+    if json_output:
+        emit_result("repair", dry_run=dry_run, log_file=log_file, summary=repair_summary)

@@ -239,3 +239,139 @@ class TestRunRevert:
 
         run_revert(proposal_file=None, dry_run=False)
         mock_popen.assert_called_once()
+
+    def test_json_output_emits_json_to_stdout(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        proposal = tmp_path / "proposal-test.json"
+        proposal.write_text(
+            json.dumps(
+                {
+                    "moves": [
+                        {
+                            "id": "id1",
+                            "title": "Note",
+                            "current_folder": "Inbox",
+                            "proposed_folder_path": "Resources/Tech",
+                        }
+                    ]
+                }
+            )
+        )
+
+        mock_popen = mocker.patch("subprocess.Popen")
+        mock_proc = MagicMock()
+        mock_proc.stdout.readline.side_effect = ["[MOVED] Note\n", ""]
+        mock_proc.returncode = 0
+        mock_proc.wait.return_value = 0
+        mock_popen.return_value = mock_proc
+
+        mocker.patch("scripts.execute.run_revert.load_settings", return_value=minimal_settings)
+
+        run_revert(proposal_file=str(proposal), dry_run=False, json_output=True)
+
+        out = json.loads(capsys.readouterr().out)
+        assert out["status"] == "ok"
+        assert out["command"] == "revert"
+        assert out["summary"]["moved"] == 1
+
+    def test_json_output_error_emits_json(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        mocker.patch("scripts.execute.run_revert.load_settings", return_value=minimal_settings)
+
+        with pytest.raises(SystemExit):
+            run_revert(
+                proposal_file=str(tmp_path / "missing.json"), dry_run=False, json_output=True
+            )
+
+        out = json.loads(capsys.readouterr().out)
+        assert out["status"] == "error"
+        assert out["command"] == "revert"
+
+    def test_no_proposals_found_raises(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        """Covers the except FileNotFoundError branch when json_output=True."""
+        mocker.patch("scripts.execute.run_revert.load_settings", return_value=minimal_settings)
+        mocker.patch(
+            "scripts.execute.run_revert.find_latest_proposal",
+            side_effect=FileNotFoundError("No proposals found"),
+        )
+
+        with pytest.raises(SystemExit):
+            run_revert(proposal_file=None, dry_run=True, json_output=True)
+
+        out = json.loads(capsys.readouterr().out)
+        assert out["status"] == "error"
+        assert "No proposals" in out["error"]
+
+    def test_skip_line_increments_skipped(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+    ) -> None:
+        """Covers the [SKIP] branch in the output-reading loop."""
+        proposal = tmp_path / "proposal-test.json"
+        proposal.write_text(
+            json.dumps(
+                {
+                    "moves": [
+                        {
+                            "id": "id1",
+                            "title": "Note",
+                            "current_folder": "Inbox",
+                            "proposed_folder_path": "Resources/Tech",
+                        }
+                    ]
+                }
+            )
+        )
+
+        mock_popen = mocker.patch("subprocess.Popen")
+        mock_proc = MagicMock()
+        mock_proc.stdout.readline.side_effect = [
+            "[SKIP] Note: already in Inbox\n",
+            "",
+        ]
+        mock_proc.returncode = 0
+        mock_proc.wait.return_value = 0
+        mock_popen.return_value = mock_proc
+
+        mocker.patch("scripts.execute.run_revert.load_settings", return_value=minimal_settings)
+
+        run_revert(proposal_file=str(proposal), dry_run=False)
+        mock_popen.assert_called_once()
+
+    def test_json_output_empty_moves_emits_json(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        proposal = tmp_path / "proposal-test.json"
+        proposal.write_text(json.dumps({"moves": []}))
+
+        mocker.patch("subprocess.Popen")
+        mocker.patch("scripts.execute.run_revert.load_settings", return_value=minimal_settings)
+
+        run_revert(proposal_file=str(proposal), dry_run=False, json_output=True)
+
+        out = json.loads(capsys.readouterr().out)
+        assert out["status"] == "ok"
+        assert out["command"] == "revert"
+        assert out["summary"]["moved"] == 0

@@ -164,3 +164,91 @@ class TestRunApply:
 
         with pytest.raises(SystemExit):
             run_apply(proposal_file=str(proposal), dry_run=False)
+
+    def test_json_output_emits_json_to_stdout(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        proposal = tmp_path / "proposal-test.json"
+        proposal.write_text(json.dumps({"moves": []}))
+
+        mock_popen = mocker.patch("subprocess.Popen")
+        mock_proc = MagicMock()
+        mock_proc.stdout.readline.side_effect = ["[MOVED] Note 1\n", ""]
+        mock_proc.returncode = 0
+        mock_proc.wait.return_value = 0
+        mock_popen.return_value = mock_proc
+
+        mocker.patch("scripts.execute.run_apply.load_settings", return_value=minimal_settings)
+
+        run_apply(proposal_file=str(proposal), dry_run=False, json_output=True)
+
+        out = json.loads(capsys.readouterr().out)
+        assert out["status"] == "ok"
+        assert out["command"] == "move"
+        assert out["dry_run"] is False
+        assert out["summary"]["moved"] == 1
+
+    def test_json_output_error_path_emits_json(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        mocker.patch("scripts.execute.run_apply.load_settings", return_value=minimal_settings)
+
+        with pytest.raises(SystemExit):
+            run_apply(proposal_file=str(tmp_path / "missing.json"), dry_run=False, json_output=True)
+
+        out = json.loads(capsys.readouterr().out)
+        assert out["status"] == "error"
+        assert out["command"] == "move"
+
+    def test_dry_run_output_line_printed(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+    ) -> None:
+        """Covers the [DRY RUN] branch in the output-reading loop."""
+        proposal = tmp_path / "proposal-test.json"
+        proposal.write_text(json.dumps({"moves": []}))
+
+        mock_popen = mocker.patch("subprocess.Popen")
+        mock_proc = MagicMock()
+        mock_proc.stdout.readline.side_effect = [
+            '[DRY RUN] "A Note" (Inbox) → Resources/Tech\n',
+            "",
+        ]
+        mock_proc.returncode = 0
+        mock_proc.wait.return_value = 0
+        mock_popen.return_value = mock_proc
+
+        mocker.patch("scripts.execute.run_apply.load_settings", return_value=minimal_settings)
+        run_apply(proposal_file=str(proposal), dry_run=True)
+        mock_popen.assert_called_once()
+
+    def test_json_output_no_proposals_emits_error(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        """Covers the json_output branch when find_latest_proposal raises."""
+        mocker.patch("scripts.execute.run_apply.load_settings", return_value=minimal_settings)
+        mocker.patch(
+            "scripts.execute.run_apply.find_latest_proposal",
+            side_effect=FileNotFoundError("No proposals"),
+        )
+
+        with pytest.raises(SystemExit):
+            run_apply(proposal_file=None, dry_run=True, json_output=True)
+
+        out = json.loads(capsys.readouterr().out)
+        assert out["status"] == "error"
+        assert "No proposals" in out["error"]

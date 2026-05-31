@@ -15,6 +15,7 @@ from rich.console import Console
 
 from scripts.config import find_latest_export, load_settings, load_taxonomy, local_taxonomy_exists
 from scripts.folder_utils import enumerate_paths, folder_name, path_depth
+from scripts.json_output import emit_result
 from scripts.run_logger import RunLogger, logs_dir_path
 
 console = Console()
@@ -89,12 +90,13 @@ def _url_id(nid: str) -> str:
     return raw[1:] if raw.startswith("p") else raw
 
 
-def _lookup_uuids(primary_keys: list[str]) -> dict[str, str]:
+def _lookup_uuids(primary_keys: list[str], _con: Console | None = None) -> dict[str, str]:
     """Query NoteStore.sqlite for stable note UUIDs given numeric primary keys.
 
     Returns a dict mapping primary key string (e.g. "123") to UUID string.
     Falls back gracefully when Full Disk Access is not granted or the DB is absent.
     """
+    _c = _con or console
     pks_int = [int(pk) for pk in primary_keys if pk.isdigit()]
     if not pks_int or not NOTESTORE_DB.exists():
         return {}
@@ -108,7 +110,7 @@ def _lookup_uuids(primary_keys: list[str]) -> dict[str, str]:
             if src.exists():
                 shutil.copy2(src, Path(str(db_copy) + ext))
     except PermissionError:
-        console.print(
+        _c.print(
             "[yellow]Note UUIDs unavailable:[/yellow] Full Disk Access for Terminal is required "
             "to read NoteStore.sqlite.\n"
             "  Grant it in System Settings → Privacy & Security → Full Disk Access, then re-run.\n"
@@ -119,15 +121,15 @@ def _lookup_uuids(primary_keys: list[str]) -> dict[str, str]:
 
     try:
         placeholders = ",".join("?" * len(pks_int))
-        con = sqlite3.connect(str(db_copy))
-        rows = con.execute(
+        db_con = sqlite3.connect(str(db_copy))
+        rows = db_con.execute(
             f"SELECT Z_PK, ZIDENTIFIER FROM ZICCLOUDSYNCINGOBJECT WHERE Z_PK IN ({placeholders})",
             pks_int,
         ).fetchall()
-        con.close()
+        db_con.close()
         return {str(pk): uuid for pk, uuid in rows if uuid}
     except Exception as exc:
-        console.print(f"[yellow]SQLite UUID lookup failed: {exc}[/yellow]")
+        _c.print(f"[yellow]SQLite UUID lookup failed: {exc}[/yellow]")
         return {}
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -245,7 +247,12 @@ def _generate_hub_body(
 
 
 def _write_note_applescript(
-    title: str, body: str, folder: str | None, dry_run: bool, container: str = ""
+    title: str,
+    body: str,
+    folder: str | None,
+    dry_run: bool,
+    container: str = "",
+    _con: Console | None = None,
 ) -> tuple[str, str]:
     """Create or update a note in Apple Notes with the given title and body.
 
@@ -254,6 +261,7 @@ def _write_note_applescript(
     local_id is the note's local identifier (e.g. "p123") for applenotes:// links,
     or empty string for dry-run and error cases.
     """
+    _c = _con or console
     if dry_run:
         return "[DRY RUN]", ""
 
@@ -270,7 +278,7 @@ def _write_note_applescript(
     output = result.stdout.strip()
     if result.returncode != 0 or result.stderr.strip():
         err = result.stderr.strip() or output
-        console.print(f"[red][ERROR] {title}: {err}[/red]")
+        _c.print(f"[red][ERROR] {title}: {err}[/red]")
         return "error", ""
     status, _, local_id = output.partition(":")
     return status or "updated", local_id
@@ -328,15 +336,25 @@ def _build_home_body(
     return "\n".join(parts)
 
 
-def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None:
+def run_sync_hubs(
+    export_file: str | None = None, dry_run: bool = False, json_output: bool = False
+) -> None:
+    _con = Console(stderr=True) if json_output else console
     settings = load_settings()
 
     mode = settings.get("forever_notes_mode", "loose")
     if mode != "strict":
-        console.print(
+        _con.print(
             "[yellow]Strict mode is not enabled.[/yellow] "
             "Set [bold]forever_notes_mode: strict[/bold] in settings.local.yaml to use sync-hubs."
         )
+        if json_output:
+            emit_result(
+                "sync-hubs",
+                status="error",
+                dry_run=dry_run,
+                error="Strict mode is not enabled.",
+            )
         return
 
     strict = settings.get("strict_mode", {})
@@ -354,7 +372,7 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
 
     taxonomy = load_taxonomy()
     if not local_taxonomy_exists():
-        console.print(
+        _con.print(
             "[yellow]Warning:[/yellow] config/taxonomy.local.yaml not found — "
             "hub notes cannot be generated without real folder names.\n"
             "  cp config/taxonomy.example.yaml config/taxonomy.local.yaml"
@@ -366,25 +384,34 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
         try:
             export_path = find_latest_export()
         except FileNotFoundError as exc:
-            console.print(f"[red]{exc}[/red]")
+            if json_output:
+                emit_result("sync-hubs", status="error", dry_run=dry_run, error=str(exc))
+            else:
+                _con.print(f"[red]{exc}[/red]")
             raise SystemExit(1) from exc
 
-    console.print(f"Loading export: [dim]{export_path.name}[/dim]")
+    _con.print(f"Loading export: [dim]{export_path.name}[/dim]")
     with open(export_path) as f:
         notes: list[dict] = json.load(f)
-    console.print(f"  {len(notes)} notes loaded")
+    _con.print(f"  {len(notes)} notes loaded")
 
     theme_index = _build_theme_index(taxonomy, notes, min_count)
 
     if not theme_index:
-        console.print(
+        _con.print(
             "[yellow]No Hub-eligible themes found (no subfolders meet the note count threshold).[/yellow]"
         )
+        if json_output:
+            emit_result(
+                "sync-hubs",
+                dry_run=dry_run,
+                summary={"hubs_created": 0, "hubs_updated": 0, "errors": 0},
+            )
         return
 
-    console.print(f"\nFound [bold]{len(theme_index)}[/bold] Hub-eligible theme(s).")
+    _con.print(f"\nFound [bold]{len(theme_index)}[/bold] Hub-eligible theme(s).")
     if dry_run:
-        console.print("[dim](dry-run — no writes)[/dim]\n")
+        _con.print("[dim](dry-run — no writes)[/dim]\n")
 
     # UUID lookups are only needed when internal_links: "html" is set.
     # Skip them (and the Full Disk Access requirement) in the default "text" mode.
@@ -396,11 +423,9 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
             for _, nid in note_pairs
             if _url_id(nid)
         ]
-        note_uuid_map = _lookup_uuids(all_note_pks)
+        note_uuid_map = _lookup_uuids(all_note_pks, _con=_con)
         if note_uuid_map:
-            console.print(
-                f"  [dim]Resolved {len(note_uuid_map)} note UUID(s) from NoteStore.[/dim]"
-            )
+            _con.print(f"  [dim]Resolved {len(note_uuid_map)} note UUID(s) from NoteStore.[/dim]")
     else:
         note_uuid_map = {}
 
@@ -414,7 +439,7 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
         categories = theme_data["categories"]
         total = theme_data["total"]
 
-        console.print(
+        _con.print(
             f"  [bold]{h_title}[/bold] — {total} notes across {len(categories)} categor{'y' if len(categories) == 1 else 'ies'}"
         )
 
@@ -422,23 +447,23 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
             sf_def, categories, hub_prefix, uuid_map=note_uuid_map, use_links=use_links
         )
         status, local_id = _write_note_applescript(
-            h_title, body, hub_folder, dry_run, container=container
+            h_title, body, hub_folder, dry_run, container=container, _con=_con
         )
         if local_id:
             hub_ids[h_title] = local_id
 
         if status == "created":
-            console.print("    [green][CREATED][/green]")
+            _con.print("    [green][CREATED][/green]")
             logger.event("hub", title=h_title, status="created")
             created += 1
         elif status == "[DRY RUN]":
-            console.print("    [cyan][DRY RUN][/cyan]")
+            _con.print("    [cyan][DRY RUN][/cyan]")
             logger.event("hub", title=h_title, status="dry_run")
         elif status == "error":
             logger.error(f"hub write failed: {h_title}")
             errors += 1
         else:
-            console.print("    [dim][UPDATED][/dim]")
+            _con.print("    [dim][UPDATED][/dim]")
             logger.event("hub", title=h_title, status="updated")
             updated += 1
 
@@ -446,44 +471,51 @@ def run_sync_hubs(export_file: str | None = None, dry_run: bool = False) -> None
     # Only needed when internal_links: "html"; skip otherwise.
     if use_links and hub_ids:
         hub_pks = [_url_id(lid) for lid in hub_ids.values() if _url_id(lid)]
-        hub_pk_to_uuid = _lookup_uuids(hub_pks)
+        hub_pk_to_uuid = _lookup_uuids(hub_pks, _con=_con)
         hub_uuids: dict[str, str] = {
             title: hub_pk_to_uuid.get(_url_id(lid), "") for title, lid in hub_ids.items()
         }
         resolved = sum(1 for v in hub_uuids.values() if v)
         if resolved:
-            console.print(f"  [dim]Resolved {resolved} hub UUID(s) for Home note links.[/dim]")
+            _con.print(f"  [dim]Resolved {resolved} hub UUID(s) for Home note links.[/dim]")
     else:
         hub_uuids = {}
 
     # ✱ Home — built after Hubs so hub_ids/hub_uuids contain fresh identifiers
-    console.print(f"\n  [bold]{home_title}[/bold] — root index")
+    _con.print(f"\n  [bold]{home_title}[/bold] — root index")
     home_body = _build_home_body(
         taxonomy, theme_index, hub_prefix, home_title, hub_ids, hub_uuids, use_links=use_links
     )
 
     home_status, _ = _write_note_applescript(
-        home_title, home_body, home_folder, dry_run, container=container
+        home_title, home_body, home_folder, dry_run, container=container, _con=_con
     )
     if home_status == "created":
-        console.print("    [green][CREATED][/green]")
+        _con.print("    [green][CREATED][/green]")
     elif home_status == "[DRY RUN]":
-        console.print("    [cyan][DRY RUN][/cyan]")
+        _con.print("    [cyan][DRY RUN][/cyan]")
     elif home_status == "error":
         errors += 1
     else:
-        console.print("    [dim][UPDATED][/dim]")
+        _con.print("    [dim][UPDATED][/dim]")
 
-    console.print(
+    _con.print(
         f"\n[bold]Done.[/bold] Hubs: {created} created, {updated} updated"
         + (f", {errors} errors" if errors else "")
         + "."
     )
     if dry_run:
-        console.print("[dim]Dry-run — no changes were made.[/dim]")
+        _con.print("[dim]Dry-run — no changes were made.[/dim]")
 
-    logger.finish(
-        summary={"hubs_created": created, "hubs_updated": updated, "errors": errors},
+    hubs_summary: dict[str, object] = {
+        "hubs_created": created,
+        "hubs_updated": updated,
+        "errors": errors,
+    }
+    log_file = logger.finish(
+        summary=hubs_summary,
         dry_run=dry_run,
         params={"export_file": str(export_path)},
     )
+    if json_output:
+        emit_result("sync-hubs", dry_run=dry_run, log_file=log_file, summary=hubs_summary)

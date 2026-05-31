@@ -227,3 +227,40 @@ To specify a custom output path: `uv run notes audit --output /path/to/report.md
 For bulk moves, create a proposal JSON manually (matching the `proposal-YYYY-MM-DD.json`
 schema) and run `uv run notes move`. For individual notes, it's often faster to act
 directly in Apple Notes.
+
+---
+
+## Agentic Use
+
+Every command accepts `--json` to emit a compact JSON summary to stdout while routing human-readable output to stderr. This makes the CLI easy to drive from LLM agents or shell scripts.
+
+```bash
+# Run a command and capture the result as JSON
+result=$(uv run notes classify --dry-run --json)
+echo "$result" | python3 -m json.tool
+
+# Extract the output file path
+output_file=$(uv run notes classify --json | python3 -c "import sys,json; print(json.load(sys.stdin)['output_file'])")
+
+# Chain: classify → move, checking for errors
+if uv run notes classify --json | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if d['status']=='ok' else 1)"; then
+  uv run notes move --json
+fi
+```
+
+### JSON output shape
+
+```json
+{
+  "status": "ok",
+  "command": "classify",
+  "dry_run": false,
+  "output_file": "data/proposals/proposal-2026-05-31.json",
+  "log_file": "data/logs/classify-2026-05-31-143022.json",
+  "summary": {"notes_processed": 312, "moves": 45, "needs_review": 12, "no_change": 255}
+}
+```
+
+On failure: `"status": "error"` with an `"error"` field explaining what went wrong. `output_file` and `log_file` are `null` when not applicable (e.g. `notes move` produces no output file).
+
+`--json` and `--dry-run` are composable: `notes classify --dry-run --json` returns `"dry_run": true` with the preview summary and no API calls made.

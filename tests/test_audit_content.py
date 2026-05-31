@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from scripts.maintenance.audit import run_audit
 
 
@@ -463,3 +465,43 @@ class TestRunAuditConservativeMode:
         subfolder_section = content.split("## Subfolder Candidates")[1]
         # The section header should show the threshold and candidate count
         assert "flat folders" in subfolder_section
+
+
+class TestRunAuditJsonOutput:
+    def test_json_output_emits_summary_to_stdout(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+        minimal_taxonomy: dict,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        notes = [
+            {
+                "id": "n1",
+                "title": "My Note",
+                "body": "content",
+                "folder": "Inbox",
+                "folder_path": "Inbox",
+                "modified": datetime.now().isoformat(),
+            }
+        ]
+        export_file = tmp_path / "notes-test.json"
+        export_file.write_text(json.dumps(notes))
+        report_path = tmp_path / "audit-test.md"
+
+        mocker.patch("scripts.maintenance.audit.load_settings", return_value=minimal_settings)
+        mocker.patch("scripts.maintenance.audit.load_taxonomy", return_value=minimal_taxonomy)
+
+        run_audit(
+            export_file=str(export_file),
+            output_override=str(report_path),
+            dry_run=False,
+            json_output=True,
+        )
+
+        out = json.loads(capsys.readouterr().out)
+        assert out["status"] == "ok"
+        assert out["command"] == "audit"
+        assert out["summary"]["notes_scanned"] == 1
+        assert "output_file" in out

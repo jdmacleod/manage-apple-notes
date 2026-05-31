@@ -27,6 +27,7 @@ from scripts.folder_utils import (
     nesting_mode,
     path_depth,
 )
+from scripts.json_output import emit_result
 from scripts.run_logger import RunLogger, logs_dir_path
 
 console = Console()
@@ -115,12 +116,18 @@ def _find_subfolder_candidates(
     return candidates
 
 
-def run_audit(export_file: str | None, output_override: str | None, dry_run: bool) -> None:
+def run_audit(
+    export_file: str | None,
+    output_override: str | None,
+    dry_run: bool,
+    json_output: bool = False,
+) -> None:
+    con = Console(stderr=True) if json_output else console
     settings = load_settings()
     logger = RunLogger("audit", logs_dir_path(settings))
     taxonomy = load_taxonomy()
     if not local_taxonomy_exists():
-        console.print(
+        con.print(
             "[yellow]Warning:[/yellow] config/taxonomy.local.yaml not found — "
             "audit results will not reflect your actual Apple Notes folder structure.\n"
             "  cp config/taxonomy.example.yaml config/taxonomy.local.yaml"
@@ -152,7 +159,11 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
 
     export_path = Path(export_file) if export_file else find_latest_export()
     if not export_path.exists():
-        console.print(f"[red]Export file not found:[/red] {export_path}")
+        msg = f"Export file not found: {export_path}"
+        if json_output:
+            emit_result("audit", status="error", dry_run=dry_run, error=msg)
+        else:
+            con.print(f"[red]Export file not found:[/red] {export_path}")
         raise SystemExit(1)
 
     notes = json.loads(export_path.read_text())
@@ -176,25 +187,31 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
     ]
 
     if dry_run:
-        console.print(
-            "[bold]Dry run — no API calls will be made.[/bold] (Audit makes no API calls.)\n"
-        )
-        console.print(f"Export:      {export_path}")
-        console.print(f"Notes found: {len(notes)}\n")
-        console.print("Checks:")
+        con.print("[bold]Dry run — no API calls will be made.[/bold] (Audit makes no API calls.)\n")
+        con.print(f"Export:      {export_path}")
+        con.print(f"Notes found: {len(notes)}\n")
+        con.print("Checks:")
         for check in checks:
-            console.print(f"  • {check}")
-        console.print(f"\nReport would be written to: {report_path}")
-        logger.finish(
+            con.print(f"  • {check}")
+        con.print(f"\nReport would be written to: {report_path}")
+        log_file = logger.finish(
             summary={"notes_scanned": len(notes)},
             dry_run=True,
             params={"export_file": str(export_path)},
         )
+        if json_output:
+            emit_result(
+                "audit",
+                dry_run=True,
+                output_file=report_path,
+                log_file=log_file,
+                summary={"notes_scanned": len(notes)},
+            )
         return
 
     # ── Run checks ───────────────────────────────────────────────────────────
 
-    with console.status(f"Scanning {len(notes)} notes…"):
+    with con.status(f"Scanning {len(notes)} notes…"):
         inactive_cutoff = now - timedelta(days=inactive_project_days)
         inbox_cutoff = now - timedelta(days=inbox_stale_days)
         fleeting_cutoff = now - timedelta(days=fleeting_stale_days)
@@ -480,36 +497,39 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     report_path.write_text("\n".join(lines), encoding="utf-8")
 
-    console.print(f"[green]Done.[/green] Report written to [bold]{report_path}[/bold]")
-    console.print(f"  Inactive projects:  {len(inactive_projects)}")
-    console.print(f"  Untitled:           {len(untitled_notes)}")
-    console.print(f"  Stubs:              {len(stub_notes)}")
-    console.print(f"  Duplicate titles:   {len(duplicate_groups)}")
-    console.print(f"  Stale inbox:        {len(stale_inbox)}")
-    console.print(f"  Stale fleeting:     {len(stale_fleeting)}")
-    console.print(
+    con.print(f"[green]Done.[/green] Report written to [bold]{report_path}[/bold]")
+    con.print(f"  Inactive projects:  {len(inactive_projects)}")
+    con.print(f"  Untitled:           {len(untitled_notes)}")
+    con.print(f"  Stubs:              {len(stub_notes)}")
+    con.print(f"  Duplicate titles:   {len(duplicate_groups)}")
+    con.print(f"  Stale inbox:        {len(stale_inbox)}")
+    con.print(f"  Stale fleeting:     {len(stale_fleeting)}")
+    con.print(
         f"  Untracked folders:  {len(untracked_folder_rows)} folder(s), {len(untracked_folder_notes)} note(s)"
     )
-    console.print(f"  Uncategorized:      {len(uncategorized_notes)}")
+    con.print(f"  Uncategorized:      {len(uncategorized_notes)}")
     if reorg_mode == "conservative":
-        console.print("  Subfolder candid.:  (skipped — conservative mode)")
+        con.print("  Subfolder candid.:  (skipped — conservative mode)")
     else:
-        console.print(f"  Subfolder candid.:  {len(subfolder_candidates)}")
+        con.print(f"  Subfolder candid.:  {len(subfolder_candidates)}")
 
-    logger.finish(
-        summary={
-            "notes_scanned": len(notes),
-            "inactive_projects": len(inactive_projects),
-            "untitled": len(untitled_notes),
-            "stubs": len(stub_notes),
-            "duplicate_title_groups": len(duplicate_groups),
-            "stale_inbox": len(stale_inbox),
-            "stale_fleeting": len(stale_fleeting),
-            "untracked_folders": len(untracked_folder_rows),
-            "untracked_folder_notes": len(untracked_folder_notes),
-            "uncategorized": len(uncategorized_notes),
-            "subfolder_candidates": len(subfolder_candidates),
-        },
+    audit_summary: dict[str, object] = {
+        "notes_scanned": len(notes),
+        "inactive_projects": len(inactive_projects),
+        "untitled": len(untitled_notes),
+        "stubs": len(stub_notes),
+        "duplicate_title_groups": len(duplicate_groups),
+        "stale_inbox": len(stale_inbox),
+        "stale_fleeting": len(stale_fleeting),
+        "untracked_folders": len(untracked_folder_rows),
+        "untracked_folder_notes": len(untracked_folder_notes),
+        "uncategorized": len(uncategorized_notes),
+        "subfolder_candidates": len(subfolder_candidates),
+    }
+    log_file = logger.finish(
+        summary=audit_summary,
         dry_run=False,
         params={"export_file": str(export_path), "report_path": str(report_path)},
     )
+    if json_output:
+        emit_result("audit", output_file=report_path, log_file=log_file, summary=audit_summary)

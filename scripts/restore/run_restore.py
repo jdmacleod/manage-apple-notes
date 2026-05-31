@@ -18,6 +18,7 @@ from pathlib import Path
 from rich.console import Console
 
 from scripts.config import load_settings
+from scripts.json_output import emit_result
 from scripts.run_logger import RunLogger, logs_dir_path
 
 console = Console()
@@ -71,7 +72,9 @@ def run_restore(
     backup_file: str | None = None,
     missing_file: str | None = None,
     dry_run: bool = False,
+    json_output: bool = False,
 ) -> None:
+    con = Console(stderr=True) if json_output else console
     settings = load_settings()
     logger = RunLogger("restore", logs_dir_path(settings))
     tl_cfg = settings.get("toplevel_folder", {})
@@ -87,21 +90,27 @@ def run_restore(
         except FileNotFoundError:
             try:
                 backup_path = _find_latest(EXPORTS_DIR, "notes-*.json")
-                console.print("[yellow]No backup found; using latest export as source.[/yellow]")
+                con.print("[yellow]No backup found; using latest export as source.[/yellow]")
             except FileNotFoundError:
-                console.print(
-                    "[red]No backup or export file found. Run 'notes backup' first.[/red]"
-                )
+                msg = "No backup or export file found. Run 'notes backup' first."
+                if json_output:
+                    emit_result("restore", status="error", dry_run=dry_run, error=msg)
+                else:
+                    con.print(f"[red]{msg}[/red]")
                 raise SystemExit(1) from None
 
     if not backup_path.exists():
-        console.print(f"[red]Backup not found:[/red] {backup_path}")
+        msg = f"Backup not found: {backup_path}"
+        if json_output:
+            emit_result("restore", status="error", dry_run=dry_run, error=msg)
+        else:
+            con.print(f"[red]Backup not found:[/red] {backup_path}")
         raise SystemExit(1)
 
-    console.print(f"Restore source: [dim]{backup_path.name}[/dim]")
+    con.print(f"Restore source: [dim]{backup_path.name}[/dim]")
     with open(backup_path) as f:
         backup_notes: list[dict] = json.load(f)
-    console.print(f"  {len(backup_notes)} notes in backup")
+    con.print(f"  {len(backup_notes)} notes in backup")
 
     # ── Locate missing-notes list ────────────────────────────────────────────
     missing_titles: set[str] | None = None
@@ -117,7 +126,7 @@ def run_restore(
         missing_path = candidates[0] if candidates else None
 
     if missing_path and missing_path.exists():
-        console.print(f"Missing-notes list: [dim]{missing_path.name}[/dim]")
+        con.print(f"Missing-notes list: [dim]{missing_path.name}[/dim]")
         with open(missing_path) as f:
             missing_data = json.load(f)
         for entry in missing_data.get("notes", []):
@@ -127,11 +136,9 @@ def run_restore(
                 missing_titles.add(title)
                 if title not in proposal_destinations:
                     proposal_destinations[title] = entry
-        console.print(f"  {len(missing_titles or set())} missing note title(s) to restore")
+        con.print(f"  {len(missing_titles or set())} missing note title(s) to restore")
     else:
-        console.print(
-            "[yellow]No missing-notes file found — restoring all notes in backup.[/yellow]"
-        )
+        con.print("[yellow]No missing-notes file found — restoring all notes in backup.[/yellow]")
         for n in backup_notes:
             title = n.get("title", "")
             folder_path = n.get("folder_path") or n.get("folder", "")
@@ -141,13 +148,17 @@ def run_restore(
     # ── Build restore list ───────────────────────────────────────────────────
     entries = _build_restore_entries(backup_notes, missing_titles, proposal_destinations)
     if not entries:
-        console.print("[yellow]Nothing to restore.[/yellow]")
+        con.print("[yellow]Nothing to restore.[/yellow]")
+        if json_output:
+            emit_result(
+                "restore", dry_run=dry_run, summary={"created": 0, "exists": 0, "errors": 0}
+            )
         return
 
-    console.print(f"\n[bold]{len(entries)}[/bold] note(s) queued for restore.")
+    con.print(f"\n[bold]{len(entries)}[/bold] note(s) queued for restore.")
     logger.event("queued", count=len(entries))
     if dry_run:
-        console.print("[dim](dry-run — no changes will be made)[/dim]")
+        con.print("[dim](dry-run — no changes will be made)[/dim]")
 
     # ── Write temp restore JSON and call AppleScript ─────────────────────────
     with tempfile.NamedTemporaryFile(
@@ -171,29 +182,32 @@ def run_restore(
         for line in iter(proc.stdout.readline, ""):
             line = line.rstrip()
             if line.startswith("[CREATED]"):
-                console.print(f"[green]{line}[/green]")
+                con.print(f"[green]{line}[/green]")
                 logger.event("note", line=line, status="CREATED")
                 created += 1
             elif line.startswith("[EXISTS]"):
-                console.print(f"[dim]{line}[/dim]")
+                con.print(f"[dim]{line}[/dim]")
                 logger.event("note", line=line, status="EXISTS")
                 exists += 1
             elif line.startswith("[DRY RUN]"):
-                console.print(f"[cyan]{line}[/cyan]")
+                con.print(f"[cyan]{line}[/cyan]")
                 logger.event("note", line=line, status="DRY_RUN")
             elif line.startswith("[ERROR]"):
-                console.print(f"[red]{line}[/red]")
+                con.print(f"[red]{line}[/red]")
                 logger.event("note", line=line, status="ERROR")
                 logger.error(line)
                 errors += 1
             elif line:
-                console.print(line)
+                con.print(line)
         proc.wait()
-        logger.finish(
-            summary={"created": created, "exists": exists, "errors": errors},
+        summary: dict[str, object] = {"created": created, "exists": exists, "errors": errors}
+        log_file = logger.finish(
+            summary=summary,
             dry_run=dry_run,
             params={"backup_file": str(backup_path)},
         )
+        if json_output:
+            emit_result("restore", dry_run=dry_run, log_file=log_file, summary=summary)
         if proc.returncode != 0:
             raise SystemExit(proc.returncode)
     finally:

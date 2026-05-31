@@ -13,6 +13,7 @@ from pathlib import Path
 from rich.console import Console
 
 from scripts.config import find_latest_export, load_settings
+from scripts.json_output import emit_result
 from scripts.json_utils import extract_json_array
 from scripts.providers import LLMProvider, get_provider
 from scripts.run_logger import RunLogger, logs_dir_path
@@ -221,14 +222,24 @@ def pass3_llm(
     return result
 
 
-def run_dedup(export_file: str | None, proposal_file: str | None, dry_run: bool) -> None:
+def run_dedup(
+    export_file: str | None,
+    proposal_file: str | None,
+    dry_run: bool,
+    json_output: bool = False,
+) -> None:
+    con = Console(stderr=True) if json_output else console
     settings = load_settings()
     dedup_cfg = settings.get("deduplication", {})
     preview_chars = int(dedup_cfg.get("content_preview_chars", 300))
 
     export_path = Path(export_file) if export_file else find_latest_export()
     if not export_path.exists():
-        console.print(f"[red]Export file not found:[/red] {export_path}")
+        msg = f"Export file not found: {export_path}"
+        if json_output:
+            emit_result("dedup", status="error", dry_run=dry_run, error=msg)
+        else:
+            con.print(f"[red]Export file not found:[/red] {export_path}")
         raise SystemExit(1)
 
     all_notes = json.loads(export_path.read_text())
@@ -250,35 +261,38 @@ def run_dedup(export_file: str | None, proposal_file: str | None, dry_run: bool)
     entries = _build_entries(all_notes, proposal_index)
 
     # Pass 1: exact hash matches — always run (free)
-    with console.status("Pass 1: finding exact duplicates…"):
+    with con.status("Pass 1: finding exact duplicates…"):
         exact_groups, consumed = pass1_exact(entries, preview_chars)
-    console.print(
+    con.print(
         f"Pass 1: [green]{len(exact_groups)}[/green] exact duplicate group(s) "
         f"({len(consumed)} note(s) consumed)"
     )
 
     # Pass 2: fuzzy candidates — always run (free)
-    with console.status("Pass 2: finding fuzzy candidates…"):
+    with con.status("Pass 2: finding fuzzy candidates…"):
         candidates = pass2_fuzzy(entries, consumed, settings)
-    console.print(f"Pass 2: [green]{len(candidates)}[/green] fuzzy candidate pair(s)")
+    con.print(f"Pass 2: [green]{len(candidates)}[/green] fuzzy candidate pair(s)")
 
     if dry_run:
-        console.print(
+        con.print(
             f"\n[bold]Dry run complete.[/bold] "
             f"{len(exact_groups)} exact group(s), {len(candidates)} fuzzy pair(s) found."
         )
-        console.print(
+        con.print(
             "Run without --dry-run to review fuzzy candidates with the LLM and write a proposal."
         )
-        RunLogger("dedup", logs_dir_path(settings)).finish(
-            summary={
-                "notes_processed": len(entries),
-                "exact_groups": len(exact_groups),
-                "fuzzy_candidates": len(candidates),
-            },
+        dry_summary: dict[str, object] = {
+            "notes_processed": len(entries),
+            "exact_groups": len(exact_groups),
+            "fuzzy_candidates": len(candidates),
+        }
+        log_file = RunLogger("dedup", logs_dir_path(settings)).finish(
+            summary=dry_summary,
             dry_run=True,
             params={"export_file": str(export_path)},
         )
+        if json_output:
+            emit_result("dedup", dry_run=True, log_file=log_file, summary=dry_summary)
         return
 
     logger = RunLogger("dedup", logs_dir_path(settings))
@@ -290,12 +304,12 @@ def run_dedup(export_file: str | None, proposal_file: str | None, dry_run: bool)
     if candidates:
         system_prompt = load_prompt_template()
         provider = get_provider(settings)
-        console.print(f"Pass 3: reviewing {len(candidates)} pair(s) with {provider.model}…")
+        con.print(f"Pass 3: reviewing {len(candidates)} pair(s) with {provider.model}…")
         try:
             llm_results = pass3_llm(candidates, system_prompt, provider, preview_chars)
             logger.event("pass", n=3, count=len(candidates), status="ok")
         except Exception as exc:
-            console.print(f"[yellow]Warning:[/yellow] LLM review failed: {exc}")
+            con.print(f"[yellow]Warning:[/yellow] LLM review failed: {exc}")
             logger.error(f"pass3 LLM failed: {exc}")
             llm_results = []
 
@@ -338,7 +352,7 @@ def run_dedup(export_file: str | None, proposal_file: str | None, dry_run: bool)
     recommended_delete = sum(1 for g in all_groups if g["resolution"] == "delete")
     needs_review_count = sum(1 for g in all_groups if g["resolution"] == "review")
 
-    summary = {
+    summary: dict[str, object] = {
         "total_groups": len(all_groups),
         "exact_duplicates": len(exact_groups),
         "near_duplicates": len(llm_groups),
@@ -360,23 +374,26 @@ def run_dedup(export_file: str | None, proposal_file: str | None, dry_run: bool)
     }
     output_path.write_text(json.dumps(output, indent=2, ensure_ascii=False))
 
-    console.print(f"\n[green]Done.[/green] Dedup proposal written to [bold]{output_path}[/bold]")
-    console.print(f"  Total groups:       {summary['total_groups']}")
-    console.print(f"  Exact duplicates:   {summary['exact_duplicates']}")
-    console.print(f"  Near duplicates:    {summary['near_duplicates']}")
-    console.print(f"  Recommended delete: {summary['recommended_delete']}")
-    console.print(f"  Needs review:       {summary['needs_review']}")
+    con.print(f"\n[green]Done.[/green] Dedup proposal written to [bold]{output_path}[/bold]")
+    con.print(f"  Total groups:       {summary['total_groups']}")
+    con.print(f"  Exact duplicates:   {summary['exact_duplicates']}")
+    con.print(f"  Near duplicates:    {summary['near_duplicates']}")
+    con.print(f"  Recommended delete: {summary['recommended_delete']}")
+    con.print(f"  Needs review:       {summary['needs_review']}")
 
-    logger.finish(
-        summary={
-            "notes_processed": len(entries),
-            "total_groups": summary["total_groups"],
-            "exact_duplicates": summary["exact_duplicates"],
-            "near_duplicates": summary["near_duplicates"],
-            "llm_reviewed": summary["llm_reviewed"],
-            "recommended_delete": summary["recommended_delete"],
-            "needs_review": summary["needs_review"],
-        },
+    log_summary: dict[str, object] = {
+        "notes_processed": len(entries),
+        "total_groups": summary["total_groups"],
+        "exact_duplicates": summary["exact_duplicates"],
+        "near_duplicates": summary["near_duplicates"],
+        "llm_reviewed": summary["llm_reviewed"],
+        "recommended_delete": summary["recommended_delete"],
+        "needs_review": summary["needs_review"],
+    }
+    log_file = logger.finish(
+        summary=log_summary,
         dry_run=False,
         params={"export_file": str(export_path), "source_proposal": source_proposal},
     )
+    if json_output:
+        emit_result("dedup", output_file=output_path, log_file=log_file, summary=log_summary)

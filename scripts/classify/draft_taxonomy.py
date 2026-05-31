@@ -13,6 +13,7 @@ from rich.console import Console
 from scripts.classify.classify_notes import _CATEGORY_META
 from scripts.config import load_settings, load_taxonomy, local_taxonomy_exists
 from scripts.folder_utils import enumerate_paths
+from scripts.json_output import emit_result
 from scripts.json_utils import extract_json_object
 from scripts.providers import LLMProvider, get_provider
 from scripts.run_logger import RunLogger, logs_dir_path
@@ -199,12 +200,17 @@ def _build_output(
     return comment_block + "\n\n" + body
 
 
-def run_draft(theme_map_file: str | None, dry_run: bool) -> None:
+def run_draft(theme_map_file: str | None, dry_run: bool, json_output: bool = False) -> None:
+    con = Console(stderr=True) if json_output else console
     settings = load_settings()
 
     theme_map_path = Path(theme_map_file) if theme_map_file else find_latest_theme_map()
     if not theme_map_path.exists():
-        console.print(f"[red]Theme-map file not found:[/red] {theme_map_path}")
+        msg = f"Theme-map file not found: {theme_map_path}"
+        if json_output:
+            emit_result("draft", status="error", dry_run=dry_run, error=msg)
+        else:
+            con.print(f"[red]Theme-map file not found:[/red] {theme_map_path}")
         raise SystemExit(1)
 
     theme_map: dict = json.loads(theme_map_path.read_text())
@@ -242,9 +248,9 @@ def run_draft(theme_map_file: str | None, dry_run: bool) -> None:
                 top_level = [f for f in top_level if f != tl_cfg["name"]]
 
             if dry_run:
-                console.print("[bold]Bootstrap:[/bold] No taxonomy.local.yaml found.")
-                console.print(f"  Folders to map: {', '.join(top_level)}")
-                console.print(
+                con.print("[bold]Bootstrap:[/bold] No taxonomy.local.yaml found.")
+                con.print(f"  Folders to map: {', '.join(top_level)}")
+                con.print(
                     "  (No API call in dry-run — bootstrap skipped; using example taxonomy below.)\n"
                 )
                 taxonomy = load_taxonomy()
@@ -252,16 +258,14 @@ def run_draft(theme_map_file: str | None, dry_run: bool) -> None:
                 provider = get_provider(settings)
                 taxonomy = bootstrap_taxonomy(top_level, provider, settings)
                 if not taxonomy.get("taxonomy"):
-                    console.print(
+                    con.print(
                         "[yellow]Warning:[/yellow] Bootstrap failed — falling back to example taxonomy."
                     )
                     taxonomy = load_taxonomy()
                 else:
-                    console.print(
-                        "[dim]Bootstrapped taxonomy from Apple Notes folder structure.[/dim]"
-                    )
+                    con.print("[dim]Bootstrapped taxonomy from Apple Notes folder structure.[/dim]")
         else:
-            console.print(
+            con.print(
                 "[yellow]Warning:[/yellow] No source export found — "
                 "falling back to example taxonomy as base.\n"
                 "  Run 'uv run notes export' then 'uv run notes discover' to generate a theme map\n"
@@ -296,7 +300,13 @@ def run_draft(theme_map_file: str | None, dry_run: bool) -> None:
     new_paths = sorted(set(candidate_paths) - established)
 
     if not new_paths:
-        console.print("[dim]No new paths to add — taxonomy is already up to date.[/dim]")
+        con.print("[dim]No new paths to add — taxonomy is already up to date.[/dim]")
+        if json_output:
+            emit_result(
+                "draft",
+                dry_run=dry_run,
+                summary={"added": 0, "already_present": 0, "no_match": 0},
+            )
         return
 
     updated_taxonomy, added, skipped = merge_new_paths(taxonomy, new_paths)
@@ -316,63 +326,71 @@ def run_draft(theme_map_file: str | None, dry_run: bool) -> None:
     date_str = datetime.now().strftime("%Y-%m-%d")
     output = _build_output(updated_taxonomy, added, skipped, theme_map_path.name, date_str)
 
+    draft_summary: dict[str, object] = {
+        "added": len(added),
+        "already_present": len(already_present),
+        "no_match": len(no_match),
+    }
+
     if dry_run:
-        console.print("[bold]Dry run — no file will be written.[/bold]\n")
-        console.print(output)
+        con.print("[bold]Dry run — no file will be written.[/bold]\n")
+        con.print(output)
         if no_match:
-            console.print(
+            con.print(
                 f"\n[yellow]Warning:[/yellow] {len(no_match)} path(s) could not be matched "
                 "to any taxonomy category (top-level folder name not recognised):"
             )
             for p in no_match:
-                console.print(f"  [dim]-[/dim] {p}")
-            console.print(
+                con.print(f"  [dim]-[/dim] {p}")
+            con.print(
                 "  Edit these paths in the theme map to use your actual folder names,\n"
                 "  then re-run: uv run notes draft"
             )
-        RunLogger("draft", logs_dir_path(settings)).finish(
-            summary={
-                "added": len(added),
-                "already_present": len(already_present),
-                "no_match": len(no_match),
-            },
+        log_file = RunLogger("draft", logs_dir_path(settings)).finish(
+            summary=draft_summary,
             dry_run=True,
             params={"theme_map": str(theme_map_path)},
         )
+        if json_output:
+            emit_result(
+                "draft",
+                dry_run=True,
+                output_file=TAXONOMY_DRAFTS_DIR / f"taxonomy-draft-{date_str}.yaml",
+                log_file=log_file,
+                summary=draft_summary,
+            )
         return
 
     TAXONOMY_DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
     output_path = TAXONOMY_DRAFTS_DIR / f"taxonomy-draft-{date_str}.yaml"
     output_path.write_text(output, encoding="utf-8")
 
-    console.print(f"[green]Draft written[/green] → {output_path}")
+    con.print(f"[green]Draft written[/green] → {output_path}")
     if added:
-        console.print(f"  New paths added:  {len(added)}")
+        con.print(f"  New paths added:  {len(added)}")
         for p in added:
-            console.print(f"    [green]+[/green] {p}")
+            con.print(f"    [green]+[/green] {p}")
     if already_present:
-        console.print(f"  Already present:  {len(already_present)}")
+        con.print(f"  Already present:  {len(already_present)}")
     if no_match:
-        console.print(
+        con.print(
             f"\n[yellow]Warning:[/yellow] {len(no_match)} path(s) could not be matched "
             "to any taxonomy category (top-level folder name not recognised):"
         )
         for p in no_match:
-            console.print(f"  [dim]-[/dim] {p}")
-        console.print(
+            con.print(f"  [dim]-[/dim] {p}")
+        con.print(
             "  Edit these paths in the theme map to use your actual folder names,\n"
             "  then re-run: uv run notes draft"
         )
-    console.print(
+    con.print(
         "\n[dim]Review the draft, edit as needed, then copy to config/taxonomy.local.yaml[/dim]"
     )
 
-    RunLogger("draft", logs_dir_path(settings)).finish(
-        summary={
-            "added": len(added),
-            "already_present": len(already_present),
-            "no_match": len(no_match),
-        },
+    log_file = RunLogger("draft", logs_dir_path(settings)).finish(
+        summary=draft_summary,
         dry_run=False,
         params={"theme_map": str(theme_map_path), "output": str(output_path)},
     )
+    if json_output:
+        emit_result("draft", output_file=output_path, log_file=log_file, summary=draft_summary)

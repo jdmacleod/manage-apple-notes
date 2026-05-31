@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `--json` flag on all 14 commands — routes human-readable output to stderr and emits a compact JSON summary to stdout; designed for LLM agents and shell scripts that need structured results without parsing Rich-formatted text. Shape: `{"status": "ok"|"error", "command": "...", "dry_run": bool, "output_file": "...|null", "log_file": "...|null", "summary": {...}}`. Composable with `--dry-run`.
+
 ## [0.2.0] - 2026-05-31
 
 ### Added

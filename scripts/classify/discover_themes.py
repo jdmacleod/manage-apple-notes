@@ -29,6 +29,7 @@ from scripts.folder_utils import (
     nesting_mode,
     path_depth,
 )
+from scripts.json_output import emit_result
 from scripts.json_utils import extract_json_object, is_context_overflow
 from scripts.providers import LLMProvider, get_provider
 from scripts.run_logger import RunLogger, estimate_duration, logs_dir_path
@@ -168,8 +169,14 @@ def inject_discover_taxonomy(
     )
 
 
-def _discover_batch(provider: LLMProvider, system_prompt: str, batch: list) -> list:
+def _discover_batch(
+    provider: LLMProvider,
+    system_prompt: str,
+    batch: list,
+    con: Console | None = None,
+) -> list:
     """Send one batch to the LLM; on context overflow, split recursively and merge."""
+    _con = con or console
     try:
         response = provider.classify_messages(
             system_prompt,
@@ -178,27 +185,32 @@ def _discover_batch(provider: LLMProvider, system_prompt: str, batch: list) -> l
         result = extract_json_object(response)
         return list(result.get("themes") or [])
     except (ValueError, json.JSONDecodeError) as exc:
-        console.print(f"[yellow]Warning:[/yellow] batch parse error — {exc}")
+        _con.print(f"[yellow]Warning:[/yellow] batch parse error — {exc}")
         return []
     except Exception as exc:
         if is_context_overflow(exc) and len(batch) > 1:
             mid = len(batch) // 2
-            console.print(
+            _con.print(
                 f"[yellow]Context overflow — splitting batch ({len(batch)} → {mid}+{len(batch) - mid})[/yellow]"
             )
-            return _discover_batch(provider, system_prompt, batch[:mid]) + _discover_batch(
-                provider, system_prompt, batch[mid:]
-            )
+            return _discover_batch(
+                provider, system_prompt, batch[:mid], con=_con
+            ) + _discover_batch(provider, system_prompt, batch[mid:], con=_con)
         raise
 
 
-def run_discover(export_file: str | None, dry_run: bool) -> None:
+def run_discover(export_file: str | None, dry_run: bool, json_output: bool = False) -> None:
+    con = Console(stderr=True) if json_output else console
     settings = load_settings()
     taxonomy = load_taxonomy()
 
     export_path = Path(export_file) if export_file else find_latest_export()
     if not export_path.exists():
-        console.print(f"[red]Export file not found:[/red] {export_path}")
+        msg = f"Export file not found: {export_path}"
+        if json_output:
+            emit_result("discover", status="error", dry_run=dry_run, error=msg)
+        else:
+            con.print(f"[red]Export file not found:[/red] {export_path}")
         raise SystemExit(1)
 
     all_notes = json.loads(export_path.read_text())
@@ -239,39 +251,47 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
         )
         date_str = datetime.now().strftime("%Y-%m-%d")
 
-        console.print("[bold]Dry run — no API calls will be made.[/bold]\n")
-        console.print(f"Export:         {export_path}")
-        console.print(f"Notes sampled:  {len(summaries)}")
-        console.print(f"Batches:        {len(batches)}  (sample size: {sample_size})")
-        console.print("+ 1 synthesis call\n")
-        console.print(f"Provider:       {provider.name}")
-        console.print(f"Model:          {model}")
-        console.print(f"Mode:           {reorganization_mode(settings)}")
-        console.print(f"Est. tokens:    ~{est_total_tokens:,}")
-        console.print(f"Est. cost:      {cost_str}")
+        con.print("[bold]Dry run — no API calls will be made.[/bold]\n")
+        con.print(f"Export:         {export_path}")
+        con.print(f"Notes sampled:  {len(summaries)}")
+        con.print(f"Batches:        {len(batches)}  (sample size: {sample_size})")
+        con.print("+ 1 synthesis call\n")
+        con.print(f"Provider:       {provider.name}")
+        con.print(f"Model:          {model}")
+        con.print(f"Mode:           {reorganization_mode(settings)}")
+        con.print(f"Est. tokens:    ~{est_total_tokens:,}")
+        con.print(f"Est. cost:      {cost_str}")
         estimate = estimate_duration("discover", len(summaries), logs_dir_path(settings))
         if estimate:
-            console.print(f"Est. time:      {estimate}")
-        console.print(f"\nOutput would be written to: {THEME_MAPS_DIR}/themes-{date_str}.json")
-        console.print("\nNext steps after reviewing the theme map:")
-        console.print("  1. Edit theme names, merge or split as needed")
-        console.print(
+            con.print(f"Est. time:      {estimate}")
+        con.print(f"\nOutput would be written to: {THEME_MAPS_DIR}/themes-{date_str}.json")
+        con.print("\nNext steps after reviewing the theme map:")
+        con.print("  1. Edit theme names, merge or split as needed")
+        con.print(
             "  2. Run: uv run notes draft  — generates a draft taxonomy YAML from this theme map"
         )
-        console.print("  3. Review the draft, then copy to config/taxonomy.local.yaml")
-        console.print("  4. Run: uv run notes classify")
-        RunLogger("discover", logs_dir_path(settings)).finish(
+        con.print("  3. Review the draft, then copy to config/taxonomy.local.yaml")
+        con.print("  4. Run: uv run notes classify")
+        log_file = RunLogger("discover", logs_dir_path(settings)).finish(
             summary={"notes_processed": len(summaries), "batches": len(batches)},
             dry_run=True,
             params={"export_file": str(export_path), "model": model, "sample_size": sample_size},
         )
+        if json_output:
+            emit_result(
+                "discover",
+                dry_run=True,
+                output_file=THEME_MAPS_DIR / f"themes-{date_str}.json",
+                log_file=log_file,
+                summary={"notes_processed": len(summaries), "batches": len(batches)},
+            )
         return
 
     logger = RunLogger("discover", logs_dir_path(settings))
-    console.print(f"[dim]Mode: {reorganization_mode(settings)}[/dim]")
+    con.print(f"[dim]Mode: {reorganization_mode(settings)}[/dim]")
     estimate = estimate_duration("discover", len(summaries), logs_dir_path(settings))
     if estimate:
-        console.print(f"[dim]Estimated duration: {estimate}[/dim]")
+        con.print(f"[dim]Estimated duration: {estimate}[/dim]")
 
     # ── Pre-compute synthesis prompt (no I/O) ────────────────────────────────
 
@@ -365,14 +385,14 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
         TaskProgressColumn(),
         TimeElapsedColumn(),
         TimeRemainingColumn(elapsed_when_finished=True),
-        console=console,
+        console=con,
         speed_estimate_period=3600.0,
     ) as progress:
         # total=len(batches)+1 accounts for the synthesis call after discovery
         task = progress.add_task("Discovering themes...", total=len(batches) + 1)
 
         for i, batch in enumerate(batches):
-            themes = _discover_batch(provider, system_prompt, batch)
+            themes = _discover_batch(provider, system_prompt, batch, con=con)
             if themes:
                 raw_theme_lists.append(themes)
                 logger.event("batch", batch=i + 1, count=len(batch), status="ok")
@@ -393,20 +413,20 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
                 final_themes = synthesized.get("themes", all_raw)
             except Exception as exc:
                 if is_context_overflow(exc):
-                    console.print(
+                    con.print(
                         "[yellow]Synthesis context overflow — skipping dedup, using raw theme list.[/yellow]"
                     )
                 else:
-                    console.print(
-                        f"[yellow]Synthesis error — using raw theme list. ({exc})[/yellow]"
-                    )
+                    con.print(f"[yellow]Synthesis error — using raw theme list. ({exc})[/yellow]")
                 final_themes = all_raw
             progress.advance(task)
 
     if not raw_theme_lists:
-        console.print(
-            "[red]No themes found in any batch. Check the prompt template and LLM output.[/red]"
-        )
+        msg = "No themes found in any batch. Check the prompt template and LLM output."
+        if json_output:
+            emit_result("discover", status="error", dry_run=dry_run, error=msg)
+        else:
+            con.print(f"[red]{msg}[/red]")
         raise SystemExit(1)
 
     # ── Build and write theme map ────────────────────────────────────────────
@@ -455,40 +475,41 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
     existing_count = sum(1 for t in final_themes if t.get("suggested_path") in established_set)
     new_count = len(final_themes) - existing_count
 
-    console.print(f"\n[green]Done.[/green] Theme map written to [bold]{output_path}[/bold]")
+    con.print(f"\n[green]Done.[/green] Theme map written to [bold]{output_path}[/bold]")
     new_label = f"  ({existing_count} existing paths, {new_count} new)" if established else ""
-    console.print(f"  Themes found:        {len(final_themes)}{new_label}")
-    console.print(f"  Above threshold:     {len(above_threshold)}  (suggest subfolders)")
-    console.print(f"  Below threshold:     {len(below_threshold)}  (keep flat)")
+    con.print(f"  Themes found:        {len(final_themes)}{new_label}")
+    con.print(f"  Above threshold:     {len(above_threshold)}  (suggest subfolders)")
+    con.print(f"  Below threshold:     {len(below_threshold)}  (keep flat)")
 
     if by_category:
-        console.print("\n  [bold]By category:[/bold]")
+        con.print("\n  [bold]By category:[/bold]")
         for cat in sorted(by_category, key=lambda c: (c == "Uncategorised", c)):
             themes_in_cat = by_category[cat]
             new_in_cat = sum(
                 1 for t in themes_in_cat if t.get("suggested_path") not in established_set
             )
             new_suffix = f"  [dim]({new_in_cat} new)[/dim]" if new_in_cat else ""
-            console.print(f"    {cat + ':':<20} {len(themes_in_cat)} theme(s){new_suffix}")
+            con.print(f"    {cat + ':':<20} {len(themes_in_cat)} theme(s){new_suffix}")
 
-    console.print("\n[bold]Next steps:[/bold]")
-    console.print(f"  1. Review {output_path}")
-    console.print("  2. Edit theme names, merge or split as needed")
-    console.print(
-        "  3. Run: uv run notes draft  — generates a draft taxonomy YAML from this theme map"
-    )
-    console.print("  4. Review the draft, then copy to config/taxonomy.local.yaml")
-    console.print("  5. Run: uv run notes classify")
+    con.print("\n[bold]Next steps:[/bold]")
+    con.print(f"  1. Review {output_path}")
+    con.print("  2. Edit theme names, merge or split as needed")
+    con.print("  3. Run: uv run notes draft  — generates a draft taxonomy YAML from this theme map")
+    con.print("  4. Review the draft, then copy to config/taxonomy.local.yaml")
+    con.print("  5. Run: uv run notes classify")
 
-    logger.finish(
-        summary={
-            "notes_processed": len(summaries),
-            "themes_found": len(final_themes),
-            "new_paths": len(new_paths),
-            "above_threshold": len(above_threshold),
-            "below_threshold": len(below_threshold),
-            "batch_errors": batch_errors,
-        },
+    summary: dict[str, object] = {
+        "notes_processed": len(summaries),
+        "themes_found": len(final_themes),
+        "new_paths": len(new_paths),
+        "above_threshold": len(above_threshold),
+        "below_threshold": len(below_threshold),
+        "batch_errors": batch_errors,
+    }
+    log_file = logger.finish(
+        summary=summary,
         dry_run=False,
         params={"export_file": str(export_path), "model": model, "sample_size": sample_size},
     )
+    if json_output:
+        emit_result("discover", output_file=output_path, log_file=log_file, summary=summary)
