@@ -371,11 +371,11 @@ def run_classify(export_file: str | None, dry_run: bool, json_output: bool = Fal
                 # Prefer proposed_folder_path (new prompt); fall back to old separate fields
                 proposed_folder_path_raw = result.get("proposed_folder_path") or ""
                 if not proposed_folder_path_raw:
-                    pf = result.get("proposed_folder", "")
+                    pf = result.get("proposed_folder") or ""
                     ps = result.get("proposed_subfolder") or ""
                     proposed_folder_path_raw = f"{pf}/{ps}" if ps else pf
                 proposed_folder_path = clamp_path(
-                    proposed_folder_path_raw, effective_max_depth(settings)
+                    proposed_folder_path_raw or "", effective_max_depth(settings)
                 )
                 parts = proposed_folder_path.split("/", 1)
                 proposed_folder = parts[0]

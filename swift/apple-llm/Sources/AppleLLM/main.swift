@@ -9,6 +9,7 @@
 //   1 — general error (bad input, unexpected failure)
 //   2 — Apple Intelligence unavailable (device/settings)
 //   3 — context window exceeded (reduce batch_size in settings.local.yaml)
+//   4 — unsupported language or locale (note content not supported by on-device model)
 
 import Foundation
 import FoundationModels
@@ -70,6 +71,10 @@ func run() async {
                 stderr
             )
             exit(3)
+        }
+        if desc.contains("unsupportedLanguageOrLocale") {
+            fputs("error: unsupported language or locale\n", stderr)
+            exit(4)
         }
         fputs("error: generation failed: \(error)\n", stderr)
         exit(1)

@@ -169,6 +169,8 @@ class AppleProvider:
             sys.exit(f"Apple Intelligence not available: {result.stderr.strip()}")
         if result.returncode == 3:
             raise RuntimeError("apple_context_overflow")
+        if result.returncode == 4:
+            raise RuntimeError("apple_unsupported_locale")
         if result.returncode != 0:
             raise RuntimeError(f"apple-llm exited {result.returncode}: {result.stderr.strip()}")
         return result.stdout
