@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-31
+
 ### Added
 
 - `notes draft` threshold bypass: existing Apple Notes folders are now always included in the taxonomy draft regardless of `min_notes_for_subfolder` — the threshold was designed to prevent creating thin *new* folders, not to filter folders the user already made; a folder with 1 note is honoured if it exists in the library
@@ -66,5 +68,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pre-commit hook blocking accidental commits of personal config and note data
 - Pytest test suite with ≥90% line coverage
 
-[Unreleased]: https://github.com/jdmacleod/manage-apple-notes/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/jdmacleod/manage-apple-notes/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/jdmacleod/manage-apple-notes/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jdmacleod/manage-apple-notes/releases/tag/v0.1.0

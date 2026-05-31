@@ -108,6 +108,10 @@ Regardless of provider, this repo is public and personal data is kept out of git
 
 See [`config/taxonomy.example.yaml`](config/taxonomy.example.yaml) (Forever Notes / Zettelkasten), [`config/taxonomy.para.yaml`](config/taxonomy.para.yaml) (PARA method), and [`config/settings.example.yaml`](config/settings.example.yaml) for the committed templates.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code quality requirements, and how to submit a pull request.
+
 ## License
 
 MIT
