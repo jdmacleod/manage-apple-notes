@@ -297,6 +297,7 @@ def run_classify(export_file: str | None, dry_run: bool, json_output: bool = Fal
         con.print(f"Batches:      {len(batches)}  (batch size: {batch_size})\n")
         con.print(f"Provider:     {provider.name}")
         con.print(f"Model:        {model}")
+        con.print(f"Mode:         {reorganization_mode(settings)}")
         con.print(f"Est. tokens:  ~{est_total_tokens:,}  (~{est_tokens_per_batch:,}/batch)")
         con.print(f"Est. cost:    {cost_str}")
         estimate = estimate_duration("classify", len(notes), logs_dir_path(settings))
@@ -319,6 +320,7 @@ def run_classify(export_file: str | None, dry_run: bool, json_output: bool = Fal
         return
 
     logger = RunLogger("classify", logs_dir_path(settings))
+    con.print(f"[dim]Mode: {reorganization_mode(settings)}  ·  {provider.name} / {model}[/dim]")
     estimate = estimate_duration("classify", len(notes), logs_dir_path(settings))
     if estimate:
         con.print(f"[dim]Estimated duration: {estimate}[/dim]")

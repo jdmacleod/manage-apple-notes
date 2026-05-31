@@ -106,6 +106,7 @@ def run_inbox(dry_run: bool, json_output: bool = False) -> None:
         return
 
     logger = RunLogger("triage", logs_dir_path(settings))
+    con.print(f"[dim]{provider.name} / {model}[/dim]")
     estimate = estimate_duration("triage", len(notes), logs_dir_path(settings))
     if estimate:
         con.print(f"[dim]Estimated duration: {estimate}[/dim]")

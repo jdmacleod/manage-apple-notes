@@ -300,7 +300,7 @@ def run_discover(export_file: str | None, dry_run: bool, json_output: bool = Fal
         return
 
     logger = RunLogger("discover", logs_dir_path(settings))
-    con.print(f"[dim]Mode: {reorganization_mode(settings)}[/dim]")
+    con.print(f"[dim]Mode: {reorganization_mode(settings)}  ·  {provider.name} / {model}[/dim]")
     estimate = estimate_duration("discover", len(summaries), logs_dir_path(settings))
     if estimate:
         con.print(f"[dim]Estimated duration: {estimate}[/dim]")
