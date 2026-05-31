@@ -15,7 +15,7 @@ from scripts.config import load_settings, load_taxonomy, local_taxonomy_exists
 from scripts.folder_utils import enumerate_paths
 from scripts.json_output import emit_result
 from scripts.json_utils import extract_json_object
-from scripts.providers import LLMProvider, get_provider
+from scripts.providers import LLMProvider, get_max_tokens, get_provider
 from scripts.run_logger import RunLogger, logs_dir_path
 
 console = Console()
@@ -77,7 +77,9 @@ def bootstrap_taxonomy(
     )
 
     try:
-        response = provider.classify_messages(system, "")
+        response = provider.classify_messages(
+            system, "", max_tokens=get_max_tokens(settings, provider)
+        )
         mapping = extract_json_object(response)
     except Exception as exc:
         console.print(f"[yellow]Warning:[/yellow] Bootstrap LLM call failed — {exc}")

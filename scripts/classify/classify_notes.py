@@ -33,7 +33,7 @@ from scripts.folder_utils import (
 )
 from scripts.json_output import emit_result
 from scripts.json_utils import extract_json_array, is_context_overflow
-from scripts.providers import LLMProvider, get_provider
+from scripts.providers import LLMProvider, get_max_tokens, get_provider
 from scripts.run_logger import RunLogger, estimate_duration, logs_dir_path
 
 console = Console()
@@ -169,6 +169,7 @@ def classify_batch(
     text = provider.classify_messages(
         system_prompt,
         json.dumps(batch_payload, indent=2, ensure_ascii=False),
+        max_tokens=get_max_tokens(settings, provider),
     )
     return extract_json_array(text)
 

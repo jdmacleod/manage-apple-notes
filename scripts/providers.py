@@ -136,3 +136,12 @@ def get_provider(settings: dict, dry_run: bool = False) -> LLMProvider:
         timeout = float(llm_cfg.get("request_timeout", 1200))
         return OllamaProvider(model, timeout=timeout, dry_run=dry_run)
     return AnthropicProvider(model)
+
+
+def get_max_tokens(settings: dict, provider: LLMProvider) -> int:
+    """Return the configured max_tokens for the given provider, defaulting to 4096."""
+    llm_cfg = settings.get("llm") or settings.get("claude", {})
+    context_size = llm_cfg.get("context_size", {})
+    if isinstance(context_size, dict):
+        return int(context_size.get(provider.name, 4096))
+    return int(context_size or 4096)
