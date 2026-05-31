@@ -82,8 +82,20 @@ def _established_paths(taxonomy: dict) -> list[str]:
 
 
 def _export_folder_tree(notes: list[dict]) -> list[str]:
-    """Return all unique, non-empty folder paths present in the export, sorted."""
-    return sorted({fp for n in notes if (fp := n.get("folder_path") or n.get("folder", ""))})
+    """Return unique folder paths from the export in first-appearance order.
+
+    Preserves Apple Notes' native folder arrangement — AppleScript walks folders
+    in the order they appear in the app, so first-appearance reflects the user's
+    actual arrangement rather than an alphabetical sort.
+    """
+    seen: set[str] = set()
+    result: list[str] = []
+    for n in notes:
+        fp = n.get("folder_path") or n.get("folder", "")
+        if fp and fp not in seen:
+            seen.add(fp)
+            result.append(fp)
+    return result
 
 
 def inject_discover_taxonomy(

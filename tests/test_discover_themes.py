@@ -142,13 +142,14 @@ class TestInjectDiscoverTaxonomy:
 
 
 class TestExportFolderTree:
-    def test_returns_sorted_unique_paths(self) -> None:
+    def test_returns_unique_paths_in_first_appearance_order(self) -> None:
         notes = [
             {"folder_path": "Resources/Cooking"},
             {"folder_path": "Areas/Finance"},
-            {"folder_path": "Resources/Cooking"},
+            {"folder_path": "Resources/Cooking"},  # duplicate — should appear once
         ]
-        assert _export_folder_tree(notes) == ["Areas/Finance", "Resources/Cooking"]
+        # First-appearance order matches Apple Notes native arrangement, not alphabetical.
+        assert _export_folder_tree(notes) == ["Resources/Cooking", "Areas/Finance"]
 
     def test_filters_empty_strings(self) -> None:
         notes = [{"folder_path": ""}, {"folder_path": "Areas/Finance"}, {"folder": ""}]

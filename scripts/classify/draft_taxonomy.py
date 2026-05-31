@@ -142,7 +142,7 @@ def merge_new_paths(taxonomy: dict, new_paths: list[str]) -> tuple[dict, list[st
     added: list[str] = []
     skipped: list[str] = []
 
-    for path in sorted(new_paths):
+    for path in new_paths:
         parts = path.split("/")
         if len(parts) < 2:
             skipped.append(path)
@@ -228,12 +228,22 @@ def run_draft(theme_map_file: str | None, dry_run: bool, json_output: bool = Fal
     )
     if export_path:
         _export_notes: list[dict] = json.loads(export_path.read_text())
-        export_folder_tree: set[str] = {
-            fp for n in _export_notes if (fp := n.get("folder_path") or n.get("folder", ""))
-        }
+        _seen_fps: set[str] = set()
+        ordered_export_paths: list[str] = []
+        for _n in _export_notes:
+            _fp = _n.get("folder_path") or _n.get("folder", "")
+            if _fp and _fp not in _seen_fps:
+                _seen_fps.add(_fp)
+                ordered_export_paths.append(_fp)
+        export_folder_tree: set[str] = set(ordered_export_paths)
     else:
         _export_notes = []
+        ordered_export_paths = []
         export_folder_tree = set()
+
+    # Position map: path → index in Apple Notes native order.
+    # Paths absent from the export (LLM-only proposals) sort after all export paths.
+    export_order: dict[str, int] = {p: i for i, p in enumerate(ordered_export_paths)}
 
     # ── Bootstrap: map actual Apple Notes folders to taxonomy roles ───────────
     # When no taxonomy.local.yaml exists, use an LLM call to infer the taxonomy
@@ -295,9 +305,18 @@ def run_draft(theme_map_file: str | None, dry_run: bool, json_output: bool = Fal
     # not a reliable source for existing subfolder structure.
     if export_folder_tree:
         export_subfolders = {p for p in export_folder_tree if "/" in p and p not in established}
-        candidate_paths = sorted(set(candidate_paths) | export_subfolders)
+        candidate_set = set(candidate_paths) | export_subfolders
+    else:
+        candidate_set = set(candidate_paths)
 
-    new_paths = sorted(set(candidate_paths) - established)
+    # Sort by Apple Notes native position so subfolders land in the draft in the
+    # same sequence the user arranged them in the app.  Paths absent from the export
+    # (LLM-only proposals) fall after all export-ordered entries and sort
+    # alphabetically among themselves via the secondary key.
+    def _export_key(p: str) -> tuple[int, str]:
+        return (export_order.get(p, len(ordered_export_paths)), p)
+
+    new_paths = sorted(candidate_set - established, key=_export_key)
 
     if not new_paths:
         con.print("[dim]No new paths to add — taxonomy is already up to date.[/dim]")

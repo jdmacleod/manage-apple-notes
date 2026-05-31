@@ -115,10 +115,12 @@ class TestMergeNewPaths:
         merge_new_paths(minimal_taxonomy, ["Resources/Finance"])
         assert minimal_taxonomy["taxonomy"]["resources"]["subfolders"] == original_sf
 
-    def test_multiple_paths_sorted_deterministically(self, minimal_taxonomy: dict) -> None:
+    def test_multiple_paths_preserves_caller_order(self, minimal_taxonomy: dict) -> None:
+        # merge_new_paths no longer re-sorts — it preserves the caller-supplied sequence
+        # so run_draft can control insertion order via the export position map.
         paths = ["Resources/Zebra", "Resources/Alpha", "Resources/Mango"]
         _, added, _ = merge_new_paths(minimal_taxonomy, paths)
-        assert added == sorted(added)
+        assert added == paths
 
 
 # ---------------------------------------------------------------------------
@@ -541,6 +543,104 @@ class TestRunDraftExportSubfolderPromotion:
             list((tmp_path / "drafts").glob("*.yaml")) if (tmp_path / "drafts").exists() else []
         )
         assert drafts == []
+
+
+class TestRunDraftExportOrdering:
+    """New subfolders are inserted in Apple Notes native order, not alphabetically."""
+
+    def test_subfolders_follow_export_order_not_alphabetical(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_taxonomy: dict,
+        minimal_settings: dict,
+    ) -> None:
+        # Export has Zebra before Alpha — non-alphabetical, Apple Notes native order.
+        export_file = tmp_path / "notes-test.json"
+        export_file.write_text(
+            json.dumps(
+                [
+                    {"id": "n1", "title": "Note", "body": "x", "folder_path": "Resources/Zebra"},
+                    {"id": "n2", "title": "Note", "body": "x", "folder_path": "Resources/Alpha"},
+                ]
+            )
+        )
+
+        theme_map_file = tmp_path / "themes-test.json"
+        theme_map_file.write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-05-31T00:00:00+00:00",
+                    "source_export": str(export_file),
+                    "total_notes": 2,
+                    "subfolder_threshold": 1,
+                    "established_paths": [],
+                    "themes": [],
+                    "new_paths": [],
+                    "above_threshold": 0,
+                    "below_threshold": 0,
+                }
+            )
+        )
+        _patch_draft(mocker, tmp_path, minimal_taxonomy, minimal_settings)
+
+        run_draft(theme_map_file=str(theme_map_file), dry_run=False)
+
+        drafts = list((tmp_path / "drafts").glob("*.yaml"))
+        assert len(drafts) == 1
+        content = drafts[0].read_text()
+        # Zebra must appear before Alpha — export order, not alphabetical order.
+        assert "Zebra" in content and "Alpha" in content
+        assert content.index("Zebra") < content.index("Alpha")
+
+    def test_llm_only_paths_appended_after_export_paths(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_taxonomy: dict,
+        minimal_settings: dict,
+    ) -> None:
+        # Export has one real folder; LLM proposes an additional path not in the export.
+        # The real folder should appear first, the LLM proposal appended after.
+        export_file = tmp_path / "notes-test.json"
+        export_file.write_text(
+            json.dumps(
+                [{"id": "n1", "title": "Note", "body": "x", "folder_path": "Resources/Zebra"}]
+            )
+        )
+
+        theme_map_file = tmp_path / "themes-test.json"
+        theme_map_file.write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-05-31T00:00:00+00:00",
+                    "source_export": str(export_file),
+                    "total_notes": 1,
+                    "subfolder_threshold": 1,
+                    "established_paths": [],
+                    "themes": [
+                        {
+                            "name": "Alpha",
+                            "suggested_path": "Resources/Alpha",
+                            "estimated_count": 5,
+                        }
+                    ],
+                    "new_paths": [],
+                    "above_threshold": 1,
+                    "below_threshold": 0,
+                }
+            )
+        )
+        _patch_draft(mocker, tmp_path, minimal_taxonomy, minimal_settings)
+
+        run_draft(theme_map_file=str(theme_map_file), dry_run=False)
+
+        drafts = list((tmp_path / "drafts").glob("*.yaml"))
+        assert len(drafts) == 1
+        content = drafts[0].read_text()
+        # Zebra (from export) must appear before Alpha (LLM-only, not in export).
+        assert "Zebra" in content and "Alpha" in content
+        assert content.index("Zebra") < content.index("Alpha")
 
 
 class TestTopLevelFolders:
