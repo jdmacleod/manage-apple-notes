@@ -198,40 +198,53 @@ class TestGenerateHubBody:
 
 class TestBuildHomeBody:
     def test_includes_category_headings(self, minimal_taxonomy: dict) -> None:
-        theme_index: dict = {}
-        body = _build_home_body(minimal_taxonomy, theme_index, "✱ ", "✱ Home")
+        body = _build_home_body(minimal_taxonomy, {}, {}, "✱ ", "✱ Home")
         assert "Inbox" in body
         assert "Resources" in body
 
     def test_hub_eligible_subfolder_appears(self, minimal_taxonomy: dict) -> None:
-        theme_index = {
+        hub_index = {
             "Reference": {
                 "_sf_def": {"name": "Reference", "hub_title": "✱ Reference"},
                 "categories": {"Resources": [("Note", "p1")]},
                 "total": 5,
             }
         }
-        body = _build_home_body(minimal_taxonomy, theme_index, "✱ ", "✱ Home")
+        body = _build_home_body(minimal_taxonomy, hub_index, hub_index, "✱ ", "✱ Home")
         assert "✱ Reference" in body
 
     def test_non_hub_subfolder_appears_plain(self, minimal_taxonomy: dict) -> None:
-        theme_index: dict = {}
-        body = _build_home_body(minimal_taxonomy, theme_index, "✱ ", "✱ Home")
+        body = _build_home_body(minimal_taxonomy, {}, {}, "✱ ", "✱ Home")
         assert "Reference" in body
 
+    def test_home_only_subfolder_appears_as_leaf(self, minimal_taxonomy: dict) -> None:
+        # Subfolder meets min_notes_for_home_link but not min_notes_for_hub:
+        # it appears in home_index but not hub_index, so renders as plain leaf name.
+        home_index = {
+            "Reference": {
+                "_sf_def": {"name": "Reference"},
+                "categories": {"Resources": [("Note", "p1")]},
+                "total": 1,
+            }
+        }
+        body = _build_home_body(minimal_taxonomy, {}, home_index, "✱ ", "✱ Home")
+        assert "Reference" in body
+        assert "✱ Reference" not in body
+        assert "href" not in body
+
     def test_deep_subfolder_appears_in_home(self, deep_taxonomy: dict) -> None:
-        theme_index = {
+        hub_index = {
             "Python": {
                 "_sf_def": {"name": "Python", "hub_title": "✱ Python"},
                 "categories": {"Resources": [("Note", "p1")]},
                 "total": 4,
             }
         }
-        body = _build_home_body(deep_taxonomy, theme_index, "✱ ", "✱ Home")
+        body = _build_home_body(deep_taxonomy, hub_index, hub_index, "✱ ", "✱ Home")
         assert "✱ Python" in body
 
     def test_deep_subfolder_indented_after_parent(self, deep_taxonomy: dict) -> None:
-        theme_index = {
+        hub_index = {
             "Programming": {
                 "_sf_def": {"name": "Programming"},
                 "categories": {"Resources": [("Note", "p1")]},
@@ -243,7 +256,7 @@ class TestBuildHomeBody:
                 "total": 4,
             },
         }
-        body = _build_home_body(deep_taxonomy, theme_index, "✱ ", "✱ Home")
+        body = _build_home_body(deep_taxonomy, hub_index, hub_index, "✱ ", "✱ Home")
         prog_pos = body.index("Programming")
         python_pos = body.index("Python")
         assert python_pos > prog_pos
@@ -365,12 +378,13 @@ class TestRunSyncHubs:
         run_sync_hubs(export_file=str(export_file), dry_run=True)
         mock_subprocess.assert_not_called()
 
-    def test_no_hub_eligible_themes_exits_early(
+    def test_no_home_eligible_subfolders_exits_early(
         self,
         mocker: MagicMock,
         tmp_path: Path,
         minimal_taxonomy: dict,
     ) -> None:
+        # Empty notes list → home_index is empty → exits before writing anything.
         notes: list[dict] = []
         export_file = tmp_path / "notes-empty.json"
         export_file.write_text(json.dumps(notes))
@@ -378,7 +392,7 @@ class TestRunSyncHubs:
         settings = {
             "forever_notes_mode": "strict",
             "strict_mode": {"hub_title_prefix": "✱ "},
-            "thresholds": {"min_notes_for_hub": 5},
+            "thresholds": {"min_notes_for_hub": 5, "min_notes_for_home_link": 1},
             "toplevel_folder": {"enabled": False},
         }
         mocker.patch("scripts.forever_notes.sync_hubs.load_settings", return_value=settings)

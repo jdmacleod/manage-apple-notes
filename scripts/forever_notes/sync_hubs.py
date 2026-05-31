@@ -286,7 +286,8 @@ def _write_note_applescript(
 
 def _build_home_body(
     taxonomy: dict,
-    theme_index: dict[str, dict],
+    hub_index: dict[str, dict],
+    home_index: dict[str, dict],
     hub_prefix: str,
     home_title: str,
     hub_ids: dict[str, str] | None = None,
@@ -296,12 +297,14 @@ def _build_home_body(
     """Build the taxonomy-driven ✱ Home note body as HTML.
 
     Categories appear in taxonomy file order; headings use the folder: value.
-    When use_links=True, Hub-eligible subfolders are rendered as applenotes://
-    links using hub_uuids (stable) or hub_ids (local pNNN) as available.
-    When use_links=False (default), all subfolder entries are plain text.
+    hub_index: subfolders that have a Hub note (>= min_notes_for_hub). These
+      receive Hub-title rendering and, when use_links=True, applenotes:// links.
+    home_index: all subfolders listed on Home (>= min_notes_for_home_link).
+      Entries present here but absent from hub_index appear as plain leaf names
+      (no Hub note exists to link to).
     The home_title is placed first so Apple Notes uses it as the note title.
     """
-    hub_eligible: set[str] = set(theme_index.keys())
+    hub_eligible: set[str] = set(hub_index.keys())
     hub_ids = hub_ids or {}
     hub_uuids = hub_uuids or {}
     cats = taxonomy.get("taxonomy", {})
@@ -320,7 +323,7 @@ def _build_home_body(
                 leaf = path.split("/")[-1]
                 indent = "&nbsp;&nbsp;" * (depth - 2)
                 if leaf in hub_eligible:
-                    h_title = _hub_title(theme_index[leaf]["_sf_def"], hub_prefix)
+                    h_title = _hub_title(hub_index[leaf]["_sf_def"], hub_prefix)
                     if use_links:
                         uuid = hub_uuids.get(h_title, "")
                         local_id = hub_ids.get(h_title, "")
@@ -368,7 +371,8 @@ def run_sync_hubs(
     container = tl_cfg.get("name", "") if tl_cfg.get("enabled", False) else ""
 
     thresholds = settings.get("thresholds", {})
-    min_count = int(thresholds.get("min_notes_for_hub", 3))
+    min_hub = int(thresholds.get("min_notes_for_hub", 3))
+    min_home = int(thresholds.get("min_notes_for_home_link", 1))
 
     taxonomy = load_taxonomy()
     if not local_taxonomy_exists():
@@ -395,11 +399,12 @@ def run_sync_hubs(
         notes: list[dict] = json.load(f)
     _con.print(f"  {len(notes)} notes loaded")
 
-    theme_index = _build_theme_index(taxonomy, notes, min_count)
+    hub_index = _build_theme_index(taxonomy, notes, min_hub)
+    home_index = _build_theme_index(taxonomy, notes, min_home)
 
-    if not theme_index:
+    if not home_index:
         _con.print(
-            "[yellow]No Hub-eligible themes found (no subfolders meet the note count threshold).[/yellow]"
+            "[yellow]No home-eligible subfolders found (no subfolders meet the minimum note threshold).[/yellow]"
         )
         if json_output:
             emit_result(
@@ -409,7 +414,10 @@ def run_sync_hubs(
             )
         return
 
-    _con.print(f"\nFound [bold]{len(theme_index)}[/bold] Hub-eligible theme(s).")
+    _con.print(
+        f"\nFound [bold]{len(hub_index)}[/bold] Hub note(s), "
+        f"[bold]{len(home_index)}[/bold] Home-listed subfolder(s)."
+    )
     if dry_run:
         _con.print("[dim](dry-run — no writes)[/dim]\n")
 
@@ -418,7 +426,7 @@ def run_sync_hubs(
     if use_links:
         all_note_pks = [
             _url_id(nid)
-            for theme_data in theme_index.values()
+            for theme_data in hub_index.values()
             for note_pairs in theme_data["categories"].values()
             for _, nid in note_pairs
             if _url_id(nid)
@@ -433,7 +441,7 @@ def run_sync_hubs(
     created = updated = errors = 0
     hub_ids: dict[str, str] = {}  # hub_title → local pNNN returned by AppleScript
 
-    for _theme_name, theme_data in sorted(theme_index.items()):
+    for _theme_name, theme_data in sorted(hub_index.items()):
         sf_def = theme_data["_sf_def"]
         h_title = _hub_title(sf_def, hub_prefix)
         categories = theme_data["categories"]
@@ -484,7 +492,14 @@ def run_sync_hubs(
     # ✱ Home — built after Hubs so hub_ids/hub_uuids contain fresh identifiers
     _con.print(f"\n  [bold]{home_title}[/bold] — root index")
     home_body = _build_home_body(
-        taxonomy, theme_index, hub_prefix, home_title, hub_ids, hub_uuids, use_links=use_links
+        taxonomy,
+        hub_index,
+        home_index,
+        hub_prefix,
+        home_title,
+        hub_ids,
+        hub_uuids,
+        use_links=use_links,
     )
 
     home_status, _ = _write_note_applescript(
