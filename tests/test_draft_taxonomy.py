@@ -374,14 +374,16 @@ class TestRunDraftThresholdBypass:
         content = drafts[0].read_text()
         assert "Resources/Recipes" in content
 
-    def test_below_threshold_excluded_when_no_matching_export_path(
+    def test_below_threshold_llm_path_excluded_but_real_export_path_included(
         self,
         mocker: MagicMock,
         tmp_path: Path,
         minimal_taxonomy: dict,
         minimal_settings: dict,
     ) -> None:
-        # Export only has "Resources/Cooking" — theme suggests "Resources/Tiny" (not in export)
+        # Export has "Resources/Cooking" (a real folder).
+        # The LLM suggested "Resources/Tiny" (below threshold, not in export) — should be excluded.
+        # "Resources/Cooking" is in the export → promoted directly, so a draft IS written.
         export_file = tmp_path / "notes-2026-01-01.json"
         export_file.write_text(
             json.dumps(
@@ -422,7 +424,119 @@ class TestRunDraftThresholdBypass:
 
         run_draft(theme_map_file=str(theme_map_file), dry_run=False)
 
-        # Should still be excluded — not in export tree and below threshold
+        # Draft should be written (Resources/Cooking was promoted from export)
+        drafts = list((tmp_path / "drafts").glob("*.yaml"))
+        assert len(drafts) == 1
+        content = drafts[0].read_text()
+        # The real export folder is included
+        assert "Resources/Cooking" in content
+        # The LLM's invented below-threshold path is excluded
+        assert "Resources/Tiny" not in content
+
+
+class TestRunDraftExportSubfolderPromotion:
+    """Export subfolders absent from the theme map are promoted directly into the draft."""
+
+    def test_export_subfolder_not_in_themes_is_included(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_taxonomy: dict,
+        minimal_settings: dict,
+    ) -> None:
+        # Export has "Resources/Recipes" but the theme map never mentions it as
+        # a suggested_path — simulates the LLM using a content-based name instead.
+        export_file = tmp_path / "notes-2026-01-01.json"
+        export_file.write_text(
+            json.dumps(
+                [
+                    {
+                        "id": "n1",
+                        "title": "Pasta",
+                        "body": "recipe",
+                        "folder_path": "Resources/Recipes",
+                    }
+                ]
+            )
+        )
+
+        theme_map_file = tmp_path / "themes-test.json"
+        theme_map_file.write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-01-01T00:00:00+00:00",
+                    "source_export": str(export_file),
+                    "total_notes": 1,
+                    "subfolder_threshold": 8,
+                    "established_paths": [],
+                    "themes": [
+                        # LLM named it "Cooking" and mapped to a different path — no mention
+                        # of "Resources/Recipes" anywhere in suggested_paths
+                        {
+                            "name": "Cooking",
+                            "suggested_path": "Resources",
+                            "estimated_count": 1,
+                        }
+                    ],
+                    "new_paths": [],
+                    "above_threshold": 0,
+                    "below_threshold": 1,
+                }
+            )
+        )
+        _patch_draft(mocker, tmp_path, minimal_taxonomy, minimal_settings)
+
+        run_draft(theme_map_file=str(theme_map_file), dry_run=False)
+
+        drafts = list((tmp_path / "drafts").glob("*.yaml"))
+        assert len(drafts) == 1, "Draft should be written with the export subfolder"
+        content = drafts[0].read_text()
+        assert "Resources/Recipes" in content
+
+    def test_export_subfolder_already_established_not_duplicated(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_taxonomy: dict,
+        minimal_settings: dict,
+    ) -> None:
+        # "Resources/Reference" is in minimal_taxonomy → it's in established_paths
+        # → it should not be re-added even though it's in the export
+        export_file = tmp_path / "notes-2026-01-01.json"
+        export_file.write_text(
+            json.dumps(
+                [
+                    {
+                        "id": "n1",
+                        "title": "Doc",
+                        "body": "ref",
+                        "folder_path": "Resources/Reference",
+                    }
+                ]
+            )
+        )
+
+        theme_map_file = tmp_path / "themes-test.json"
+        theme_map_file.write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-01-01T00:00:00+00:00",
+                    "source_export": str(export_file),
+                    "total_notes": 1,
+                    "subfolder_threshold": 8,
+                    "established_paths": ["Resources/Reference"],
+                    "themes": [],
+                    "new_paths": [],
+                    "above_threshold": 0,
+                    "below_threshold": 0,
+                }
+            )
+        )
+        _patch_draft(mocker, tmp_path, minimal_taxonomy, minimal_settings)
+
+        run_draft(theme_map_file=str(theme_map_file), dry_run=False)
+
+        # Nothing new to add — only path was already established
         drafts = (
             list((tmp_path / "drafts").glob("*.yaml")) if (tmp_path / "drafts").exists() else []
         )

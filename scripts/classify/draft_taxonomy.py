@@ -283,6 +283,16 @@ def run_draft(theme_map_file: str | None, dry_run: bool) -> None:
             or t["suggested_path"] in export_folder_tree
         )
     ]
+
+    # Also promote any subfolder that exists in the library but wasn't named in
+    # a theme suggested_path.  The LLM performs content-based discovery and may
+    # route structural subfolders (e.g. "Archive/Animation Guild") to a flat
+    # parent path rather than the actual folder name, so the theme map alone is
+    # not a reliable source for existing subfolder structure.
+    if export_folder_tree:
+        export_subfolders = {p for p in export_folder_tree if "/" in p and p not in established}
+        candidate_paths = sorted(set(candidate_paths) | export_subfolders)
+
     new_paths = sorted(set(candidate_paths) - established)
 
     if not new_paths:
