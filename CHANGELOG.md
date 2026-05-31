@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `notes discover` now prints the active `reorganization_mode` before processing starts (both in dry-run and live runs), so users can exit early to adjust the setting before a long discovery run
 - Taxonomy YAML files use `taxonomy:` as the root key instead of `forever_notes:` — rename the key in `config/taxonomy.local.yaml` if upgrading from an earlier version
 - `notes audit` report now separates **Untracked Folders** (subfolders nested under known taxonomy categories but not yet in `taxonomy.local.yaml`) from **Uncategorized Notes** (notes in folders with no taxonomy ancestor at all) — previously both appeared under a single "Uncategorized" section
 - Ollama mid-run connection loss now exits with a clear "Lost connection to Ollama" message and `ollama serve` guidance instead of a raw API error
