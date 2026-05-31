@@ -54,14 +54,14 @@ func run() async {
     // The system prompt alone is typically 1000–1500 tokens; leave headroom for the response.
     let maxResponse = min(input.max_tokens ?? 4096, 800)
 
-    let session = LanguageModelSession {
-        input.system
-    }
+    let options = GenerationOptions(maximumResponseTokens: maxResponse)
 
+    // First attempt — full content.
     do {
-        let options = GenerationOptions(maximumResponseTokens: maxResponse)
+        let session = LanguageModelSession { input.system }
         let response = try await session.respond(to: input.user, options: options)
         print(response.content)
+        return
     } catch {
         let desc = "\(error)"
         if desc.contains("exceededContextWindowSize") || desc.contains("contextWindowSize") {
@@ -72,12 +72,39 @@ func run() async {
             )
             exit(3)
         }
-        if desc.contains("unsupportedLanguageOrLocale") {
-            fputs("error: unsupported language or locale\n", stderr)
-            exit(4)
+        guard desc.contains("unsupportedLanguageOrLocale") else {
+            fputs("error: generation failed: \(error)\n", stderr)
+            exit(1)
         }
-        fputs("error: generation failed: \(error)\n", stderr)
-        exit(1)
+        // Fall through to retry with stripped content.
+    }
+
+    // Retry — strip non-ASCII characters from the note body and try again.
+    // Notes that contain pasted foreign-language text (recipes, quotes, etc.) often
+    // trigger the locale filter even when the title and most of the content are English.
+    // Stripping preserves the English framing while removing the offending characters.
+    let strippedUser = input.user
+        .unicodeScalars
+        .filter { $0.value < 0x80 }  // keep ASCII only
+        .map { Character($0) }
+        .reduce(into: "") { $0.append($1) }
+        .components(separatedBy: .whitespacesAndNewlines)
+        .filter { !$0.isEmpty }
+        .joined(separator: " ")
+
+    guard strippedUser.split(separator: " ").count >= 5 else {
+        // Too little ASCII content left to classify meaningfully.
+        fputs("error: unsupported language or locale (insufficient ASCII content after stripping)\n", stderr)
+        exit(4)
+    }
+
+    do {
+        let retrySession = LanguageModelSession { input.system }
+        let retryResponse = try await retrySession.respond(to: strippedUser, options: options)
+        print(retryResponse.content)
+    } catch {
+        fputs("error: unsupported language or locale\n", stderr)
+        exit(4)
     }
 }
 

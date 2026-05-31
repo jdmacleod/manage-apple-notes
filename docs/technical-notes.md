@@ -495,6 +495,57 @@ batch error and continues.
 | 1 | General error | Raises `RuntimeError` with stderr message |
 | 2 | Apple Intelligence unavailable | Calls `sys.exit()` — halts the pipeline |
 | 3 | Context window exceeded | Raises `RuntimeError("apple_context_overflow")` |
+| 4 | Unsupported language/locale | Raises `RuntimeError("apple_unsupported_locale")` — note is skipped |
+
+### Language and locale support
+
+Apple Intelligence supports **23 locales** across Dutch, Swedish, Turkish, Spanish, Danish,
+Chinese, Italian, Japanese, Norwegian, French, Portuguese, English, German, Korean, and
+Vietnamese. **Always check at runtime** rather than hardcoding this list, as support expands
+with OS updates:
+
+```swift
+let supported = SystemLanguageModel.default.supportedLanguages  // [Locale.Language]
+```
+
+#### What triggers `unsupportedLanguageOrLocale`
+
+The error fires when the Foundation Models framework detects that the prompt is asking it
+to respond in a language it does not support. Because the classification *system* prompt is
+entirely in English, the trigger in practice is **note body content** in an unsupported
+language — a recipe in French, a quote in Japanese, pasted foreign-language text, etc.
+Purely structural content (URLs, code snippets, numbers) generally does not trigger it.
+
+This is a content-language filter, not a device-locale check. A Mac set to English US can
+still hit this error if a note contains enough non-English text.
+
+#### Retry with ASCII-stripped content
+
+`apple-llm` automatically retries once on `unsupportedLanguageOrLocale` by stripping all
+non-ASCII characters from the note body and re-submitting. This handles the common case of
+an otherwise English note with a pasted foreign-language paragraph or a recipe title:
+
+1. First attempt: full note content → `unsupportedLanguageOrLocale`
+2. Strip non-ASCII characters; collapse whitespace
+3. If ≥ 5 ASCII words remain: retry with stripped content
+4. If retry succeeds: result is returned normally (exit 0)
+5. If stripped content is too short or retry also fails: exit 4
+
+Notes that are *entirely* in an unsupported language will still produce exit 4 after the
+retry, and the pipeline logs `apple_unsupported_locale` and skips them. Those notes are
+left in their current folder and do not appear in the proposal.
+
+#### Residual limitations
+
+- Notes composed entirely in an unsupported language cannot be classified by the Apple
+  provider. Switch to Anthropic or Ollama for multilingual libraries.
+- Heavy use of code blocks (inline code, shell commands) can still trigger the filter even
+  after ASCII stripping because the model infers the "language" from the stripped content
+  pattern. There is no workaround for this case.
+- Response truncation: the 4096-token total context window means long notes can produce
+  truncated JSON responses (the `reason` field gets cut off). The pipeline skips truncated
+  responses. Keeping note exports short (`max_body_chars: 500–1000` in settings) reduces
+  this.
 
 ### macOS 26.4+ context size API
 
