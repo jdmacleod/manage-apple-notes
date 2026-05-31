@@ -76,7 +76,7 @@ thresholds:
                                   # of this value — the threshold only gates creation of new structure
                                   # audit uses this inversely: flat folders ABOVE this count → subfolder candidate
                                   # (subfolder candidate check is suppressed when reorganization_mode: conservative)
-  min_notes_for_hub: 3           # minimum notes for a subfolder to get its own Hub note in sync-hubs
+  min_notes_for_hub: 1           # minimum notes for a subfolder to get its own Hub note in sync-hubs
   min_notes_for_home_link: 1    # minimum notes for a subfolder to appear on the ✱ Home note
                                   # set to 1 so every folder with any notes is navigable from Home;
                                   # subfolders below min_notes_for_hub appear as plain text (no Hub
