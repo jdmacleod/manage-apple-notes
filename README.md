@@ -16,6 +16,7 @@ Set `reorganization_mode` in `settings.local.yaml` to control how aggressively t
 
 - macOS with Apple Notes
 - **Terminal Automation permission** — export, move, restore, and hub-sync commands run AppleScript via `osascript`, which requires your terminal app to be allowed to control Notes. Grant it in **System Settings → Privacy & Security → Automation** — enable the Notes checkbox under your terminal app (Terminal, iTerm2, etc.). macOS will prompt the first time a script runs; if the prompt never appears, open System Settings and add it manually.
+- **Full Disk Access (some commands)** — commands that read `NoteStore.sqlite` directly (such as note-to-note link insertion) require Full Disk Access for your terminal app. Grant it in **System Settings → Privacy & Security → Full Disk Access**, run the relevant commands, then revoke it when done if you prefer a conservative security posture. See [Technical Notes: Full Disk Access requirement](docs/technical-notes.md#full-disk-access-requirement) for step-by-step instructions.
 - [uv](https://docs.astral.sh/uv/) (`brew install uv` or `curl -LsSf https://astral.sh/uv/install.sh | sh`)
 - An LLM provider: an [Anthropic API key](https://console.anthropic.com) (cloud) **or** [Ollama](https://ollama.com) running locally
 
