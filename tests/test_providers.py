@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from scripts.providers import AnthropicProvider, AppleProvider, OllamaProvider, get_provider
+from scripts.providers import AnthropicProvider, AppleProvider, OllamaProvider, get_max_tokens, get_provider
 
 
 class TestAnthropicProvider:
@@ -253,3 +253,36 @@ class TestGetProvider:
         settings = {"llm": {"provider": "apple", "apple_llm_binary": binary}}
         provider = get_provider(settings, dry_run=True)
         assert provider.name == "apple"
+
+
+class TestGetMaxTokens:
+    def _make_provider(self, name: str) -> MagicMock:
+        p = MagicMock()
+        p.name = name
+        return p
+
+    def test_dict_returns_provider_specific_value(self) -> None:
+        settings = {"llm": {"context_size": {"anthropic": 8192, "ollama": 4096}}}
+        assert get_max_tokens(settings, self._make_provider("anthropic")) == 8192
+        assert get_max_tokens(settings, self._make_provider("ollama")) == 4096
+
+    def test_missing_key_uses_default(self) -> None:
+        settings = {"llm": {"context_size": {"anthropic": 8192}}}
+        # "ollama" not in dict → default 4096
+        assert get_max_tokens(settings, self._make_provider("ollama")) == 4096
+
+    def test_empty_context_size_uses_default(self) -> None:
+        settings = {"llm": {}}
+        assert get_max_tokens(settings, self._make_provider("anthropic")) == 4096
+
+    def test_no_llm_section_uses_default(self) -> None:
+        assert get_max_tokens({}, self._make_provider("anthropic")) == 4096
+
+    def test_scalar_fallback(self) -> None:
+        # Legacy scalar value (not a dict) is respected
+        settings = {"llm": {"context_size": 2048}}
+        assert get_max_tokens(settings, self._make_provider("anthropic")) == 2048
+
+    def test_legacy_claude_key(self) -> None:
+        settings = {"claude": {"context_size": {"anthropic": 6000}}}
+        assert get_max_tokens(settings, self._make_provider("anthropic")) == 6000

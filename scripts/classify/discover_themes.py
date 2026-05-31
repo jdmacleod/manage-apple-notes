@@ -31,7 +31,7 @@ from scripts.folder_utils import (
 )
 from scripts.json_output import emit_result
 from scripts.json_utils import extract_json_object, is_context_overflow
-from scripts.providers import LLMProvider, get_provider
+from scripts.providers import LLMProvider, get_max_tokens, get_provider
 from scripts.run_logger import RunLogger, estimate_duration, logs_dir_path
 
 console = Console()
@@ -186,6 +186,7 @@ def _discover_batch(
     system_prompt: str,
     batch: list,
     con: Console | None = None,
+    max_tokens: int = 4096,
 ) -> list:
     """Send one batch to the LLM; on context overflow, split recursively and merge."""
     _con = con or console
@@ -193,6 +194,7 @@ def _discover_batch(
         response = provider.classify_messages(
             system_prompt,
             json.dumps(batch, indent=2, ensure_ascii=False),
+            max_tokens=max_tokens,
         )
         result = extract_json_object(response)
         return list(result.get("themes") or [])
@@ -206,8 +208,10 @@ def _discover_batch(
                 f"[yellow]Context overflow — splitting batch ({len(batch)} → {mid}+{len(batch) - mid})[/yellow]"
             )
             return _discover_batch(
-                provider, system_prompt, batch[:mid], con=_con
-            ) + _discover_batch(provider, system_prompt, batch[mid:], con=_con)
+                provider, system_prompt, batch[:mid], con=_con, max_tokens=max_tokens
+            ) + _discover_batch(
+                provider, system_prompt, batch[mid:], con=_con, max_tokens=max_tokens
+            )
         raise
 
 
@@ -237,6 +241,7 @@ def run_discover(export_file: str | None, dry_run: bool, json_output: bool = Fal
     )
     provider = get_provider(settings, dry_run=dry_run)
     model = provider.model
+    max_tokens = get_max_tokens(settings, provider)
 
     # Lightweight summaries — title + first 200 chars of body + folder context
     summaries = [
@@ -404,7 +409,7 @@ def run_discover(export_file: str | None, dry_run: bool, json_output: bool = Fal
         task = progress.add_task("Discovering themes...", total=len(batches) + 1)
 
         for i, batch in enumerate(batches):
-            themes = _discover_batch(provider, system_prompt, batch, con=con)
+            themes = _discover_batch(provider, system_prompt, batch, con=con, max_tokens=max_tokens)
             if themes:
                 raw_theme_lists.append(themes)
                 logger.event("batch", batch=i + 1, count=len(batch), status="ok")
@@ -420,6 +425,7 @@ def run_discover(export_file: str | None, dry_run: bool, json_output: bool = Fal
                 synthesis_response = provider.classify_messages(
                     synthesis_prompt,
                     json.dumps(all_raw, indent=2, ensure_ascii=False),
+                    max_tokens=max_tokens,
                 )
                 synthesized = extract_json_object(synthesis_response)
                 final_themes = synthesized.get("themes", all_raw)

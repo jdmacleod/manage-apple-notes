@@ -61,6 +61,32 @@ Suitable for any sensitivity level. See
 [docs/technical-notes.md](technical-notes.md#local-llm-model-recommendations-macos-24gb-unified-memory)
 for model recommendations.
 
+### AWS EC2 — Ollama on a GPU instance
+
+An EC2-hosted Ollama endpoint combines GPU performance with local-model privacy properties.
+Note content is sent to the EC2 instance over an **encrypted SSH tunnel**; it does not pass
+through Anthropic's infrastructure.
+
+Security controls in place:
+
+| Concern | Control |
+|---------|---------|
+| Ollama port (11434) exposure | Not exposed — port 11434 is never opened to the internet |
+| Inbound traffic | Security group allows only port 22/TCP, restricted to the deployer's public IP (auto-detected or explicit CIDR) |
+| EC2 authentication | IAM instance role — no AWS access keys stored on the instance |
+| S3 model bucket (optional) | Private, SSE-S3 encrypted, `BlockPublicAccess.BLOCK_ALL`, HTTPS enforced |
+| AWS credentials (CDK deploy) | Standard `~/.aws/credentials` or env vars; never stored in the repo or committed |
+| Key pair | User-managed EC2 key pair stored in `~/.ssh/`; path referenced in gitignored `settings.local.yaml` |
+| Data in transit | All note content travels through the SSH tunnel (AES-based cipher, authenticated) |
+| Data at rest on EC2 | Instance root EBS volume is encrypted at rest (gp3, `encrypted=True`) |
+
+**Data residency:** Note content is processed on the EC2 instance you control. No third-party
+LLM provider receives the data. The instance runs in the AWS region you configure.
+
+**Shutdown and cleanup:** `cdk destroy` terminates the EC2 instance. If
+`persistent_model_storage: true` is set, the S3 bucket is retained (models are not deleted).
+See [docs/aws-infrastructure.md](aws-infrastructure.md) for manual cleanup steps.
+
 ---
 
 ## Git Safety

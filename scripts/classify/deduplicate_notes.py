@@ -15,7 +15,7 @@ from rich.console import Console
 from scripts.config import find_latest_export, load_settings
 from scripts.json_output import emit_result
 from scripts.json_utils import extract_json_array
-from scripts.providers import LLMProvider, get_provider
+from scripts.providers import LLMProvider, get_max_tokens, get_provider
 from scripts.run_logger import RunLogger, logs_dir_path
 
 console = Console()
@@ -185,6 +185,7 @@ def pass3_llm(
     system_prompt: str,
     provider: LLMProvider,
     preview_chars: int,
+    max_tokens: int = 4096,
 ) -> list[dict]:
     groups_payload = [
         {
@@ -217,6 +218,7 @@ def pass3_llm(
     text = provider.classify_messages(
         system_prompt,
         json.dumps(groups_payload, indent=2, ensure_ascii=False),
+        max_tokens=max_tokens,
     )
     result: list[dict] = extract_json_array(text)
     return result
@@ -306,7 +308,13 @@ def run_dedup(
         provider = get_provider(settings)
         con.print(f"Pass 3: reviewing {len(candidates)} pair(s) with {provider.model}…")
         try:
-            llm_results = pass3_llm(candidates, system_prompt, provider, preview_chars)
+            llm_results = pass3_llm(
+                candidates,
+                system_prompt,
+                provider,
+                preview_chars,
+                max_tokens=get_max_tokens(settings, provider),
+            )
             logger.event("pass", n=3, count=len(candidates), status="ok")
         except Exception as exc:
             con.print(f"[yellow]Warning:[/yellow] LLM review failed: {exc}")
