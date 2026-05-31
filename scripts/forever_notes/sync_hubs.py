@@ -164,7 +164,7 @@ def _build_theme_index(
       }
     Only themes meeting min_count across ALL categories are included.
     """
-    cats = taxonomy.get("forever_notes", {})
+    cats = taxonomy.get("taxonomy", {})
 
     # Build lookup: folder_path → (category_display_name, subfolder_name)
     path_to_cat: dict[str, tuple[str, str]] = {}
@@ -296,7 +296,7 @@ def _build_home_body(
     hub_eligible: set[str] = set(theme_index.keys())
     hub_ids = hub_ids or {}
     hub_uuids = hub_uuids or {}
-    cats = taxonomy.get("forever_notes", {})
+    cats = taxonomy.get("taxonomy", {})
     parts: list[str] = [f"<h1>{html.escape(home_title)}</h1>", "<br>"]
 
     for cat_key, cat_val in cats.items():

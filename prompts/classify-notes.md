@@ -20,4 +20,6 @@ Use "{CATCHALL}" (with null proposed_subfolder) for notes that are too short, to
 or clearly belong to a category not representable in this taxonomy.
 Prefer "high" confidence only when the classification is obvious.
 
+{RELOCATION_GUIDANCE}
+
 Notes to classify:

@@ -31,7 +31,7 @@
 # Five top-level folders. Projects and Resources are flat; navigate by search.
 # Recommended starting point when migrating a large existing library.
 
-forever_notes:
+taxonomy:
   inbox:
     folder: "[YOUR_INBOX_FOLDER]"         # keep flat — process regularly
 
@@ -62,7 +62,7 @@ forever_notes:
 # a differentiated Resources layer, and a mirrored Archive structure.
 # Delete the minimalist block above if using this one.
 #
-# forever_notes:
+# taxonomy:
 #   inbox:
 #     folder: "[YOUR_INBOX_FOLDER]"       # keep flat
 #

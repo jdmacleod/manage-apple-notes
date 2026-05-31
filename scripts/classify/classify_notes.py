@@ -16,7 +16,13 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
-from scripts.config import find_latest_export, load_settings, load_taxonomy, local_taxonomy_exists
+from scripts.config import (
+    find_latest_export,
+    load_settings,
+    load_taxonomy,
+    local_taxonomy_exists,
+    reorganization_mode,
+)
 from scripts.folder_utils import (
     clamp_path,
     effective_max_depth,
@@ -81,6 +87,20 @@ _CATEGORY_META = [
     ("review", "use when classification is genuinely unclear, no subfolders"),
 ]
 
+_RELOCATION_GUIDANCE: dict[str, str] = {
+    "conservative": (
+        "Notes not currently in Inbox or Fleeting are already deliberately organized. "
+        "For these notes, only propose moving them if you are HIGH confidence the current "
+        "location is wrong — otherwise return their current folder path as the proposed_folder_path."
+    ),
+    "standard": "",
+    "full": (
+        "Classify each note based purely on its content. "
+        "The current_folder field is provided for reference only — "
+        "do not let it bias your classification."
+    ),
+}
+
 
 def inject_taxonomy(
     system_prompt: str,
@@ -94,7 +114,7 @@ def inject_taxonomy(
     all available sub-paths are shown indented by depth, up to max_folder_depth.
     Replaces {CATCHALL} with the review folder name, or inbox as a fallback.
     """
-    fn = taxonomy.get("forever_notes", {})
+    fn = taxonomy.get("taxonomy", {})
     mode = nesting_mode(settings)
     max_depth = effective_max_depth(settings)
 
@@ -118,9 +138,12 @@ def inject_taxonomy(
                 lines.append(f"{indent}{leaf}  [{path}]")
 
     catchall = folder_name(fn.get("review")) or folder_name(fn.get("inbox")) or "Inbox"
+    relocation = _RELOCATION_GUIDANCE.get(reorganization_mode(settings), "")
 
-    return system_prompt.replace("{CATEGORY_LIST}", "\n".join(lines)).replace(
-        "{CATCHALL}", catchall
+    return (
+        system_prompt.replace("{CATEGORY_LIST}", "\n".join(lines))
+        .replace("{CATCHALL}", catchall)
+        .replace("{RELOCATION_GUIDANCE}", relocation)
     )
 
 
@@ -220,7 +243,7 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
         else all_notes
     )
 
-    fn = taxonomy.get("forever_notes", {})
+    fn = taxonomy.get("taxonomy", {})
     archive_folder = folder_name(fn.get("archive", ""))
     exclude_archive = settings.get("classify", {}).get("exclude_archive", True)
 
@@ -285,6 +308,15 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
 
     review_folder = folder_name(fn.get("review", ""))
 
+    # In conservative mode, notes outside Inbox/Fleeting are already deliberately placed.
+    # Any non-high-confidence move for such notes goes to needs_review instead of moves.
+    reorg_mode = reorganization_mode(settings)
+    transit_folders: set[str] = set()
+    if reorg_mode == "conservative":
+        inbox_top = folder_name(fn.get("inbox", ""))
+        fleeting_top = folder_name(fn.get("fleeting", ""))
+        transit_folders = {f for f in [inbox_top, fleeting_top] if f}
+
     moves: list[dict] = []
     needs_review: list[dict] = []
     no_change: list[dict] = []
@@ -348,18 +380,31 @@ def run_classify(export_file: str | None, dry_run: bool) -> None:
                         }
                     )
                 else:
-                    moves.append(
-                        {
-                            "id": note_id,
-                            "title": note.get("title", ""),
-                            "current_folder": current_folder,
-                            "proposed_folder": proposed_folder,
-                            "proposed_subfolder": proposed_subfolder,
-                            "proposed_folder_path": proposed_folder_path,
-                            "confidence": confidence,
-                            "reason": reason,
-                        }
-                    )
+                    # Conservative mode: non-high-confidence moves for notes already outside
+                    # Inbox/Fleeting go to needs_review rather than moves.
+                    note_in_transit = current_path.split("/")[0] in transit_folders
+                    if transit_folders and not note_in_transit and confidence != "high":
+                        needs_review.append(
+                            {
+                                "id": note_id,
+                                "title": note.get("title", ""),
+                                "current_folder": current_folder,
+                                "reason": f"[conservative] {reason}",
+                            }
+                        )
+                    else:
+                        moves.append(
+                            {
+                                "id": note_id,
+                                "title": note.get("title", ""),
+                                "current_folder": current_folder,
+                                "proposed_folder": proposed_folder,
+                                "proposed_subfolder": proposed_subfolder,
+                                "proposed_folder_path": proposed_folder_path,
+                                "confidence": confidence,
+                                "reason": reason,
+                            }
+                        )
 
             progress.advance(task)
 

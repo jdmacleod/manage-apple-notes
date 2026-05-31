@@ -45,6 +45,11 @@ def local_taxonomy_exists() -> bool:
     return (CONFIG_DIR / "taxonomy.local.yaml").exists()
 
 
+def reorganization_mode(settings: dict | None) -> str:
+    """Read reorganization_mode from settings, defaulting to 'standard'."""
+    return str((settings or {}).get("reorganization_mode") or "standard")
+
+
 def find_latest_export() -> Path:
     files = sorted(EXPORTS_DIR.glob("notes-*.json"), reverse=True)
     if not files:

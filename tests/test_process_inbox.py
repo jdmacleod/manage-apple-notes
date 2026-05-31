@@ -19,7 +19,7 @@ class TestRunInbox:
         minimal_settings: dict,
         mock_llm_provider: MagicMock,
     ) -> None:
-        taxonomy_no_inbox = {"forever_notes": {}}
+        taxonomy_no_inbox = {"taxonomy": {}}
         mocker.patch(
             "scripts.maintenance.process_inbox.load_settings", return_value=minimal_settings
         )
@@ -36,7 +36,7 @@ class TestRunInbox:
         tmp_path: Path,
         minimal_settings: dict,
     ) -> None:
-        taxonomy_placeholder = {"forever_notes": {"inbox": {"folder": "[Your Inbox Folder]"}}}
+        taxonomy_placeholder = {"taxonomy": {"inbox": {"folder": "[Your Inbox Folder]"}}}
         mocker.patch(
             "scripts.maintenance.process_inbox.load_settings", return_value=minimal_settings
         )
@@ -66,7 +66,7 @@ class TestRunInbox:
         export_file = tmp_path / "notes-test.json"
         export_file.write_text(json.dumps(notes))
 
-        taxonomy = {"forever_notes": {"inbox": {"folder": "Inbox"}}}
+        taxonomy = {"taxonomy": {"inbox": {"folder": "Inbox"}}}
         mocker.patch(
             "scripts.maintenance.process_inbox.load_settings", return_value=minimal_settings
         )
@@ -101,7 +101,7 @@ class TestRunInbox:
         export_file = tmp_path / "notes-test.json"
         export_file.write_text(json.dumps(notes))
 
-        taxonomy = {"forever_notes": {"inbox": {"folder": "Inbox"}}}
+        taxonomy = {"taxonomy": {"inbox": {"folder": "Inbox"}}}
         mocker.patch(
             "scripts.maintenance.process_inbox.load_settings", return_value=minimal_settings
         )

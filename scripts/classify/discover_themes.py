@@ -20,7 +20,7 @@ from scripts.classify.classify_notes import (
     _CATEGORY_META,
     price_per_million,
 )
-from scripts.config import find_latest_export, load_settings, load_taxonomy
+from scripts.config import find_latest_export, load_settings, load_taxonomy, reorganization_mode
 from scripts.folder_utils import (
     effective_max_depth,
     enumerate_paths,
@@ -55,9 +55,26 @@ def load_discover_prompt() -> str:
     return system_part.strip()
 
 
+_CONSERVATISM_GUIDANCE: dict[str, str] = {
+    "conservative": (
+        "Most notes in this library are deliberately organized in their current folders. "
+        "Only propose a new theme or subfolder path when you see a strong cluster of notes "
+        "that genuinely lacks a good home in the existing structure. "
+        "Do not propose reorganization of notes already in stable, purposeful locations. "
+        "Strong evidence — many notes, a clear and distinct topic — is required before "
+        "suggesting any new path."
+    ),
+    "standard": "",
+    "full": (
+        "Treat the entire library as if it has no established structure. "
+        "Propose themes freely based purely on note content, ignoring current folder locations."
+    ),
+}
+
+
 def _established_paths(taxonomy: dict) -> list[str]:
     """Return all subfolder paths (depth ≥ 2) currently defined in the taxonomy."""
-    fn = taxonomy.get("forever_notes", {})
+    fn = taxonomy.get("taxonomy", {})
     return sorted(
         {
             p
@@ -74,7 +91,7 @@ def inject_discover_taxonomy(
     settings: dict | None = None,
 ) -> str:
     """Replace {CATEGORIES}, {ESTABLISHED_PATHS}, and {NESTING_GUIDANCE} in the discover prompt."""
-    fn = taxonomy.get("forever_notes", {})
+    fn = taxonomy.get("taxonomy", {})
     # Build "Folder — description" lines so the LLM knows each category's intent
     category_lines = [
         f"{folder_name(fn[key])} — {desc}"
@@ -124,10 +141,14 @@ def inject_discover_taxonomy(
                 "Propose suggested_path values freely where theme clusters warrant them."
             )
 
+    reorg_mode = reorganization_mode(settings)
+    conservatism = _CONSERVATISM_GUIDANCE.get(reorg_mode, "")
+
     return (
         system_prompt.replace("{CATEGORIES}", "\n".join(category_lines))
         .replace("{ESTABLISHED_PATHS}", established_block)
         .replace("{NESTING_GUIDANCE}", guidance)
+        .replace("{CONSERVATISM_GUIDANCE}", conservatism)
     )
 
 
@@ -214,9 +235,10 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
             console.print(f"Est. time:      {estimate}")
         console.print(f"\nOutput would be written to: {THEME_MAPS_DIR}/themes-{date_str}.json")
         console.print("\nNext steps after reviewing the theme map:")
-        console.print("  1. Edit theme names in the JSON (merge, split, rename as needed)")
-        console.print("  2. Add approved subfolder names to config/taxonomy.local.yaml")
-        console.print("  3. Run: uv run notes classify")
+        console.print("  1. Edit theme names, merge or split as needed")
+        console.print("  2. Run: uv run notes draft  — generates a draft taxonomy YAML from this theme map")
+        console.print("  3. Review the draft, then copy to config/taxonomy.local.yaml")
+        console.print("  4. Run: uv run notes classify")
         RunLogger("discover", logs_dir_path(settings)).finish(
             summary={"notes_processed": len(summaries), "batches": len(batches)},
             dry_run=True,
@@ -231,7 +253,7 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
 
     # ── Pre-compute synthesis prompt (no I/O) ────────────────────────────────
 
-    fn = taxonomy.get("forever_notes", {})
+    fn = taxonomy.get("taxonomy", {})
     mode = nesting_mode(settings)
     max_depth = effective_max_depth(settings)
     current_depth = max_taxonomy_depth(taxonomy)
@@ -263,6 +285,26 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
     else:
         anchor_guidance = "No established subfolder paths yet; propose freely."
 
+    # The synthesis step merges batch results without seeing the original batch system prompt,
+    # so it would otherwise have no knowledge of the user's actual folder names. Injecting the
+    # category list here prevents the synthesis LLM from drifting to generic names (e.g.
+    # "Permanent/Topic" instead of the user's actual folder name "Notes/Topic").
+    category_names = [
+        folder_name(fn[key])
+        for key, _ in _CATEGORY_META
+        if key in fn and folder_name(fn[key])
+    ]
+    top_level_constraint = (
+        f"The valid top-level folder names are exactly: {', '.join(category_names)}. "
+        "Use these exact names as the first component of every suggested_path — "
+        "do not rename or substitute them."
+        if category_names
+        else ""
+    )
+
+    reorg_mode = reorganization_mode(settings)
+    conservatism_guidance = _CONSERVATISM_GUIDANCE.get(reorg_mode, "")
+
     synthesis_prompt = (
         "You received theme lists from multiple batches of notes. "
         "Merge, deduplicate, and consolidate into a single ranked list. "
@@ -270,8 +312,10 @@ def run_discover(export_file: str | None, dry_run: bool) -> None:
         "Sum estimated_counts for merged themes. "
         f"Flag themes with estimated_count < {min_subfolder} as below the subfolder threshold. "
         f"{nesting_guidance} "
+        f"{top_level_constraint} "
         f"{anchor_guidance} "
-        "Every theme must include a suggested_path field. "
+        + (f"{conservatism_guidance} " if conservatism_guidance else "")
+        + "Every theme must include a suggested_path field. "
         "Return a JSON object with a single 'themes' array using the same schema as before."
     )
 

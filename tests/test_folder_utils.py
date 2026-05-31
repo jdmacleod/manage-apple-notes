@@ -141,19 +141,19 @@ class TestPathComponents:
 class TestMaxTaxonomyDepth:
     def test_flat_taxonomy(self) -> None:
         taxonomy = {
-            "forever_notes": {"inbox": {"folder": "Inbox"}, "archive": {"folder": "Archive"}}
+            "taxonomy": {"inbox": {"folder": "Inbox"}, "archive": {"folder": "Archive"}}
         }
         assert max_taxonomy_depth(taxonomy) == 1
 
     def test_two_level_taxonomy(self) -> None:
         taxonomy = {
-            "forever_notes": {"resources": {"folder": "Resources", "subfolders": ["Cooking"]}}
+            "taxonomy": {"resources": {"folder": "Resources", "subfolders": ["Cooking"]}}
         }
         assert max_taxonomy_depth(taxonomy) == 2
 
     def test_three_level_taxonomy(self) -> None:
         taxonomy = {
-            "forever_notes": {
+            "taxonomy": {
                 "resources": {
                     "folder": "Resources",
                     "subfolders": [{"name": "Tech", "subfolders": ["Python"]}],
@@ -167,7 +167,7 @@ class TestMaxTaxonomyDepth:
 
     def test_mixed_depths_returns_max(self) -> None:
         taxonomy = {
-            "forever_notes": {
+            "taxonomy": {
                 "inbox": {"folder": "Inbox"},
                 "resources": {
                     "folder": "Resources",

@@ -38,7 +38,7 @@ class TestProcessInboxRealRun:
         export_file = tmp_path / "notes-test.json"
         export_file.write_text(json.dumps(notes))
 
-        taxonomy = {"forever_notes": {"inbox": {"folder": "Inbox"}}}
+        taxonomy = {"taxonomy": {"inbox": {"folder": "Inbox"}}}
         mock_llm_provider.classify_messages.return_value = json.dumps(
             [
                 {
@@ -95,7 +95,7 @@ class TestProcessInboxRealRun:
         export_file = tmp_path / "notes-test.json"
         export_file.write_text(json.dumps(notes))
 
-        taxonomy = {"forever_notes": {"inbox": {"folder": "Inbox"}}}
+        taxonomy = {"taxonomy": {"inbox": {"folder": "Inbox"}}}
         mock_llm_provider.classify_messages.return_value = json.dumps(
             [
                 {

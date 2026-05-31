@@ -109,7 +109,7 @@ class TestFolderNameAndSubfolders:
 class TestBuildThemeIndex:
     def test_includes_themes_above_min_count(self) -> None:
         taxonomy = {
-            "forever_notes": {
+            "taxonomy": {
                 "resources": {
                     "folder": "Resources",
                     "subfolders": [{"name": "Reference"}],
@@ -126,7 +126,7 @@ class TestBuildThemeIndex:
 
     def test_excludes_themes_below_min_count(self) -> None:
         taxonomy = {
-            "forever_notes": {
+            "taxonomy": {
                 "resources": {
                     "folder": "Resources",
                     "subfolders": [{"name": "Reference"}],
@@ -145,7 +145,7 @@ class TestBuildThemeIndex:
 
     def test_three_level_path_indexed_by_leaf(self) -> None:
         taxonomy = {
-            "forever_notes": {
+            "taxonomy": {
                 "resources": {
                     "folder": "Resources",
                     "subfolders": [

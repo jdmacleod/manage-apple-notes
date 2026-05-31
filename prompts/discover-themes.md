@@ -32,6 +32,8 @@ Skip the classification of any notes with "Archive" in their folder_path - leave
 
 {NESTING_GUIDANCE}
 
+{CONSERVATISM_GUIDANCE}
+
 Return a JSON object:
 {
   "themes": [

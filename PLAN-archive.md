@@ -64,7 +64,7 @@ Literature, Permanent, Projects, Areas, Resources, Archive, Review. See
 # Add them to taxonomy.local.yaml before running notes classify.
 # Categories without a subfolders key remain flat.
 
-forever_notes:
+taxonomy:
   inbox:
     folder: "[YOUR_INBOX_FOLDER]"          # keep flat
 

@@ -80,7 +80,7 @@ class TestMergeNewPaths:
         updated, added, skipped = merge_new_paths(minimal_taxonomy, ["Resources/Finance"])
         assert "Resources/Finance" in added
         assert not skipped
-        fn = updated["forever_notes"]
+        fn = updated["taxonomy"]
         resources_sf = fn["resources"]["subfolders"]
         assert "Finance" in resources_sf
 
@@ -103,15 +103,15 @@ class TestMergeNewPaths:
     def test_deep_path_creates_nested_structure(self, minimal_taxonomy: dict) -> None:
         updated, added, _ = merge_new_paths(minimal_taxonomy, ["Resources/Programming/Python"])
         assert "Resources/Programming/Python" in added
-        sf = updated["forever_notes"]["resources"]["subfolders"]
+        sf = updated["taxonomy"]["resources"]["subfolders"]
         prog = next((x for x in sf if isinstance(x, dict) and x["name"] == "Programming"), None)
         assert prog is not None
         assert "Python" in prog["subfolders"]
 
     def test_original_taxonomy_unchanged(self, minimal_taxonomy: dict) -> None:
-        original_sf = list(minimal_taxonomy["forever_notes"]["resources"]["subfolders"])
+        original_sf = list(minimal_taxonomy["taxonomy"]["resources"]["subfolders"])
         merge_new_paths(minimal_taxonomy, ["Resources/Finance"])
-        assert minimal_taxonomy["forever_notes"]["resources"]["subfolders"] == original_sf
+        assert minimal_taxonomy["taxonomy"]["resources"]["subfolders"] == original_sf
 
     def test_multiple_paths_sorted_deterministically(self, minimal_taxonomy: dict) -> None:
         paths = ["Resources/Zebra", "Resources/Alpha", "Resources/Mango"]
@@ -160,7 +160,7 @@ class TestRunDraft:
                         {
                             "name": "Finance",
                             "suggested_path": "Resources/Finance",
-                            "below_subfolder_threshold": False,
+                            "estimated_count": 10,
                         }
                     ]
                 )
@@ -190,7 +190,7 @@ class TestRunDraft:
                         {
                             "name": "Finance",
                             "suggested_path": "Resources/Finance",
-                            "below_subfolder_threshold": False,
+                            "estimated_count": 10,
                         }
                     ]
                 )
@@ -207,7 +207,7 @@ class TestRunDraft:
         assert "+ Resources/Finance" in content
         parsed = yaml.safe_load(content)
         assert parsed is not None
-        assert "forever_notes" in parsed
+        assert "taxonomy" in parsed
 
     def test_below_threshold_path_excluded(
         self,
@@ -224,7 +224,7 @@ class TestRunDraft:
                         {
                             "name": "Tiny Theme",
                             "suggested_path": "Resources/Tiny",
-                            "below_subfolder_threshold": True,
+                            "estimated_count": 2,  # below default threshold of 8
                         }
                     ]
                 )
@@ -254,7 +254,7 @@ class TestRunDraft:
                         {
                             "name": "Reference",
                             "suggested_path": "Resources/Reference",
-                            "below_subfolder_threshold": False,
+                            "estimated_count": 10,
                         }
                     ],
                     established_paths=["Resources/Reference"],
@@ -296,7 +296,7 @@ class TestRunDraft:
                         {
                             "name": "Health",
                             "suggested_path": "Areas/Health",
-                            "below_subfolder_threshold": False,
+                            "estimated_count": 10,
                         }
                     ]
                 )
@@ -309,7 +309,7 @@ class TestRunDraft:
         drafts = list((tmp_path / "drafts").glob("*.yaml"))
         assert len(drafts) == 1
         parsed = yaml.safe_load(drafts[0].read_text())
-        fn = parsed["forever_notes"]
+        fn = parsed["taxonomy"]
         # minimal_taxonomy has archive but no areas — Health goes to skipped
         # Let's check that the YAML is at least valid and complete
         assert "inbox" in fn or "resources" in fn

@@ -25,7 +25,7 @@ class TestInjectDiscoverTaxonomy:
         assert "Resources" in result
 
     def test_empty_taxonomy(self) -> None:
-        result = inject_discover_taxonomy("Categories: {CATEGORIES}", {"forever_notes": {}})
+        result = inject_discover_taxonomy("Categories: {CATEGORIES}", {"taxonomy": {}})
         assert result == "Categories: "
 
     def test_flat_mode_nesting_guidance(self, minimal_taxonomy: dict) -> None:
@@ -49,6 +49,36 @@ class TestInjectDiscoverTaxonomy:
         )
         assert "4" in result
         assert "{NESTING_GUIDANCE}" not in result
+
+    def test_conservatism_guidance_standard_is_empty(self, minimal_taxonomy: dict) -> None:
+        result = inject_discover_taxonomy(
+            "{CONSERVATISM_GUIDANCE}",
+            minimal_taxonomy,
+            {"reorganization_mode": "standard"},
+        )
+        assert result.strip() == ""
+
+    def test_conservatism_guidance_conservative_has_content(self, minimal_taxonomy: dict) -> None:
+        result = inject_discover_taxonomy(
+            "{CONSERVATISM_GUIDANCE}",
+            minimal_taxonomy,
+            {"reorganization_mode": "conservative"},
+        )
+        assert "deliberately organized" in result
+        assert "{CONSERVATISM_GUIDANCE}" not in result
+
+    def test_conservatism_guidance_full_has_content(self, minimal_taxonomy: dict) -> None:
+        result = inject_discover_taxonomy(
+            "{CONSERVATISM_GUIDANCE}",
+            minimal_taxonomy,
+            {"reorganization_mode": "full"},
+        )
+        assert "no established structure" in result
+        assert "{CONSERVATISM_GUIDANCE}" not in result
+
+    def test_conservatism_guidance_default_is_standard(self, minimal_taxonomy: dict) -> None:
+        result = inject_discover_taxonomy("{CONSERVATISM_GUIDANCE}", minimal_taxonomy)
+        assert result.strip() == ""
 
 
 class TestExtractJsonObject:

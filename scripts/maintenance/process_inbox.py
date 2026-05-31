@@ -35,11 +35,11 @@ def run_inbox(dry_run: bool) -> None:
     taxonomy = load_taxonomy()
     system_prompt = inject_taxonomy(load_prompt_template(), taxonomy, settings)
 
-    inbox_folder = folder_name(taxonomy.get("forever_notes", {}).get("inbox", ""))
+    inbox_folder = folder_name(taxonomy.get("taxonomy", {}).get("inbox", ""))
     if not inbox_folder or inbox_folder.startswith("["):
         console.print(
             "[red]Inbox folder not configured.[/red] "
-            "Set 'forever_notes.inbox' in config/taxonomy.local.yaml."
+            "Set 'taxonomy.inbox' in config/taxonomy.local.yaml."
         )
         raise SystemExit(1)
 
@@ -94,7 +94,7 @@ def run_inbox(dry_run: bool) -> None:
     if estimate:
         console.print(f"[dim]Estimated duration: {estimate}[/dim]")
 
-    review_folder = folder_name(taxonomy.get("forever_notes", {}).get("review", ""))
+    review_folder = folder_name(taxonomy.get("taxonomy", {}).get("review", ""))
 
     moves: list[dict] = []
     needs_review: list[dict] = []

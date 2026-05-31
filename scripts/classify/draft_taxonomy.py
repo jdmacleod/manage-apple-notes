@@ -70,7 +70,7 @@ def merge_new_paths(
     the top-level folder doesn't match any category in the taxonomy.
     """
     updated = copy.deepcopy(taxonomy)
-    fn = updated.get("forever_notes", {})
+    fn = updated.get("taxonomy", {})
 
     existing: set[str] = set()
     for entry in fn.values():
@@ -152,11 +152,12 @@ def run_draft(theme_map_file: str | None, dry_run: bool) -> None:
     theme_map: dict = json.loads(theme_map_path.read_text())
     themes: list[dict] = theme_map.get("themes", [])
     established: set[str] = set(theme_map.get("established_paths", []))
+    threshold: int = theme_map.get("subfolder_threshold", 8)
 
     candidate_paths = [
         t["suggested_path"]
         for t in themes
-        if not t.get("below_subfolder_threshold", False) and t.get("suggested_path")
+        if (t.get("estimated_count") or 0) >= threshold and t.get("suggested_path")
     ]
     new_paths = sorted(set(candidate_paths) - established)
 
@@ -166,14 +167,37 @@ def run_draft(theme_map_file: str | None, dry_run: bool) -> None:
 
     updated_taxonomy, added, skipped = merge_new_paths(taxonomy, new_paths)
 
+    # Split skipped into two buckets so the user gets an actionable message for each:
+    # - already_present: top-level matches a taxonomy category, path just exists already
+    # - no_match: top-level doesn't match any category folder — usually means the LLM used
+    #   a generic/wrong name (e.g. "Permanent/X" instead of the user's actual folder "Notes/X")
+    category_folders = {
+        entry.get("folder", "")
+        for entry in updated_taxonomy.get("taxonomy", {}).values()
+        if isinstance(entry, dict)
+    }
+    already_present = [p for p in skipped if "/" in p and p.split("/")[0] in category_folders]
+    no_match = [p for p in skipped if "/" not in p or p.split("/")[0] not in category_folders]
+
     date_str = datetime.now(UTC).strftime("%Y-%m-%d")
     output = _build_output(updated_taxonomy, added, skipped, theme_map_path.name, date_str)
 
     if dry_run:
         console.print("[bold]Dry run — no file will be written.[/bold]\n")
         console.print(output)
+        if no_match:
+            console.print(
+                f"\n[yellow]Warning:[/yellow] {len(no_match)} path(s) could not be matched "
+                "to any taxonomy category (top-level folder name not recognised):"
+            )
+            for p in no_match:
+                console.print(f"  [dim]-[/dim] {p}")
+            console.print(
+                "  Edit these paths in the theme map to use your actual folder names,\n"
+                "  then re-run: uv run notes draft"
+            )
         RunLogger("draft", logs_dir_path(settings)).finish(
-            summary={"added": len(added), "skipped": len(skipped)},
+            summary={"added": len(added), "already_present": len(already_present), "no_match": len(no_match)},
             dry_run=True,
             params={"theme_map": str(theme_map_path)},
         )
@@ -188,14 +212,25 @@ def run_draft(theme_map_file: str | None, dry_run: bool) -> None:
         console.print(f"  New paths added:  {len(added)}")
         for p in added:
             console.print(f"    [green]+[/green] {p}")
-    if skipped:
-        console.print(f"  Already present:  {len(skipped)}")
+    if already_present:
+        console.print(f"  Already present:  {len(already_present)}")
+    if no_match:
+        console.print(
+            f"\n[yellow]Warning:[/yellow] {len(no_match)} path(s) could not be matched "
+            "to any taxonomy category (top-level folder name not recognised):"
+        )
+        for p in no_match:
+            console.print(f"  [dim]-[/dim] {p}")
+        console.print(
+            "  Edit these paths in the theme map to use your actual folder names,\n"
+            "  then re-run: uv run notes draft"
+        )
     console.print(
         "\n[dim]Review the draft, edit as needed, then copy to config/taxonomy.local.yaml[/dim]"
     )
 
     RunLogger("draft", logs_dir_path(settings)).finish(
-        summary={"added": len(added), "skipped": len(skipped)},
+        summary={"added": len(added), "already_present": len(already_present), "no_match": len(no_match)},
         dry_run=False,
         params={"theme_map": str(theme_map_path), "output": str(output_path)},
     )

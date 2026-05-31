@@ -48,7 +48,7 @@ def path_components(path: str) -> list[str]:
 
 def max_taxonomy_depth(taxonomy: dict) -> int:
     """Return the deepest path depth currently present across all categories."""
-    fn = taxonomy.get("forever_notes", {})
+    fn = taxonomy.get("taxonomy", {})
     depths = [path_depth(p) for entry in fn.values() for p in enumerate_paths(entry)]
     return max(depths) if depths else 1
 

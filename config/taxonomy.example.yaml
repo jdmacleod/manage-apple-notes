@@ -27,7 +27,7 @@
 # hub_title is auto-derived as "✱ [SubfolderName]" and hub_tag as "#[lowercasename]".
 # The simple string list form is still valid and preferred for loose mode.
 
-forever_notes:
+taxonomy:
   inbox:
     folder: "[YOUR_INBOX_FOLDER]"          # keep flat
 

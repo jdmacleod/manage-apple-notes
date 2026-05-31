@@ -249,7 +249,7 @@ cp .env.example .env
 Each category uses the nested dict format — flat strings are no longer supported:
 
 ```yaml
-forever_notes:
+taxonomy:
   inbox:
     folder: "Inbox"
   permanent:

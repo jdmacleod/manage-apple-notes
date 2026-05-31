@@ -70,7 +70,7 @@ class TestInjectTaxonomy:
 
     def test_uses_review_as_catchall(self) -> None:
         taxonomy = {
-            "forever_notes": {
+            "taxonomy": {
                 "review": {"folder": "Review"},
                 "inbox": {"folder": "Inbox"},
             }
@@ -79,13 +79,13 @@ class TestInjectTaxonomy:
         assert "Review" in result
 
     def test_falls_back_to_inbox_catchall(self) -> None:
-        taxonomy = {"forever_notes": {"inbox": {"folder": "Inbox"}}}
+        taxonomy = {"taxonomy": {"inbox": {"folder": "Inbox"}}}
         result = inject_taxonomy("Catchall: {CATCHALL}", taxonomy)
         assert "Inbox" in result
 
     def test_subfolders_listed(self) -> None:
         taxonomy = {
-            "forever_notes": {
+            "taxonomy": {
                 "resources": {"folder": "Resources", "subfolders": ["Reference", "Tools"]}
             }
         }
@@ -96,7 +96,7 @@ class TestInjectTaxonomy:
 
     def test_flat_mode_no_subfolders(self) -> None:
         taxonomy = {
-            "forever_notes": {
+            "taxonomy": {
                 "resources": {"folder": "Resources", "subfolders": ["Reference", "Tools"]}
             }
         }
@@ -115,6 +115,169 @@ class TestInjectTaxonomy:
         settings = {"folder_nesting": "natural", "thresholds": {"max_folder_depth": 5}}
         result = inject_taxonomy("{CATEGORY_LIST}", deep_taxonomy, settings)
         assert "[Resources/Programming/Systems/Networking]" in result
+
+    def test_relocation_guidance_standard_is_empty(self, minimal_taxonomy: dict) -> None:
+        result = inject_taxonomy(
+            "{RELOCATION_GUIDANCE}", minimal_taxonomy, {"reorganization_mode": "standard"}
+        )
+        assert result.strip() == ""
+
+    def test_relocation_guidance_conservative_has_content(self, minimal_taxonomy: dict) -> None:
+        result = inject_taxonomy(
+            "{RELOCATION_GUIDANCE}", minimal_taxonomy, {"reorganization_mode": "conservative"}
+        )
+        assert "Inbox or Fleeting" in result
+        assert "{RELOCATION_GUIDANCE}" not in result
+
+    def test_relocation_guidance_full_has_content(self, minimal_taxonomy: dict) -> None:
+        result = inject_taxonomy(
+            "{RELOCATION_GUIDANCE}", minimal_taxonomy, {"reorganization_mode": "full"}
+        )
+        assert "purely on its content" in result
+        assert "{RELOCATION_GUIDANCE}" not in result
+
+    def test_relocation_guidance_default_is_standard(self, minimal_taxonomy: dict) -> None:
+        result = inject_taxonomy("{RELOCATION_GUIDANCE}", minimal_taxonomy)
+        assert result.strip() == ""
+
+
+class TestConservativeModePostProcessing:
+    """Tests for the conservative-mode safety net in run_classify()."""
+
+    def _make_note(self, note_id: str, folder_path: str) -> dict:
+        return {
+            "id": note_id,
+            "title": f"Note {note_id}",
+            "folder": folder_path,
+            "folder_path": folder_path,
+            "body": "content",
+        }
+
+    def _run_conservative_classify(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        notes: list[dict],
+        llm_results: list[dict],
+        taxonomy: dict,
+    ) -> dict:
+        from scripts.classify.classify_notes import run_classify
+
+        export_file = tmp_path / "notes-test.json"
+        export_file.write_text(__import__("json").dumps(notes))
+
+        settings = {
+            "reorganization_mode": "conservative",
+            "llm": {"batch_size": 50},
+            "export": {"skip_empty": False},
+            "classify": {"exclude_archive": False},
+        }
+
+        mocker.patch("scripts.classify.classify_notes.load_settings", return_value=settings)
+        mocker.patch("scripts.classify.classify_notes.load_taxonomy", return_value=taxonomy)
+        mocker.patch("scripts.classify.classify_notes.local_taxonomy_exists", return_value=True)
+        mocker.patch(
+            "scripts.classify.classify_notes.PROPOSALS_DIR", tmp_path / "proposals"
+        )
+
+        mock_provider = mocker.MagicMock()
+        mock_provider.name = "mock"
+        mock_provider.model = "mock-model"
+        mock_provider.classify_messages.return_value = __import__("json").dumps(llm_results)
+        mocker.patch(
+            "scripts.classify.classify_notes.get_provider", return_value=mock_provider
+        )
+        mocker.patch("scripts.classify.classify_notes.RunLogger")
+
+        run_classify(export_file=str(export_file), dry_run=False)
+
+        proposals = list((tmp_path / "proposals").glob("proposal-*.json"))
+        assert len(proposals) == 1
+        return __import__("json").loads(proposals[0].read_text())
+
+    def test_medium_confidence_non_transit_goes_to_needs_review(
+        self, mocker: MagicMock, tmp_path: Path
+    ) -> None:
+
+        taxonomy = {
+            "taxonomy": {
+                "inbox": {"folder": "Inbox"},
+                "fleeting": {"folder": "Fleeting"},
+                "resources": {"folder": "Resources", "subfolders": ["Programming"]},
+            }
+        }
+        notes = [self._make_note("p1", "Resources/Programming")]
+        llm_results = [
+            {
+                "id": "p1",
+                "proposed_folder_path": "Resources/Other",
+                "proposed_folder": "Resources",
+                "proposed_subfolder": "Other",
+                "confidence": "medium",
+                "reason": "fits better here",
+            }
+        ]
+        proposal = self._run_conservative_classify(
+            mocker, tmp_path, notes, llm_results, taxonomy
+        )
+        assert len(proposal["moves"]) == 0
+        assert any(n["id"] == "p1" for n in proposal["needs_review"])
+        assert any("[conservative]" in n.get("reason", "") for n in proposal["needs_review"])
+
+    def test_high_confidence_non_transit_still_moves(
+        self, mocker: MagicMock, tmp_path: Path
+    ) -> None:
+        taxonomy = {
+            "taxonomy": {
+                "inbox": {"folder": "Inbox"},
+                "fleeting": {"folder": "Fleeting"},
+                "resources": {"folder": "Resources"},
+                "permanent": {"folder": "Notes"},
+            }
+        }
+        notes = [self._make_note("p1", "Resources")]
+        llm_results = [
+            {
+                "id": "p1",
+                "proposed_folder_path": "Notes",
+                "proposed_folder": "Notes",
+                "proposed_subfolder": None,
+                "confidence": "high",
+                "reason": "clearly a permanent note",
+            }
+        ]
+        proposal = self._run_conservative_classify(
+            mocker, tmp_path, notes, llm_results, taxonomy
+        )
+        assert any(n["id"] == "p1" for n in proposal["moves"])
+        assert len(proposal["needs_review"]) == 0
+
+    def test_transit_note_medium_confidence_still_moves(
+        self, mocker: MagicMock, tmp_path: Path
+    ) -> None:
+        taxonomy = {
+            "taxonomy": {
+                "inbox": {"folder": "Inbox"},
+                "fleeting": {"folder": "Fleeting"},
+                "resources": {"folder": "Resources"},
+            }
+        }
+        notes = [self._make_note("p1", "Inbox")]
+        llm_results = [
+            {
+                "id": "p1",
+                "proposed_folder_path": "Resources",
+                "proposed_folder": "Resources",
+                "proposed_subfolder": None,
+                "confidence": "medium",
+                "reason": "reference material",
+            }
+        ]
+        proposal = self._run_conservative_classify(
+            mocker, tmp_path, notes, llm_results, taxonomy
+        )
+        assert any(n["id"] == "p1" for n in proposal["moves"])
+        assert len(proposal["needs_review"]) == 0
 
 
 class TestProposalPathDerivation:

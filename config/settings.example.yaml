@@ -1,8 +1,17 @@
 # General settings — copy to settings.local.yaml and customize.
 
+# How aggressively discover and classify propose changes to your library.
+# "conservative": most notes are already organized; require high confidence before moving
+#                 notes outside Inbox/Fleeting; only propose new subfolders with strong evidence
+# "standard":     default behavior — classify all notes; anchor to existing taxonomy paths
+# "full":         treat the library as raw material; reclassify from scratch
+reorganization_mode: "standard"
+
 # Operating mode: "loose" (folders + classification only) or
 # "strict" (loose + Forever Notes Hub/Home/tag layer).
 # See docs/forever-notes-framework.md for details on strict mode.
+# Note: this setting only controls hub/home note generation (notes sync-hubs).
+# It has no effect on notes discover, notes draft, or notes classify.
 forever_notes_mode: "loose"
 
 # How deep the classifier and discover pass suggest folder nesting.

@@ -119,7 +119,7 @@ def run_audit(export_file: str | None, output_override: str | None, dry_run: boo
             "audit results will not reflect your actual Apple Notes folder structure.\n"
             "  cp config/taxonomy.example.yaml config/taxonomy.local.yaml"
         )
-    fn = taxonomy.get("forever_notes", {})
+    fn = taxonomy.get("taxonomy", {})
 
     archive_folder = folder_name(fn.get("archive", ""))
     inbox_folder = folder_name(fn.get("inbox", ""))

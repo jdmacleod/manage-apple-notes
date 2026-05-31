@@ -54,7 +54,7 @@ def minimal_settings() -> dict:
 @pytest.fixture
 def deep_taxonomy() -> dict:
     return {
-        "forever_notes": {
+        "taxonomy": {
             "inbox": {"folder": "Inbox"},
             "resources": {
                 "folder": "Resources",
@@ -77,7 +77,7 @@ def deep_taxonomy() -> dict:
 @pytest.fixture
 def minimal_taxonomy() -> dict:
     return {
-        "forever_notes": {
+        "taxonomy": {
             "inbox": {"folder": "Inbox"},
             "projects": {"folder": "Projects"},
             "resources": {
