@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `notes draft` now directly promotes all subfolders present in the export into the taxonomy draft, regardless of whether the LLM named them in a theme — previously, structural subfolders like `Archive/Animation Guild` were silently dropped when the LLM routed those notes to a flat parent path (`Archive`) rather than using the folder name as the `suggested_path`
 - `notes draft` threshold bypass: existing Apple Notes folders are now always included in the taxonomy draft regardless of `min_notes_for_subfolder` — the threshold was designed to prevent creating thin *new* folders, not to filter folders the user already made; a folder with 1 note is honoured if it exists in the library
 - `notes revert [proposal]` — new command that reverses a previous `notes move` run; reads `current_folder` from the proposal and moves notes back to their original folders; supports `--dry-run`; defaults to the most recent proposal in `data/proposals/`
 - `notes move` dry-run output now includes the source folder for each note — `[DRY RUN] "title" (Inbox) → Resources/Technical` — making it easier to identify which note will move when titles are not unique
