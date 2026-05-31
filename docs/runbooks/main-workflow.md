@@ -11,7 +11,7 @@ Run this once to organize an existing library into the configured folder taxonom
 
 **Time estimate:** 30–60 min (plus review time for large libraries).
 
-**Prerequisites:** Setup complete (`uv sync`, `.env` configured, `taxonomy.local.yaml` filled in), Apple Notes open and synced.
+**Prerequisites:** Setup complete (`uv sync`, `.env` configured, `taxonomy.local.yaml` filled in), Apple Notes open and synced. Terminal must have Automation permission to control Notes (System Settings → Privacy & Security → Automation).
 
 ### Step 1 — Export
 
@@ -114,6 +114,14 @@ uv run notes dedup             # → data/dedup-proposals/dedup-YYYY-MM-DD.json
 
 Runs a three-pass funnel: exact content hash → fuzzy title/body similarity → LLM review.
 Exact duplicates are recommended for deletion automatically; fuzzy pairs are reviewed by the LLM.
+
+If you have already run `notes classify`, pass the proposal to improve placement-based duplicate detection:
+
+```bash
+uv run notes dedup --proposal data/proposals/proposal-YYYY-MM-DD.json
+```
+
+Two notes heading to the same `proposed_folder_path` are a stronger duplicate signal than two notes in different categories. Omitting `--proposal` still works — the pass simply uses current folder paths instead.
 
 **→ HUMAN REVIEW:** Open `data/dedup-proposals/dedup-YYYY-MM-DD.json` and review each group.
 For `resolution: "delete"` groups, verify `keep_id` is the right note to keep. Remove any

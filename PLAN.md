@@ -118,9 +118,11 @@ manage-apple-notes/
 │   ├── providers.py                 # LLM provider abstraction (Anthropic + Ollama)
 │   ├── folder_utils.py              # Taxonomy path utilities (enumerate_paths, folder_name, etc.)
 │   ├── run_logger.py                # Structured run logging — one JSON file per execution
+│   ├── repair-note.applescript      # AppleScript called by repair_restored_notes.py
 │   ├── export/
-│   │   ├── export-notes.applescript # Dump all notes to data/exports/
-│   │   └── run_export.py            # Python wrapper; export and backup commands
+│   │   ├── export-notes.applescript       # Dump all notes to data/exports/
+│   │   ├── test-getfullpath.applescript   # Diagnostic: verify folder-path building after macOS upgrades
+│   │   └── run_export.py                  # Python wrapper; export and backup commands
 │   ├── classify/
 │   │   ├── __init__.py
 │   │   ├── discover_themes.py       # Discover thematic clusters (notes discover)
