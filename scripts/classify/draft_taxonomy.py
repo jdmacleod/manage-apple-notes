@@ -215,6 +215,9 @@ def run_draft(theme_map_file: str | None, dry_run: bool, json_output: bool = Fal
 
     theme_map: dict = json.loads(theme_map_path.read_text())
 
+    if not dry_run:
+        con.print(f"[dim]Theme map: {theme_map_path.name}[/dim]")
+
     # ── Export folder tree — used for threshold bypass and bootstrap ──────────
     # Load once here so both the bootstrap block and the candidate_paths filter
     # can use it.  Paths that already exist in the user's library bypass the
@@ -266,6 +269,8 @@ def run_draft(theme_map_file: str | None, dry_run: bool, json_output: bool = Fal
                 taxonomy = load_taxonomy()
             else:
                 provider = get_provider(settings)
+                model = provider.model
+                con.print(f"[dim]Bootstrap  ·  {provider.name} / {model}[/dim]")
                 taxonomy = bootstrap_taxonomy(top_level, provider, settings)
                 if not taxonomy.get("taxonomy"):
                     con.print(
