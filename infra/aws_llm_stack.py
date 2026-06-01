@@ -46,11 +46,15 @@ class AwsLlmStack(cdk.Stack):
 
         instance_type = aws_config.get("instance_type", "g5.xlarge")
         key_pair_name: str = aws_config["key_pair_name"]
-        ssh_key_path: str = os.path.expanduser(aws_config.get("ssh_key_path", "~/.ssh/id_rsa"))
+        ssh_key_path: str = os.path.expanduser(
+            os.environ.get("AWS_SSH_KEY_PATH") or aws_config.get("ssh_key_path", "~/.ssh/id_rsa")
+        )
         model: str = aws_config.get("model", "llama3")
         persistent_storage: bool = bool(aws_config.get("persistent_model_storage", False))
         s3_bucket_name: str = aws_config.get("s3_model_bucket", "")
-        allowed_cidr: str = aws_config.get("allowed_cidr", "") or _detect_public_ip()
+        allowed_cidr: str = (
+            os.environ.get("AWS_ALLOWED_CIDR") or aws_config.get("allowed_cidr", "") or _detect_public_ip()
+        )
 
         # ── VPC ───────────────────────────────────────────────────────────────
         vpc = ec2.Vpc.from_lookup(self, "DefaultVpc", is_default=True)

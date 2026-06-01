@@ -156,6 +156,42 @@ class TestOllamaProvider:
         with pytest.raises(SystemExit, match="Lost connection to Ollama"):
             provider.classify_messages("system", "user")
 
+    def test_ollama_aws_name_property(
+        self, mocker: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+        mocker.patch("openai.OpenAI")
+        provider = OllamaProvider(model="gpt-oss:20b", dry_run=True, provider_name="ollama-aws")
+        assert provider.name == "ollama-aws"
+        assert provider.model == "gpt-oss:20b"
+
+    def test_ollama_aws_probe_url_error_mentions_tunnel(self, mocker: MagicMock) -> None:
+        import urllib.error
+
+        mocker.patch("openai.OpenAI")
+        mocker.patch(
+            "urllib.request.urlopen",
+            side_effect=urllib.error.URLError("connection refused"),
+        )
+        with pytest.raises(SystemExit, match="SSH tunnel"):
+            OllamaProvider(model="gpt-oss:20b", dry_run=False, provider_name="ollama-aws")
+
+    def test_ollama_aws_classify_connection_error_mentions_tunnel(
+        self, mocker: MagicMock
+    ) -> None:
+        import openai
+
+        mock_openai = mocker.patch("openai.OpenAI")
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = openai.APIConnectionError(
+            request=MagicMock()
+        )
+        mock_openai.return_value = mock_client
+
+        provider = OllamaProvider(model="gpt-oss:20b", dry_run=True, provider_name="ollama-aws")
+        with pytest.raises(SystemExit, match="SSH tunnel"):
+            provider.classify_messages("system", "user")
+
 
 class TestAppleProvider:
     def test_probe_missing_binary_exits(self, tmp_path: Path) -> None:
@@ -268,6 +304,18 @@ class TestGetProvider:
         provider = get_provider({}, dry_run=True)
         assert provider.name == "anthropic"
 
+    def test_ollama_aws_provider_setting(
+        self, mocker: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+        mocker.patch("openai.OpenAI")
+
+        settings = {"llm": {"provider": "ollama-aws", "model": "gpt-oss:20b"}}
+        provider = get_provider(settings, dry_run=True)
+        assert provider.name == "ollama-aws"
+        assert provider.model == "gpt-oss:20b"
+
     def test_apple_provider_setting(
         self, mocker: MagicMock, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
@@ -285,9 +333,12 @@ class TestGetMaxTokens:
         return p
 
     def test_dict_returns_provider_specific_value(self) -> None:
-        settings = {"llm": {"context_size": {"anthropic": 8192, "ollama": 4096}}}
+        settings = {
+            "llm": {"context_size": {"anthropic": 8192, "ollama": 4096, "ollama-aws": 8192}}
+        }
         assert get_max_tokens(settings, self._make_provider("anthropic")) == 8192
         assert get_max_tokens(settings, self._make_provider("ollama")) == 4096
+        assert get_max_tokens(settings, self._make_provider("ollama-aws")) == 8192
 
     def test_missing_key_uses_default(self) -> None:
         settings = {"llm": {"context_size": {"anthropic": 8192}}}

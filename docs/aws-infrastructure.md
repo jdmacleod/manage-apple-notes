@@ -77,11 +77,11 @@ Also set `context_size` for the Ollama provider in your `llm:` block. The recomm
 
 ```yaml
 llm:
-  provider: "ollama"
+  provider: "ollama-aws"
   model: "gpt-oss:20b"
   batch_size: 10
   context_size:
-    ollama: 8192    # safe for gpt-oss:20b on 24 GB VRAM; see VRAM section below
+    ollama-aws: 8192    # safe for gpt-oss:20b on 24 GB VRAM; see VRAM section below
 ```
 
 ## VRAM and Context Window

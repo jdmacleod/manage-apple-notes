@@ -59,9 +59,16 @@ class AnthropicProvider:
 
 
 class OllamaProvider:
-    def __init__(self, model: str, timeout: float = 1200.0, dry_run: bool = False) -> None:
+    def __init__(
+        self,
+        model: str,
+        timeout: float = 1200.0,
+        dry_run: bool = False,
+        provider_name: str = "ollama",
+    ) -> None:
         import openai
 
+        self._provider_name = provider_name
         raw = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
         base_url = raw if raw.endswith("/v1") else f"{raw}/v1"
         self._client = openai.OpenAI(base_url=base_url, api_key="ollama", timeout=timeout)
@@ -83,21 +90,37 @@ class OllamaProvider:
                         m == self._model or m.startswith(f"{self._model}:") for m in available
                     ):
                         available_str = ", ".join(available) if available else "(none pulled)"
-                        sys.exit(
-                            f"Model {self._model!r} not found in Ollama.\n"
-                            f"  Available: {available_str}\n"
-                            f"  Pull it with: ollama pull {self._model}"
-                        )
+                        if self._provider_name == "ollama-aws":
+                            sys.exit(
+                                f"Model {self._model!r} not found on the remote Ollama instance.\n"
+                                f"  Available: {available_str}\n"
+                                f"  Pull it on the EC2 instance: ollama pull {self._model}"
+                            )
+                        else:
+                            sys.exit(
+                                f"Model {self._model!r} not found in Ollama.\n"
+                                f"  Available: {available_str}\n"
+                                f"  Pull it with: ollama pull {self._model}"
+                            )
                 except (ValueError, KeyError):
                     pass  # unexpected response format — assume server is ok
         except urllib.error.HTTPError:
             pass  # server responded with an error — Ollama is up, or llama.cpp
         except (urllib.error.URLError, OSError):
-            sys.exit(f"Ollama is not responding at {raw}\nIs Ollama running?  Try: ollama serve")
+            if self._provider_name == "ollama-aws":
+                sys.exit(
+                    f"Ollama is not responding at {raw}\n"
+                    "Is the SSH tunnel active? Start it with the SshTunnelCommand "
+                    "from your CDK deploy output."
+                )
+            else:
+                sys.exit(
+                    f"Ollama is not responding at {raw}\nIs Ollama running?  Try: ollama serve"
+                )
 
     @property
     def name(self) -> str:
-        return "ollama"
+        return self._provider_name
 
     @property
     def model(self) -> str:
@@ -119,11 +142,18 @@ class OllamaProvider:
             )
             return response.choices[0].message.content or ""
         except (openai.APIConnectionError, openai.APITimeoutError) as exc:
-            sys.exit(
-                f"Lost connection to Ollama at {self._raw_url}\n"
-                f"  Is Ollama still running?  Try: ollama serve\n"
-                f"  ({type(exc).__name__})"
-            )
+            if self._provider_name == "ollama-aws":
+                sys.exit(
+                    f"Lost connection to Ollama at {self._raw_url}\n"
+                    f"  Is the SSH tunnel still active?\n"
+                    f"  ({type(exc).__name__})"
+                )
+            else:
+                sys.exit(
+                    f"Lost connection to Ollama at {self._raw_url}\n"
+                    f"  Is Ollama still running?  Try: ollama serve\n"
+                    f"  ({type(exc).__name__})"
+                )
 
 
 class AppleProvider:
@@ -181,9 +211,9 @@ def get_provider(settings: dict, dry_run: bool = False) -> LLMProvider:
     provider_name = llm_cfg.get("provider", "anthropic")
     default_model = "claude-opus-4-6" if provider_name == "anthropic" else "llama3"
     model = llm_cfg.get("model", default_model)
-    if provider_name == "ollama":
+    if provider_name in ("ollama", "ollama-aws"):
         timeout = float(llm_cfg.get("request_timeout", 1200))
-        return OllamaProvider(model, timeout=timeout, dry_run=dry_run)
+        return OllamaProvider(model, timeout=timeout, dry_run=dry_run, provider_name=provider_name)
     if provider_name == "apple":
         default_binary = str(
             _REPO_ROOT / "swift" / "apple-llm" / ".build" / "release" / "apple-llm"
