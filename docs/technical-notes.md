@@ -262,6 +262,19 @@ locate them.
 account` raises an error. There is no programmatic way to restore notes from
 Recently Deleted; it must be done through the Notes app UI.
 
+### Tags and mentions require iOS 14.5 / iPadOS 14.5 / macOS 11.3 or later
+
+Notes containing tags (e.g. `#project`) or `@mentions` are only viewable on
+**iOS 14.5, iPadOS 14.5, and macOS 11.3 (Big Sur) or later**. Devices running
+older OS versions display these notes without the tag or mention formatting, and
+the tags do not appear in the Tags browser.
+
+This is relevant to the `tag_all_notes`, `tag_theme_notes`, and `tag_hub_notes`
+settings (currently unreleased — see `settings.example.yaml`): enabling any of
+these on a library accessed from older devices will silently strip the tags on
+those devices. Confirm all devices accessing the iCloud account meet the minimum
+OS requirement before enabling tag features.
+
 ### Folder depth supports up to five levels
 
 Apple Notes supports up to five levels of folder nesting (one top-level folder
