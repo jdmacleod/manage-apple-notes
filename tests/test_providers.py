@@ -8,7 +8,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from scripts.providers import AnthropicProvider, AppleProvider, OllamaProvider, get_max_tokens, get_provider
+from scripts.providers import (
+    AnthropicProvider,
+    AppleProvider,
+    OllamaProvider,
+    get_max_tokens,
+    get_provider,
+)
 
 
 class TestAnthropicProvider:

@@ -37,7 +37,7 @@ llm:
                                      # "full" = ignore existing paths, propose from scratch
   context_size:                   # max_tokens per provider; omit a key to use the default (4096)
     anthropic: 8192
-    ollama: 4096
+    ollama: 8192                  # gpt-oss:20b on g5.xlarge (24 GB VRAM) fits 8K comfortably
 
 # Ollama example:
 # llm:
@@ -67,7 +67,7 @@ llm:
 #   instance_type: "g5.xlarge"          # GPU instance; adjust for cost vs performance
 #   key_pair_name: "my-aws-key"         # existing EC2 key pair name in target region
 #   ssh_key_path: "~/.ssh/my-aws-key.pem"  # local path to the private key file
-#   model: "llama3"                     # Ollama model to pre-pull on first launch
+#   model: "gpt-oss:20b"                # Ollama model to pre-pull on first launch
 #   persistent_model_storage: false     # true = S3 bucket created; models survive cdk destroy
 #   s3_model_bucket: ""                 # name of existing bucket to reuse (from prior deploy output)
 #   allowed_cidr: ""                    # override auto-detected deployer IP (e.g. "1.2.3.4/32")

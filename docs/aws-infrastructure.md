@@ -67,19 +67,41 @@ aws:
   instance_type: "g5.xlarge"          # adjust for cost vs performance
   key_pair_name: "my-ollama-key"      # name of the key pair in AWS
   ssh_key_path: "~/.ssh/my-ollama-key.pem"  # local path to the private key
-  model: "llama3"                     # Ollama model to pre-pull on launch
+  model: "gpt-oss:20b"                # Ollama model to pre-pull on launch
   persistent_model_storage: false     # see "Model Persistence" section below
   s3_model_bucket: ""                 # set after first deploy if persistent_model_storage: true
   allowed_cidr: ""                    # leave empty to auto-detect your public IP
 ```
 
-Also set a `context_size` for Ollama in the `llm:` block if you want to override the 4096 default:
+Also set `context_size` for the Ollama provider in your `llm:` block. The recommended value for `gpt-oss:20b` on the g5.xlarge is **8192 tokens** — see [VRAM and context window](#vram-and-context-window) below:
 
 ```yaml
 llm:
+  provider: "ollama"
+  model: "gpt-oss:20b"
+  batch_size: 10
   context_size:
-    ollama: 4096    # adjust to match your model's context window
+    ollama: 8192    # safe for gpt-oss:20b on 24 GB VRAM; see VRAM section below
 ```
+
+## VRAM and Context Window
+
+The g5.xlarge instance has one **NVIDIA A10G GPU with 24 GB GDDR6 VRAM**.
+
+For `gpt-oss:20b` at Q4_K_M quantization:
+
+| Component | VRAM usage |
+|-----------|-----------|
+| Model weights (20B params, Q4_K_M) | ~12 GB |
+| CUDA runtime + framework overhead | ~1 GB |
+| Available for KV cache | ~11 GB |
+
+With ~11 GB available for the KV cache, the instance comfortably supports an **8,192-token (8K) context window**. Higher values up to 16K are possible depending on the model's exact layer/head configuration, but 8K is the tested and recommended default. Set `context_size.ollama` in `settings.local.yaml` to adjust.
+
+> To check how much VRAM Ollama is currently using on the instance:
+> ```bash
+> ssh -i ~/.ssh/my-ollama-key.pem ec2-user@<ip> nvidia-smi
+> ```
 
 ## Bootstrap (first time only)
 
@@ -150,7 +172,7 @@ The model is pulled in the background during instance launch. To watch progress:
 ssh -i ~/.ssh/my-ollama-key.pem ec2-user@54.210.100.42 tail -f /var/log/ollama-pull.log
 ```
 
-Allow 5–20 minutes for a 4–8 GB model on first launch.
+Allow 15–30 minutes for `gpt-oss:20b` (~12 GB) on first launch. The instance is connectable via SSH immediately; model pull runs in the background.
 
 ## Model Persistence (Optional S3 Cache)
 

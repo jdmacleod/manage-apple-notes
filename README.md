@@ -18,7 +18,7 @@ Set `reorganization_mode` in `settings.local.yaml` to control how aggressively t
 - **Terminal Automation permission** — export, move, restore, and hub-sync commands run AppleScript via `osascript`, which requires your terminal app to be allowed to control Notes. Grant it in **System Settings → Privacy & Security → Automation** — enable the Notes checkbox under your terminal app (Terminal, iTerm2, etc.). macOS will prompt the first time a script runs; if the prompt never appears, open System Settings and add it manually.
 - **Full Disk Access (some commands)** — commands that read `NoteStore.sqlite` directly (such as note-to-note link insertion) require Full Disk Access for your terminal app. Grant it in **System Settings → Privacy & Security → Full Disk Access**, run the relevant commands, then revoke it when done if you prefer a conservative security posture. See [Technical Notes: Full Disk Access requirement](docs/technical-notes.md#full-disk-access-requirement) for step-by-step instructions.
 - [uv](https://docs.astral.sh/uv/) (`brew install uv` or `curl -LsSf https://astral.sh/uv/install.sh | sh`)
-- An LLM provider: an [Anthropic API key](https://console.anthropic.com) (cloud), [Ollama](https://ollama.com) running locally, **or** Apple Intelligence on-device (macOS 26+, see [Apple Intelligence provider](#apple-intelligence-provider))
+- An LLM provider: an [Anthropic API key](https://console.anthropic.com) (cloud), [Ollama](https://ollama.com) running locally, [AWS EC2 GPU instance](#aws-ollama-provider) (cloud GPU via Ollama), **or** Apple Intelligence on-device (macOS 26+, see [Apple Intelligence provider](#apple-intelligence-provider))
 
 ## Setup
 
@@ -99,6 +99,7 @@ Full documentation lives in the [`docs/`](docs/) directory.
 |----------|-------------------------------|------------------|------|-------|
 | [Anthropic API](https://console.anthropic.com) | Yes — note text is sent to Anthropic's servers for inference and is subject to [Anthropic's privacy policy](https://www.anthropic.com/legal/privacy) | Low — API key only | Pay per use with token credits | Fast |
 | [Ollama](https://ollama.com) (local) | No — inference runs entirely on your machine | Medium — install Ollama, pull a model | No cost, model runs locally | Slower, but depends on your hardware |
+| [AWS-Ollama](#aws-ollama-provider) (cloud GPU) | No — inference runs on your EC2 instance; traffic stays inside your SSH tunnel | Medium-High — AWS account, CDK CLI, EC2 key pair, GPU quota | ~$1.01/hr while instance is running | Fast — NVIDIA A10G GPU (24 GB VRAM) |
 | Apple Intelligence (on-device) | No — inference runs on your Apple Silicon chip | Medium — macOS 26+, Apple Intelligence enabled, compile Swift tool | No cost | Fast on Apple Silicon |
 
 Regardless of provider, this repo is public and personal data is kept out of git:
@@ -109,6 +110,54 @@ Regardless of provider, this repo is public and personal data is kept out of git
 - A pre-commit hook blocks accidental commits of private files
 
 See [`config/taxonomy.example.yaml`](config/taxonomy.example.yaml) (Forever Notes / Zettelkasten), [`config/taxonomy.para.yaml`](config/taxonomy.para.yaml) (PARA method), and [`config/settings.example.yaml`](config/settings.example.yaml) for the committed templates.
+
+## AWS-Ollama provider
+
+Run classification on a cloud GPU — an AWS EC2 g5.xlarge instance running Ollama — accessible via an SSH tunnel. Note content never leaves your tunnel; inference runs on the EC2 instance you control.
+
+**Default model:** `gpt-oss:20b` — a 20B-parameter open-weight model that fits comfortably in the 24 GB VRAM of the A10G GPU on g5.xlarge. See [Technical Notes: AWS-Ollama](docs/technical-notes.md#aws-ollama-provider-g5xlarge-24-gb-vram) for VRAM and context window details.
+
+**One-time CDK deploy:**
+
+```bash
+# Install the CDK CLI (requires Node.js)
+npm install -g aws-cdk
+
+# Install Python CDK dependencies
+cd infra && pip install -r requirements.txt
+
+# Bootstrap CDK in your account/region (once per account)
+cdk bootstrap aws://<ACCOUNT_ID>/<REGION>
+
+# Deploy the EC2 instance
+cdk deploy
+```
+
+CDK outputs an `SshTunnelCommand`. Run it once per session to forward the Ollama endpoint to `localhost:11434`, then set `OLLAMA_BASE_URL` in your `.env`:
+
+```
+OLLAMA_BASE_URL=http://localhost:11434
+```
+
+**Configure `settings.local.yaml`:**
+
+```yaml
+aws:
+  region: "us-east-1"
+  instance_type: "g5.xlarge"
+  key_pair_name: "my-aws-key"
+  ssh_key_path: "~/.ssh/my-aws-key.pem"
+  model: "gpt-oss:20b"
+
+llm:
+  provider: "ollama"
+  model: "gpt-oss:20b"
+  batch_size: 10
+  context_size:
+    ollama: 8192      # safe for gpt-oss:20b on 24 GB VRAM; see technical notes
+```
+
+The `OLLAMA_BASE_URL` env var activates the Ollama provider automatically once the SSH tunnel is running. Run `cdk destroy` to decommission all infrastructure. See [docs/aws-infrastructure.md](docs/aws-infrastructure.md) for the full guide including model persistence, cost notes, and troubleshooting.
 
 ## Apple Intelligence provider
 

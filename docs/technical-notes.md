@@ -427,6 +427,74 @@ Then in `settings.local.yaml` set `batch_size: 10` under the `llm:` key. The
 
 ---
 
+## AWS-Ollama Provider (g5.xlarge, 24 GB VRAM)
+
+### Hardware
+
+The default CDK stack deploys an **EC2 g5.xlarge** instance:
+
+| Spec | Value |
+|------|-------|
+| GPU | NVIDIA A10G |
+| VRAM | 24 GB GDDR6 |
+| vCPUs | 4 |
+| System RAM | 16 GB |
+
+### Default model: `gpt-oss:20b`
+
+`gpt-oss:20b` is the recommended default for this instance class. At Q4_K_M quantization:
+
+| Component | VRAM |
+|-----------|------|
+| Model weights | ~12 GB |
+| CUDA + framework overhead | ~1 GB |
+| **Available for KV cache** | **~11 GB** |
+
+With ~11 GB for the KV cache, an **8,192-token (8K) context window** fits comfortably. Values up to 16K may work depending on the model's exact attention head configuration, but 8K is the tested and recommended default. Set `context_size.ollama: 8192` in `settings.local.yaml` (see `settings.example.yaml` for the full snippet).
+
+### Comparison with local macOS models
+
+| Scenario | Model | Context window | Relative quality |
+|----------|-------|---------------|-----------------|
+| Local Mac, 24 GB unified RAM | `mistral-nemo:12b` or `qwen2.5:14b` | 4K–8K | Good |
+| AWS g5.xlarge, 24 GB VRAM | `gpt-oss:20b` | **8K** | Better — 20B params, dedicated GPU |
+| Anthropic cloud | `claude-opus-4-6` | 8K (configured) | Best — largest model |
+
+The A10G's 24 GB of dedicated GDDR6 is a significant advantage over unified-memory Macs: the model runs entirely in VRAM with no CPU offload, producing faster and more consistent inference than even a 24 GB M-series Mac.
+
+### Recommended settings
+
+```yaml
+# config/settings.local.yaml
+aws:
+  region: "us-east-1"
+  instance_type: "g5.xlarge"
+  key_pair_name: "my-aws-key"
+  ssh_key_path: "~/.ssh/my-aws-key.pem"
+  model: "gpt-oss:20b"
+
+llm:
+  provider: "ollama"
+  model: "gpt-oss:20b"
+  batch_size: 10
+  context_size:
+    ollama: 8192
+```
+
+`batch_size: 10` works reliably within the 8K context window. If you see context overflow errors (malformed or truncated JSON), reduce `batch_size` to 5 before lowering `context_size`.
+
+### Verifying GPU utilisation
+
+After connecting via SSH tunnel and running a classification pass, confirm the model is running on the GPU (not CPU-offloaded):
+
+```bash
+ssh -i ~/.ssh/my-aws-key.pem ec2-user@<ip> nvidia-smi
+```
+
+The `GPU-Util` column should show non-zero utilisation during inference and `ollama` should appear in the process list. A model that partially offloads to system RAM will show lower VRAM utilisation and slower throughput.
+
+---
+
 ## Apple Intelligence Provider
 
 ### Why a Swift CLI bridge is required
