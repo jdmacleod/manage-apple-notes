@@ -16,6 +16,7 @@ from scripts.maintenance.audit import run_audit
 from scripts.maintenance.process_inbox import run_inbox
 from scripts.maintenance.repair_restored_notes import run_repair_restored
 from scripts.restore.run_restore import run_restore
+from scripts.review.run_review import run_review
 from scripts.setup.run_setup import run_setup
 
 app = typer.Typer(
@@ -24,6 +25,31 @@ app = typer.Typer(
 
 
 _JSON_HELP = "Output result as JSON to stdout (progress goes to stderr)."
+
+
+@app.command()
+def review(
+    proposal_file: str | None = typer.Argument(
+        default=None,
+        help="Proposal JSON to review. Defaults to most recent in data/proposals/ (or data/dedup-proposals/ with --dedup).",
+    ),
+    dedup: bool = typer.Option(
+        False,
+        "--dedup",
+        help="Review a dedup proposal instead of a classify/triage proposal.",
+    ),
+    confidence: str | None = typer.Option(
+        None,
+        "--confidence",
+        help="Drop moves below this confidence level before reviewing. One of: high, medium.",
+    ),
+) -> None:
+    """Interactively review a proposal: place needs-review items, optionally filter low-confidence moves."""
+    if confidence is not None and confidence not in ("high", "medium"):
+        raise typer.BadParameter(
+            "--confidence must be 'high' or 'medium'", param_hint="--confidence"
+        )
+    run_review(proposal_file=proposal_file, dedup=dedup, confidence=confidence)
 
 
 @app.command()

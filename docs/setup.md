@@ -26,6 +26,8 @@ Run `notes setup` again any time you want to switch frameworks or rename folders
 
 5. **Write config files** — `config/taxonomy.local.yaml` is written (existing file is backed up as `.bak`). If `config/settings.local.yaml` doesn't exist, it's copied from the example.
 
+6. **LLM provider selection** — if `config/settings.local.yaml` was just created, setup asks which LLM provider you want to use and writes `llm_provider` to `settings.local.yaml`. For Anthropic, it optionally collects your API key and writes it to `.env` (the key is never echoed to the terminal). This step is skipped if `settings.local.yaml` already existed (re-running setup to change taxonomy only).
+
 ---
 
 ## Framework comparison
@@ -57,20 +59,23 @@ When a `notes-*.json` export is available, setup extracts these signals:
 
 ## After setup
 
-Set your LLM provider in `config/settings.local.yaml`:
+If you chose a provider during setup, you're ready to run the pipeline. If you skipped
+provider selection, set `llm_provider` in `config/settings.local.yaml` first:
 
 ```yaml
 llm_provider: "apple"   # apple | anthropic | ollama | aws-ollama
 ```
 
-See [GUIDE.md](../GUIDE.md) for provider-specific setup (API keys, Ollama install, Apple Intelligence build).
+See [GUIDE.md](../GUIDE.md) for provider-specific prerequisites (API keys, Ollama install,
+Apple Intelligence Swift build).
 
 Then run the pipeline:
 
 ```bash
 uv run notes export    # pull notes from Apple Notes (skip if setup already analyzed an export)
-uv run notes discover  # map thematic clusters → data/theme-maps/
+uv run notes discover  # map thematic clusters → data/theme-maps/ (optional — only needed for subfolders)
 uv run notes classify  # AI classification → proposal
+uv run notes review    # interactively place needs-review items; optionally drop low-confidence moves
 uv run notes move      # apply the approved proposal
 ```
 

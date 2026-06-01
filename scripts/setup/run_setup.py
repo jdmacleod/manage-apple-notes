@@ -179,7 +179,9 @@ def _build_taxonomy_yaml(framework_key: str, folder_map: dict[str, str]) -> str:
         f"# Framework: {fw['full_name'] if framework_key != 'EXISTING' else 'Custom (existing folders)'}\n"
         f"# Edit this file to rename folders or add subfolders.\n\n"
     )
-    return header + str(yaml.dump(data, default_flow_style=False, allow_unicode=True, sort_keys=False))
+    return header + str(
+        yaml.dump(data, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    )
 
 
 def _build_existing_taxonomy_yaml(folder_map: dict[str, str]) -> str:
@@ -191,13 +193,115 @@ def _build_existing_taxonomy_yaml(folder_map: dict[str, str]) -> str:
         "# Framework: Custom (existing folders)\n"
         "# Edit this file to rename folders or add subfolders.\n\n"
     )
-    return header + str(yaml.dump(data, default_flow_style=False, allow_unicode=True, sort_keys=False))
+    return header + str(
+        yaml.dump(data, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    )
 
 
 def _gtd_categories_snippet() -> str:
     """Return YAML snippet for the GTD-specific category keys to add to settings."""
     extra = FRAMEWORKS["GTD"]["extra_categories"]
-    return str(yaml.dump({"categories": extra}, default_flow_style=False, allow_unicode=True, sort_keys=False))
+    return str(
+        yaml.dump(
+            {"categories": extra}, default_flow_style=False, allow_unicode=True, sort_keys=False
+        )
+    )
+
+
+# ── Provider selection ─────────────────────────────────────────────────────────
+
+
+def _write_provider_to_settings(provider: str, dry_run: bool) -> None:
+    settings_path = CONFIG_DIR / "settings.local.yaml"
+    if not settings_path.exists():
+        return
+    content = settings_path.read_text(encoding="utf-8")
+    new_content = re.sub(
+        r"^llm_provider:.*$",
+        f'llm_provider: "{provider}"',
+        content,
+        flags=re.MULTILINE,
+        count=1,
+    )
+    if dry_run:
+        con.print(f'  [dim]Would set llm_provider: "{provider}" in settings.local.yaml[/dim]')
+        return
+    settings_path.write_text(new_content, encoding="utf-8")
+    con.print(f'  Set [green]llm_provider: "{provider}"[/green] in settings.local.yaml')
+
+
+def _write_env_line(key: str, value: str, dry_run: bool) -> None:
+    """Append KEY=value to .env if the key is not already present."""
+    env_path = CONFIG_DIR.parent / ".env"
+    if dry_run:
+        con.print(f"  [dim]Would write {key}=... to .env (not written)[/dim]")
+        return
+    line = f"{key}={value}\n"
+    if env_path.exists():
+        content = env_path.read_text(encoding="utf-8")
+        if re.search(rf"^{re.escape(key)}=", content, flags=re.MULTILINE):
+            con.print(f"  [dim]{key} already set in .env — not overwritten[/dim]")
+            return
+        env_path.write_text(content.rstrip("\n") + "\n" + line, encoding="utf-8")
+    else:
+        env_path.write_text(line, encoding="utf-8")
+    con.print(f"  Wrote [green]{key}[/green] to .env")
+
+
+def _select_provider(dry_run: bool) -> bool:
+    """Ask which LLM provider to use and write config. Returns True if a provider was selected."""
+    con.print("\n[bold]LLM provider[/bold]")
+    choice = _ask_numbered(
+        "Which LLM provider do you want to use?",
+        [
+            "Apple Intelligence — on-device, free, requires macOS 26 + Apple Silicon",
+            "Anthropic API — cloud-based, fast, requires an API key",
+            "Ollama (local) — open-weight models, self-hosted, no API key needed",
+            "AWS-Ollama — cloud GPU via SSH tunnel, self-hosted",
+            "Skip — I'll configure this manually in config/settings.local.yaml",
+        ],
+    )
+
+    if choice == 1:
+        _write_provider_to_settings("apple", dry_run)
+        con.print(
+            "\n[dim]Apple Intelligence requires the Swift bridge to be compiled first:\n"
+            "  make -C swift/apple-llm build\n"
+            "See GUIDE.md → Apple Intelligence provider for prerequisites.[/dim]"
+        )
+        return True
+    elif choice == 2:
+        _write_provider_to_settings("anthropic", dry_run)
+        api_key = typer.prompt(
+            "\n  Anthropic API key (leave blank to add to .env manually)",
+            default="",
+            hide_input=True,
+        ).strip()
+        if api_key:
+            _write_env_line("ANTHROPIC_API_KEY", api_key, dry_run)
+        else:
+            con.print(
+                "  [dim]Add ANTHROPIC_API_KEY=sk-ant-... to .env before running classify.[/dim]"
+            )
+        return True
+    elif choice == 3:
+        _write_provider_to_settings("ollama", dry_run)
+        url = typer.prompt(
+            "\n  Ollama base URL",
+            default="http://localhost:11434",
+        ).strip()
+        if url and url != "http://localhost:11434":
+            _write_env_line("OLLAMA_BASE_URL", url, dry_run)
+        return True
+    elif choice == 4:
+        _write_provider_to_settings("aws-ollama", dry_run)
+        con.print(
+            "\n[dim]AWS-Ollama requires deploying the EC2 stack first.\n"
+            "See docs/aws-infrastructure.md for full prerequisites and setup steps.[/dim]"
+        )
+        return True
+    else:
+        return False
 
 
 # ── File writing ───────────────────────────────────────────────────────────────
@@ -217,21 +321,21 @@ def _write_taxonomy(taxonomy_yaml: str, dry_run: bool) -> None:
     con.print(f"  Wrote [green]{taxonomy_path.relative_to(taxonomy_path.parent.parent)}[/green]")
 
 
-def _ensure_settings(dry_run: bool) -> None:
+def _ensure_settings(dry_run: bool) -> bool:
+    """Copy settings.example.yaml to settings.local.yaml if not present.
+    Returns True if the file was created (or would be created) during this call."""
     settings_path = CONFIG_DIR / "settings.local.yaml"
     example_path = CONFIG_DIR / "settings.example.yaml"
     if settings_path.exists():
-        return
+        return False
     if dry_run:
         con.print(
             "  [dim]settings.local.yaml not found — would copy from settings.example.yaml[/dim]"
         )
-        return
+        return True
     shutil.copy2(example_path, settings_path)
-    con.print(
-        "  Copied [green]settings.local.yaml[/green] from settings.example.yaml — "
-        "edit it to set your LLM provider."
-    )
+    con.print("  Copied [green]settings.local.yaml[/green] from settings.example.yaml")
+    return True
 
 
 # ── Main entrypoint ────────────────────────────────────────────────────────────
@@ -356,7 +460,7 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
     # ── Phase 6: Write config files ────────────────────────────────────────────
     con.print("\n[bold]Writing config files…[/bold]")
     _write_taxonomy(taxonomy_yaml, dry_run)
-    _ensure_settings(dry_run)
+    settings_created = _ensure_settings(dry_run)
 
     # GTD: show snippet to add manually (avoids rewriting a potentially customised settings file)
     if winner == "GTD":
@@ -374,15 +478,21 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
             )
         )
 
+    # ── Phase 7: LLM provider selection ───────────────────────────────────────
+    provider_configured = False
+    if settings_created:
+        provider_configured = _select_provider(dry_run)
+
     # ── Next steps ─────────────────────────────────────────────────────────────
-    next_steps: list[str] = [
-        "Set your LLM provider in config/settings.local.yaml  (see GUIDE.md)",
-    ]
+    next_steps: list[str] = []
+    if not provider_configured:
+        next_steps.append("Set your LLM provider in config/settings.local.yaml  (see GUIDE.md)")
     if corpus is None:
         next_steps.append("uv run notes export    — pull notes from Apple Notes")
     next_steps += [
         "uv run notes discover  — map thematic clusters → data/theme-maps/",
         "uv run notes classify  — AI classification → proposal",
+        "uv run notes review    — review the proposal (place needs-review items)",
         "uv run notes move      — apply the approved proposal",
     ]
     if winner == "EXISTING":

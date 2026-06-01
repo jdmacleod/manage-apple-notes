@@ -21,7 +21,11 @@ uv run notes export
 
 Writes `data/exports/notes-YYYY-MM-DD.json` and prints the note count.
 
-### Step 2 — Discover themes
+### Step 2 — Discover themes and draft subfolders (optional)
+
+> **Skip this step if you don't need subfolders.** `notes classify` works with a flat
+> taxonomy (top-level folders only). Come back to discover/draft when a category grows
+> large enough that you want to split it into subfolders.
 
 ```bash
 uv run notes discover --dry-run   # preview batch count and API cost
@@ -31,23 +35,24 @@ uv run notes discover             # → data/theme-maps/themes-YYYY-MM-DD.json
 Sends batches of note summaries to the LLM to map the thematic clusters in your library.
 No notes are changed.
 
-**→ HUMAN REVIEW:** Run `uv run notes draft` to generate an editable taxonomy YAML from
-the discovered themes:
+Run `uv run notes draft` to turn the theme-map into an editable taxonomy YAML:
 
 ```bash
 uv run notes draft --dry-run   # preview proposed additions
 uv run notes draft             # → data/taxonomy-drafts/taxonomy-draft-YYYY-MM-DD.yaml
+                               # then prompts: "Apply to config/taxonomy.local.yaml? [Y/n]"
 ```
 
-Open `data/taxonomy-drafts/taxonomy-draft-YYYY-MM-DD.yaml`. The header comment lists
-every new path added. Remove subfolders you don't want, rename any that need adjusting,
-then copy the file to `config/taxonomy.local.yaml`:
+`notes draft` will ask whether to apply the draft directly to `config/taxonomy.local.yaml`
+(default: yes). Accept to apply in one step. If you declined, or want to review first:
 
 ```bash
+# Review the draft manually, then copy when satisfied:
 cp data/taxonomy-drafts/taxonomy-draft-YYYY-MM-DD.yaml config/taxonomy.local.yaml
 ```
 
-To examine the raw theme-map instead: `data/theme-maps/themes-YYYY-MM-DD.json`
+The header comment in the draft lists every new path added. Remove subfolders you don't
+want and rename any that need adjusting before applying.
 
 ### Step 3 — Classify
 
@@ -58,11 +63,22 @@ uv run notes classify             # → data/proposals/proposal-YYYY-MM-DD.json
 
 Classifies every note into a folder and subfolder based on your updated taxonomy.
 
-**→ HUMAN REVIEW:** Open `data/proposals/proposal-YYYY-MM-DD.json` and review the `moves`
-array. Delete any entry you disagree with. Move items from `needs_review` into `moves` if
-you know where they should go. Folder names in `proposed_folder` must exactly match your
-`taxonomy.local.yaml`; `proposed_subfolder` must match a name in that category's
-`subfolders` list.
+**→ HUMAN REVIEW:** Use `notes review` to handle the proposal interactively — no JSON
+editing required:
+
+```bash
+uv run notes review                       # review the latest proposal
+uv run notes review --confidence medium   # first drop low-confidence moves, then review
+```
+
+`notes review` shows a summary of all moves by confidence level, then walks you through
+each `needs_review` item so you can place it in a folder or skip it. When done, it writes
+the updated proposal back and prints the `notes move` command to apply it.
+
+Alternatively, open `data/proposals/proposal-YYYY-MM-DD.json` in a text editor. Delete
+any entry in `moves` you disagree with. Move items from `needs_review` into `moves` with
+`proposed_folder`, `proposed_subfolder`, and `proposed_folder_path` filled in. Folder
+names must exactly match your `taxonomy.local.yaml`.
 
 ### Step 4 — Backup and Apply
 
@@ -136,10 +152,20 @@ uv run notes dedup --proposal data/proposals/proposal-YYYY-MM-DD.json
 
 Two notes heading to the same `proposed_folder_path` are a stronger duplicate signal than two notes in different categories. Omitting `--proposal` still works — the pass simply uses current folder paths instead.
 
-**→ HUMAN REVIEW:** Open `data/dedup-proposals/dedup-YYYY-MM-DD.json` and review each group.
-For `resolution: "delete"` groups, verify `keep_id` is the right note to keep. Remove any
-group you disagree with. Groups with `resolution: "review"` are flagged for manual triage in
-Apple Notes and are not touched by the purge command.
+**→ HUMAN REVIEW:** Use `notes review --dedup` to walk through deletion groups interactively:
+
+```bash
+uv run notes review --dedup
+```
+
+For each `resolution: "delete"` group, it shows which note will be kept and which deleted
+(with a content preview) and asks you to confirm. Groups you decline are removed from the
+proposal — both notes survive. `resolution: "review"` groups (borderline cases) are noted
+but not touched.
+
+Alternatively, open `data/dedup-proposals/dedup-YYYY-MM-DD.json` directly. For
+`resolution: "delete"` groups, verify `keep_id` is the right note to keep and remove any
+group you disagree with.
 
 ```bash
 uv run notes purge             # dry-run by default — shows [DRY RUN] for each deletion
@@ -173,10 +199,16 @@ uv run notes triage --dry-run      # preview cost
 uv run notes triage                # → data/proposals/inbox-YYYY-MM-DD.json
 ```
 
-**→ HUMAN REVIEW:** Open `data/proposals/inbox-YYYY-MM-DD.json`. Check the `moves` array;
-edit entries you disagree with. Move items from `needs_review` into `moves` if you know
-where they should go. Notes in `no_change` are flagged as inbox-appropriate — leave or
-delete them as you see fit.
+**→ HUMAN REVIEW:** Use `notes review` to handle the inbox proposal interactively:
+
+```bash
+uv run notes review
+```
+
+Or open `data/proposals/inbox-YYYY-MM-DD.json` directly. Check the `moves` array; delete
+entries you disagree with. Move items from `needs_review` into `moves` if you know where
+they should go. Notes in `no_change` are flagged as inbox-appropriate — leave or delete
+them as you see fit.
 
 ```bash
 uv run notes backup

@@ -16,6 +16,9 @@ from scripts.setup.run_setup import (
     _ensure_settings,
     _find_export_optional,
     _gtd_categories_snippet,
+    _select_provider,
+    _write_env_line,
+    _write_provider_to_settings,
     _write_taxonomy,
     analyze_corpus,
     run_setup,
@@ -69,8 +72,14 @@ class TestScoreFrameworkSelection:
 class TestScoreConfidence:
     def test_high_confidence_when_gap_5_or_more(self) -> None:
         # Q1=3 (+3 ZK), Q2=3 (+2 ZK), Q3=3 (+3 ZK), corpus xref >5% (+3 ZK) → big gap
-        corpus = {"note_count": 500, "cross_ref_pct": 0.10, "task_keyword_pct": 0.0,
-                  "avg_word_count": 400, "folder_count": 3, "oldest_note_days": 1500}
+        corpus = {
+            "note_count": 500,
+            "cross_ref_pct": 0.10,
+            "task_keyword_pct": 0.0,
+            "avg_word_count": 400,
+            "folder_count": 3,
+            "oldest_note_days": 1500,
+        }
         result = score(corpus, 3, 3, 3)
         assert result["confidence"] == "high"
         assert result["winner"] == "ZETTELKASTEN"
@@ -146,8 +155,15 @@ class TestScoreTieBreaking:
 class TestGetFramework:
     def test_para_has_required_keys(self) -> None:
         fw = get_framework("PARA")
-        for key in ("name", "category_keys", "canonical_names", "category_prompts",
-                    "folder_preview", "best_for", "maintenance"):
+        for key in (
+            "name",
+            "category_keys",
+            "canonical_names",
+            "category_prompts",
+            "folder_preview",
+            "best_for",
+            "maintenance",
+        ):
             assert key in fw, f"PARA missing key: {key}"
 
     def test_gtd_has_extra_categories(self) -> None:
@@ -199,10 +215,20 @@ class TestAnalyzeCorpus:
 
     def test_basic_counts(self, tmp_path: Path) -> None:
         notes = [
-            {"id": "1", "title": "A", "body": "hello world", "folder": "Inbox",
-             "modified": "2024-01-01T00:00:00"},
-            {"id": "2", "title": "B", "body": "another note", "folder": "Projects",
-             "modified": "2024-06-01T00:00:00"},
+            {
+                "id": "1",
+                "title": "A",
+                "body": "hello world",
+                "folder": "Inbox",
+                "modified": "2024-01-01T00:00:00",
+            },
+            {
+                "id": "2",
+                "title": "B",
+                "body": "another note",
+                "folder": "Projects",
+                "modified": "2024-06-01T00:00:00",
+            },
         ]
         result = analyze_corpus(self._write_export(tmp_path, notes))
         assert result["note_count"] == 2
@@ -210,30 +236,44 @@ class TestAnalyzeCorpus:
 
     def test_task_keyword_detection(self, tmp_path: Path) -> None:
         notes = [
-            {"id": "1", "body": "TODO finish the report", "folder": "X",
-             "modified": "2024-01-01T00:00:00"},
-            {"id": "2", "body": "just a normal note", "folder": "X",
-             "modified": "2024-01-01T00:00:00"},
+            {
+                "id": "1",
+                "body": "TODO finish the report",
+                "folder": "X",
+                "modified": "2024-01-01T00:00:00",
+            },
+            {
+                "id": "2",
+                "body": "just a normal note",
+                "folder": "X",
+                "modified": "2024-01-01T00:00:00",
+            },
         ]
         result = analyze_corpus(self._write_export(tmp_path, notes))
         assert result["task_keyword_pct"] == pytest.approx(0.5)
 
     def test_cross_ref_detection(self, tmp_path: Path) -> None:
         notes = [
-            {"id": "1", "body": "see [[Some Other Note]] for details", "folder": "X",
-             "modified": "2024-01-01T00:00:00"},
-            {"id": "2", "body": "plain text", "folder": "X",
-             "modified": "2024-01-01T00:00:00"},
+            {
+                "id": "1",
+                "body": "see [[Some Other Note]] for details",
+                "folder": "X",
+                "modified": "2024-01-01T00:00:00",
+            },
+            {"id": "2", "body": "plain text", "folder": "X", "modified": "2024-01-01T00:00:00"},
         ]
         result = analyze_corpus(self._write_export(tmp_path, notes))
         assert result["cross_ref_pct"] == pytest.approx(0.5)
 
     def test_avg_word_count(self, tmp_path: Path) -> None:
         notes = [
-            {"id": "1", "body": "one two three four", "folder": "X",
-             "modified": "2024-01-01T00:00:00"},
-            {"id": "2", "body": "a b", "folder": "X",
-             "modified": "2024-01-01T00:00:00"},
+            {
+                "id": "1",
+                "body": "one two three four",
+                "folder": "X",
+                "modified": "2024-01-01T00:00:00",
+            },
+            {"id": "2", "body": "a b", "folder": "X", "modified": "2024-01-01T00:00:00"},
         ]
         result = analyze_corpus(self._write_export(tmp_path, notes))
         assert result["avg_word_count"] == pytest.approx(3.0)
@@ -261,8 +301,13 @@ class TestAnalyzeCorpus:
 
 class TestBuildTaxonomyYaml:
     def test_para_produces_valid_yaml(self) -> None:
-        folder_map = {"inbox": "Inbox", "projects": "Projects",
-                      "areas": "Areas", "resources": "Resources", "archive": "Archive"}
+        folder_map = {
+            "inbox": "Inbox",
+            "projects": "Projects",
+            "areas": "Areas",
+            "resources": "Resources",
+            "archive": "Archive",
+        }
         result = _build_taxonomy_yaml("PARA", folder_map)
         parsed = yaml.safe_load(result)
         assert "taxonomy" in parsed
@@ -271,22 +316,34 @@ class TestBuildTaxonomyYaml:
 
     def test_preserves_category_order(self) -> None:
         fw = get_framework("PARA")
-        folder_map = {k: v for k, v in zip(fw["category_keys"], fw["canonical_names"].values(), strict=True)}
+        folder_map = {
+            k: v for k, v in zip(fw["category_keys"], fw["canonical_names"].values(), strict=True)
+        }
         result = _build_taxonomy_yaml("PARA", folder_map)
         parsed = yaml.safe_load(result)
         keys = list(parsed["taxonomy"].keys())
         assert keys == fw["category_keys"]
 
     def test_skips_empty_folder_names(self) -> None:
-        folder_map = {"inbox": "Inbox", "projects": "", "areas": "Areas",
-                      "resources": "Resources", "archive": "Archive"}
+        folder_map = {
+            "inbox": "Inbox",
+            "projects": "",
+            "areas": "Areas",
+            "resources": "Resources",
+            "archive": "Archive",
+        }
         result = _build_taxonomy_yaml("PARA", folder_map)
         parsed = yaml.safe_load(result)
         assert "projects" not in parsed["taxonomy"]
 
     def test_header_contains_framework_name(self) -> None:
-        folder_map = {"inbox": "Inbox", "projects": "Projects",
-                      "areas": "Areas", "resources": "Resources", "archive": "Archive"}
+        folder_map = {
+            "inbox": "Inbox",
+            "projects": "Projects",
+            "areas": "Areas",
+            "resources": "Resources",
+            "archive": "Archive",
+        }
         result = _build_taxonomy_yaml("PARA", folder_map)
         assert "Projects" in result  # part of "Projects · Areas · Resources · Archive"
 
@@ -357,22 +414,25 @@ class TestEnsureSettings:
         settings = tmp_path / "settings.local.yaml"
         settings.write_text("llm_provider: apple\n")
         with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
-            _ensure_settings(dry_run=False)
+            result = _ensure_settings(dry_run=False)
         assert settings.read_text() == "llm_provider: apple\n"
+        assert result is False
 
     def test_copies_example_when_missing(self, tmp_path: Path) -> None:
         example = tmp_path / "settings.example.yaml"
         example.write_text("llm_provider: apple\nexample: true\n")
         with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
-            _ensure_settings(dry_run=False)
+            result = _ensure_settings(dry_run=False)
         assert (tmp_path / "settings.local.yaml").exists()
+        assert result is True
 
     def test_dry_run_does_not_copy(self, tmp_path: Path) -> None:
         example = tmp_path / "settings.example.yaml"
         example.write_text("llm_provider: apple\n")
         with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
-            _ensure_settings(dry_run=True)
+            result = _ensure_settings(dry_run=True)
         assert not (tmp_path / "settings.local.yaml").exists()
+        assert result is True
 
 
 class TestFindExportOptional:
@@ -401,11 +461,16 @@ class TestRunSetup:
         mocker.patch("typer.confirm", return_value=True)
         mocker.patch(
             "scripts.setup.run_setup._collect_folder_names",
-            return_value={"inbox": "Inbox", "projects": "Projects",
-                          "areas": "Areas", "resources": "Resources", "archive": "Archive"},
+            return_value={
+                "inbox": "Inbox",
+                "projects": "Projects",
+                "areas": "Areas",
+                "resources": "Resources",
+                "archive": "Archive",
+            },
         )
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
-        mocker.patch("scripts.setup.run_setup._ensure_settings")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
 
     def test_para_path_completes(self, mocker: MagicMock, tmp_path: Path) -> None:
         self._para_mocks(mocker, tmp_path)
@@ -414,7 +479,7 @@ class TestRunSetup:
     def test_dry_run_flag_passed_to_write(self, mocker: MagicMock, tmp_path: Path) -> None:
         self._para_mocks(mocker, tmp_path)
         write_mock = mocker.patch("scripts.setup.run_setup._write_taxonomy")
-        mocker.patch("scripts.setup.run_setup._ensure_settings")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
         run_setup(dry_run=True, no_corpus=True)
         write_mock.assert_called_once()
         _yaml_arg, dry_run_arg = write_mock.call_args[0]
@@ -444,7 +509,7 @@ class TestRunSetup:
             return_value={k: v for k, v in fw["canonical_names"].items()},
         )
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
-        mocker.patch("scripts.setup.run_setup._ensure_settings")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
         # Should not raise — GTD snippet panel is printed but not assertable here
         run_setup(dry_run=False, no_corpus=True)
 
@@ -454,33 +519,51 @@ class TestRunSetup:
         mocker.patch("typer.confirm", return_value=False)  # reject recommendation
         mocker.patch(
             "scripts.setup.run_setup._collect_folder_names",
-            return_value={"inbox": "Inbox", "next_actions": "Next Actions",
-                          "waiting_for": "Waiting For", "projects": "Projects",
-                          "someday_maybe": "Someday", "reference": "Reference",
-                          "archive": "Archive"},
+            return_value={
+                "inbox": "Inbox",
+                "next_actions": "Next Actions",
+                "waiting_for": "Waiting For",
+                "projects": "Projects",
+                "someday_maybe": "Someday",
+                "reference": "Reference",
+                "archive": "Archive",
+            },
         )
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
-        mocker.patch("scripts.setup.run_setup._ensure_settings")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
         run_setup(dry_run=False, no_corpus=True)
 
     def test_corpus_analysis_used_when_export_present(
         self, mocker: MagicMock, tmp_path: Path
     ) -> None:
         export = tmp_path / "notes-test.json"
-        export.write_text(json.dumps([
-            {"id": "1", "body": "note body", "folder": "Inbox",
-             "modified": "2024-01-01T00:00:00"},
-        ]))
+        export.write_text(
+            json.dumps(
+                [
+                    {
+                        "id": "1",
+                        "body": "note body",
+                        "folder": "Inbox",
+                        "modified": "2024-01-01T00:00:00",
+                    },
+                ]
+            )
+        )
         mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=export)
         mocker.patch("scripts.setup.run_setup._ask_numbered", side_effect=[2, 1, 2])
         mocker.patch("typer.confirm", return_value=True)
         mocker.patch(
             "scripts.setup.run_setup._collect_folder_names",
-            return_value={"inbox": "Inbox", "projects": "Projects",
-                          "areas": "Areas", "resources": "Resources", "archive": "Archive"},
+            return_value={
+                "inbox": "Inbox",
+                "projects": "Projects",
+                "areas": "Areas",
+                "resources": "Resources",
+                "archive": "Archive",
+            },
         )
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
-        mocker.patch("scripts.setup.run_setup._ensure_settings")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
         # Should not raise — corpus analysis runs and summary is printed
         run_setup(dry_run=False, no_corpus=False)
 
@@ -493,26 +576,34 @@ class TestRunSetup:
         mocker.patch("typer.confirm", return_value=True)
         mocker.patch(
             "scripts.setup.run_setup._collect_folder_names",
-            return_value={"inbox": "Inbox", "projects": "P", "areas": "A",
-                          "resources": "R", "archive": "Arc"},
+            return_value={
+                "inbox": "Inbox",
+                "projects": "P",
+                "areas": "A",
+                "resources": "R",
+                "archive": "Arc",
+            },
         )
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
-        mocker.patch("scripts.setup.run_setup._ensure_settings")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
         run_setup(dry_run=False, no_corpus=False)  # no export → else branch at line 262
 
     def test_no_corpus_flag_skips_export(self, mocker: MagicMock, tmp_path: Path) -> None:
-        find_mock = mocker.patch(
-            "scripts.setup.run_setup._find_export_optional", return_value=None
-        )
+        find_mock = mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
         mocker.patch("scripts.setup.run_setup._ask_numbered", side_effect=[2, 1, 2])
         mocker.patch("typer.confirm", return_value=True)
         mocker.patch(
             "scripts.setup.run_setup._collect_folder_names",
-            return_value={"inbox": "Inbox", "projects": "P", "areas": "A",
-                          "resources": "R", "archive": "Arc"},
+            return_value={
+                "inbox": "Inbox",
+                "projects": "P",
+                "areas": "A",
+                "resources": "R",
+                "archive": "Arc",
+            },
         )
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
-        mocker.patch("scripts.setup.run_setup._ensure_settings")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
         run_setup(dry_run=False, no_corpus=True)
         find_mock.assert_not_called()
 
@@ -525,9 +616,206 @@ class TestRunSetup:
         mocker.patch("typer.confirm", return_value=False)  # decline existing path
         mocker.patch(
             "scripts.setup.run_setup._collect_folder_names",
-            return_value={"inbox": "Inbox", "projects": "P", "areas": "A",
-                          "resources": "R", "archive": "Arc"},
+            return_value={
+                "inbox": "Inbox",
+                "projects": "P",
+                "areas": "A",
+                "resources": "R",
+                "archive": "Arc",
+            },
         )
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
-        mocker.patch("scripts.setup.run_setup._ensure_settings")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
         run_setup(dry_run=False, no_corpus=True)
+
+    def test_provider_selection_triggered_when_settings_created(self, mocker: MagicMock) -> None:
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", side_effect=[2, 1, 2])
+        mocker.patch("typer.confirm", return_value=True)
+        mocker.patch(
+            "scripts.setup.run_setup._collect_folder_names",
+            return_value={
+                "inbox": "Inbox",
+                "projects": "P",
+                "areas": "A",
+                "resources": "R",
+                "archive": "Arc",
+            },
+        )
+        mocker.patch("scripts.setup.run_setup._write_taxonomy")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
+        select_mock = mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
+        run_setup(dry_run=False, no_corpus=True)
+        select_mock.assert_called_once()
+
+    def test_provider_selection_skipped_when_settings_exist(self, mocker: MagicMock) -> None:
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", side_effect=[2, 1, 2])
+        mocker.patch("typer.confirm", return_value=True)
+        mocker.patch(
+            "scripts.setup.run_setup._collect_folder_names",
+            return_value={
+                "inbox": "Inbox",
+                "projects": "P",
+                "areas": "A",
+                "resources": "R",
+                "archive": "Arc",
+            },
+        )
+        mocker.patch("scripts.setup.run_setup._write_taxonomy")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
+        select_mock = mocker.patch("scripts.setup.run_setup._select_provider")
+        run_setup(dry_run=False, no_corpus=True)
+        select_mock.assert_not_called()
+
+
+# ── run_setup.py — provider selection ─────────────────────────────────────────
+
+
+class TestWriteProviderToSettings:
+    def test_replaces_llm_provider_line(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text('llm_provider: "apple"\nother: setting\n')
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_provider_to_settings("anthropic", dry_run=False)
+        assert 'llm_provider: "anthropic"' in settings.read_text()
+        assert "other: setting" in settings.read_text()
+
+    def test_dry_run_does_not_write(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        original = 'llm_provider: "apple"\n'
+        settings.write_text(original)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_provider_to_settings("ollama", dry_run=True)
+        assert settings.read_text() == original
+
+    def test_no_op_when_file_missing(self, tmp_path: Path) -> None:
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_provider_to_settings("anthropic", dry_run=False)
+        assert not (tmp_path / "settings.local.yaml").exists()
+
+
+class TestWriteEnvLine:
+    # Use tmp_path/config as CONFIG_DIR so CONFIG_DIR.parent == tmp_path and .env lands there.
+
+    def test_creates_env_if_missing(self, tmp_path: Path) -> None:
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        with patch("scripts.setup.run_setup.CONFIG_DIR", config_dir):
+            _write_env_line("ANTHROPIC_API_KEY", "sk-test-key", dry_run=False)
+        env = tmp_path / ".env"
+        assert env.exists()
+        assert "ANTHROPIC_API_KEY=sk-test-key" in env.read_text()
+
+    def test_appends_to_existing_env(self, tmp_path: Path) -> None:
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        env = tmp_path / ".env"
+        env.write_text("EXISTING_VAR=value\n")
+        with patch("scripts.setup.run_setup.CONFIG_DIR", config_dir):
+            _write_env_line("OLLAMA_BASE_URL", "http://host:11434", dry_run=False)
+        content = env.read_text()
+        assert "EXISTING_VAR=value" in content
+        assert "OLLAMA_BASE_URL=http://host:11434" in content
+
+    def test_does_not_overwrite_existing_key(self, tmp_path: Path) -> None:
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        env = tmp_path / ".env"
+        env.write_text("ANTHROPIC_API_KEY=original-key\n")
+        with patch("scripts.setup.run_setup.CONFIG_DIR", config_dir):
+            _write_env_line("ANTHROPIC_API_KEY", "new-key", dry_run=False)
+        assert "original-key" in env.read_text()
+        assert "new-key" not in env.read_text()
+
+    def test_dry_run_does_not_create_file(self, tmp_path: Path) -> None:
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        with patch("scripts.setup.run_setup.CONFIG_DIR", config_dir):
+            _write_env_line("ANTHROPIC_API_KEY", "sk-test", dry_run=True)
+        assert not (tmp_path / ".env").exists()
+
+
+class TestSelectProvider:
+    # Use tmp_path/config as CONFIG_DIR so CONFIG_DIR.parent == tmp_path and .env lands there.
+
+    def _setup_config(self, tmp_path: Path) -> Path:
+        """Create tmp_path/config/settings.local.yaml and return the config dir."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "settings.local.yaml").write_text('llm_provider: "apple"\nother: value\n')
+        return config_dir
+
+    def test_apple_writes_provider_returns_true(self, mocker: MagicMock, tmp_path: Path) -> None:
+        config_dir = self._setup_config(tmp_path)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=1)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", config_dir):
+            result = _select_provider(dry_run=False)
+        assert result is True
+        assert 'llm_provider: "apple"' in (config_dir / "settings.local.yaml").read_text()
+
+    def test_anthropic_with_key_writes_env(self, mocker: MagicMock, tmp_path: Path) -> None:
+        config_dir = self._setup_config(tmp_path)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=2)
+        mocker.patch("typer.prompt", return_value="sk-ant-testkey")
+        with patch("scripts.setup.run_setup.CONFIG_DIR", config_dir):
+            result = _select_provider(dry_run=False)
+        assert result is True
+        assert 'llm_provider: "anthropic"' in (config_dir / "settings.local.yaml").read_text()
+        assert "ANTHROPIC_API_KEY=sk-ant-testkey" in (tmp_path / ".env").read_text()
+
+    def test_anthropic_without_key_skips_env(self, mocker: MagicMock, tmp_path: Path) -> None:
+        config_dir = self._setup_config(tmp_path)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=2)
+        mocker.patch("typer.prompt", return_value="")
+        with patch("scripts.setup.run_setup.CONFIG_DIR", config_dir):
+            result = _select_provider(dry_run=False)
+        assert result is True
+        assert not (tmp_path / ".env").exists()
+
+    def test_ollama_default_url_no_env_entry(self, mocker: MagicMock, tmp_path: Path) -> None:
+        config_dir = self._setup_config(tmp_path)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=3)
+        mocker.patch("typer.prompt", return_value="http://localhost:11434")
+        with patch("scripts.setup.run_setup.CONFIG_DIR", config_dir):
+            result = _select_provider(dry_run=False)
+        assert result is True
+        assert 'llm_provider: "ollama"' in (config_dir / "settings.local.yaml").read_text()
+        assert not (tmp_path / ".env").exists()
+
+    def test_ollama_custom_url_writes_env(self, mocker: MagicMock, tmp_path: Path) -> None:
+        config_dir = self._setup_config(tmp_path)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=3)
+        mocker.patch("typer.prompt", return_value="http://myhost:11434")
+        with patch("scripts.setup.run_setup.CONFIG_DIR", config_dir):
+            result = _select_provider(dry_run=False)
+        assert result is True
+        assert "OLLAMA_BASE_URL=http://myhost:11434" in (tmp_path / ".env").read_text()
+
+    def test_aws_ollama_writes_provider_returns_true(
+        self, mocker: MagicMock, tmp_path: Path
+    ) -> None:
+        config_dir = self._setup_config(tmp_path)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=4)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", config_dir):
+            result = _select_provider(dry_run=False)
+        assert result is True
+        assert 'llm_provider: "aws-ollama"' in (config_dir / "settings.local.yaml").read_text()
+
+    def test_skip_returns_false(self, mocker: MagicMock, tmp_path: Path) -> None:
+        config_dir = self._setup_config(tmp_path)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=5)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", config_dir):
+            result = _select_provider(dry_run=False)
+        assert result is False
+
+    def test_dry_run_does_not_write_settings(self, mocker: MagicMock, tmp_path: Path) -> None:
+        config_dir = self._setup_config(tmp_path)
+        original = (config_dir / "settings.local.yaml").read_text()
+        mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=2)
+        mocker.patch("typer.prompt", return_value="sk-ant-test")
+        with patch("scripts.setup.run_setup.CONFIG_DIR", config_dir):
+            result = _select_provider(dry_run=True)
+        assert result is True
+        assert (config_dir / "settings.local.yaml").read_text() == original
+        assert not (tmp_path / ".env").exists()

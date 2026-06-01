@@ -320,8 +320,9 @@ class TestRunDraft:
         # Let's check that the YAML is at least valid and complete
         assert "inbox" in fn or "resources" in fn
 
-
-    def _make_theme_map_file(self, tmp_path: Path, suggested_path: str = "Resources/Finance") -> Path:
+    def _make_theme_map_file(
+        self, tmp_path: Path, suggested_path: str = "Resources/Finance"
+    ) -> Path:
         theme_map_file = tmp_path / "themes-test.json"
         theme_map_file.write_text(
             json.dumps(

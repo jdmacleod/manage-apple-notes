@@ -9,12 +9,14 @@ how data flows through the pipeline and choose the workflow that matches your si
 
 | Step | What happens | Data leaves the machine? |
 |------|-------------|--------------------------|
+| `notes setup` | Interactive wizard that collects folder names and optionally an LLM provider API key. The API key is written to `.env` (local only, gitignored); input is not echoed to the terminal. | No |
 | `notes export` / `notes backup` | AppleScript extracts plaintext from Notes app → local JSON in `data/exports/` or `data/backups/` | No |
 | `notes discover` / `notes classify` (cloud) | Note title + body excerpt sent to Anthropic API per batch | Yes — see below |
 | `notes discover` / `notes classify` (local) | Same content sent to Ollama process on `localhost` | No |
 | `notes move` / `notes revert` / `notes purge` | AppleScript moves or deletes notes inside the Notes app | No |
 | `notes restore` / `notes repair` | AppleScript creates or rewrites notes from local backup JSON | No |
 | `notes sync-hubs` | Writes Hub and Home notes via AppleScript; when `internal_links: "html"` is set, also reads `NoteStore.sqlite` locally (read-only, requires Full Disk Access) to resolve stable note UUIDs | No |
+| `notes review` | Reads a local proposal JSON, prompts for folder selection, writes back the edited proposal. No data leaves the machine. | No |
 
 In cloud mode, each batch contains the note title and up to `max_body_chars` of body text
 (default: 2000 characters). Notes are truncated before transmission; raw exports stay local.

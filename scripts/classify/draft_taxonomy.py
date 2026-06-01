@@ -441,9 +441,7 @@ def run_draft(theme_map_file: str | None, dry_run: bool, json_output: bool = Fal
         )
     # ── Offer to apply draft to taxonomy.local.yaml ───────────────────────────
     local_taxonomy_path = CONFIG_DIR / "taxonomy.local.yaml"
-    if not json_output and typer.confirm(
-        "\nApply to config/taxonomy.local.yaml?", default=True
-    ):
+    if not json_output and typer.confirm("\nApply to config/taxonomy.local.yaml?", default=True):
         if local_taxonomy_path.exists():
             bak = local_taxonomy_path.with_suffix(".yaml.bak")
             shutil.copy2(local_taxonomy_path, bak)
