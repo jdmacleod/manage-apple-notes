@@ -147,6 +147,7 @@ def _patch_draft(mocker: MagicMock, tmp_path: Path, taxonomy: dict, settings: di
     mocker.patch("scripts.classify.draft_taxonomy.load_taxonomy", return_value=taxonomy)
     mocker.patch("scripts.classify.draft_taxonomy.local_taxonomy_exists", return_value=True)
     mocker.patch("scripts.classify.draft_taxonomy.TAXONOMY_DRAFTS_DIR", tmp_path / "drafts")
+    mocker.patch("typer.confirm", return_value=False)  # skip apply prompt in most tests
 
 
 class TestRunDraft:
@@ -318,6 +319,110 @@ class TestRunDraft:
         # minimal_taxonomy has archive but no areas — Health goes to skipped
         # Let's check that the YAML is at least valid and complete
         assert "inbox" in fn or "resources" in fn
+
+
+    def _make_theme_map_file(self, tmp_path: Path, suggested_path: str = "Resources/Finance") -> Path:
+        theme_map_file = tmp_path / "themes-test.json"
+        theme_map_file.write_text(
+            json.dumps(
+                _make_theme_map(
+                    [{"name": "Finance", "suggested_path": suggested_path, "estimated_count": 10}]
+                )
+            )
+        )
+        return theme_map_file
+
+    def test_confirm_yes_writes_taxonomy_local(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_taxonomy: dict,
+        minimal_settings: dict,
+    ) -> None:
+        theme_map_file = self._make_theme_map_file(tmp_path)
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        mocker.patch("scripts.classify.draft_taxonomy.load_settings", return_value=minimal_settings)
+        mocker.patch("scripts.classify.draft_taxonomy.load_taxonomy", return_value=minimal_taxonomy)
+        mocker.patch("scripts.classify.draft_taxonomy.local_taxonomy_exists", return_value=True)
+        mocker.patch("scripts.classify.draft_taxonomy.TAXONOMY_DRAFTS_DIR", tmp_path / "drafts")
+        mocker.patch("scripts.classify.draft_taxonomy.CONFIG_DIR", config_dir)
+        mocker.patch("typer.confirm", return_value=True)
+
+        run_draft(theme_map_file=str(theme_map_file), dry_run=False)
+
+        local = config_dir / "taxonomy.local.yaml"
+        assert local.exists(), "taxonomy.local.yaml should be written when confirmed"
+        parsed = yaml.safe_load(local.read_text())
+        assert "taxonomy" in parsed
+
+    def test_confirm_yes_backs_up_existing(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_taxonomy: dict,
+        minimal_settings: dict,
+    ) -> None:
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        existing = config_dir / "taxonomy.local.yaml"
+        existing.write_text("# old taxonomy\n")
+
+        theme_map_file = self._make_theme_map_file(tmp_path)
+        mocker.patch("scripts.classify.draft_taxonomy.load_settings", return_value=minimal_settings)
+        mocker.patch("scripts.classify.draft_taxonomy.load_taxonomy", return_value=minimal_taxonomy)
+        mocker.patch("scripts.classify.draft_taxonomy.local_taxonomy_exists", return_value=True)
+        mocker.patch("scripts.classify.draft_taxonomy.TAXONOMY_DRAFTS_DIR", tmp_path / "drafts")
+        mocker.patch("scripts.classify.draft_taxonomy.CONFIG_DIR", config_dir)
+        mocker.patch("typer.confirm", return_value=True)
+
+        run_draft(theme_map_file=str(theme_map_file), dry_run=False)
+
+        bak = config_dir / "taxonomy.local.yaml.bak"
+        assert bak.exists(), "backup should be created before overwriting"
+        assert bak.read_text() == "# old taxonomy\n"
+
+    def test_confirm_no_leaves_taxonomy_local_unchanged(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_taxonomy: dict,
+        minimal_settings: dict,
+    ) -> None:
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        existing = config_dir / "taxonomy.local.yaml"
+        existing.write_text("# original\n")
+
+        theme_map_file = self._make_theme_map_file(tmp_path)
+        mocker.patch("scripts.classify.draft_taxonomy.load_settings", return_value=minimal_settings)
+        mocker.patch("scripts.classify.draft_taxonomy.load_taxonomy", return_value=minimal_taxonomy)
+        mocker.patch("scripts.classify.draft_taxonomy.local_taxonomy_exists", return_value=True)
+        mocker.patch("scripts.classify.draft_taxonomy.TAXONOMY_DRAFTS_DIR", tmp_path / "drafts")
+        mocker.patch("scripts.classify.draft_taxonomy.CONFIG_DIR", config_dir)
+        mocker.patch("typer.confirm", return_value=False)
+
+        run_draft(theme_map_file=str(theme_map_file), dry_run=False)
+
+        assert existing.read_text() == "# original\n", "file should be untouched when declined"
+
+    def test_confirm_skipped_in_json_output_mode(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_taxonomy: dict,
+        minimal_settings: dict,
+    ) -> None:
+        theme_map_file = self._make_theme_map_file(tmp_path)
+        mocker.patch("scripts.classify.draft_taxonomy.load_settings", return_value=minimal_settings)
+        mocker.patch("scripts.classify.draft_taxonomy.load_taxonomy", return_value=minimal_taxonomy)
+        mocker.patch("scripts.classify.draft_taxonomy.local_taxonomy_exists", return_value=True)
+        mocker.patch("scripts.classify.draft_taxonomy.TAXONOMY_DRAFTS_DIR", tmp_path / "drafts")
+        confirm_mock = mocker.patch("typer.confirm")
+
+        run_draft(theme_map_file=str(theme_map_file), dry_run=False, json_output=True)
+
+        confirm_mock.assert_not_called()
 
 
 class TestRunDraftThresholdBypass:
@@ -737,6 +842,7 @@ class TestRunDraftBootstrap:
         mocker.patch("scripts.classify.draft_taxonomy.local_taxonomy_exists", return_value=False)
         mocker.patch("scripts.classify.draft_taxonomy.get_provider", return_value=mock_llm_provider)
         mocker.patch("scripts.classify.draft_taxonomy.TAXONOMY_DRAFTS_DIR", tmp_path / "drafts")
+        mocker.patch("typer.confirm", return_value=False)
 
         run_draft(theme_map_file=str(theme_map_file), dry_run=False)
 
@@ -810,6 +916,7 @@ class TestRunDraftBootstrap:
         mocker.patch("scripts.classify.draft_taxonomy.load_taxonomy", return_value=minimal_taxonomy)
         mocker.patch("scripts.classify.draft_taxonomy.get_provider", return_value=mock_llm_provider)
         mocker.patch("scripts.classify.draft_taxonomy.TAXONOMY_DRAFTS_DIR", tmp_path / "drafts")
+        mocker.patch("typer.confirm", return_value=False)
 
         run_draft(theme_map_file=str(theme_map_file), dry_run=False)
 

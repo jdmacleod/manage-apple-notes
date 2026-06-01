@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import copy
 import json
+import shutil
 from datetime import datetime
 from pathlib import Path
 
+import typer
 import yaml
 from rich.console import Console
 
@@ -437,9 +439,28 @@ def run_draft(theme_map_file: str | None, dry_run: bool, json_output: bool = Fal
             "  Edit these paths in the theme map to use your actual folder names,\n"
             "  then re-run: uv run notes draft"
         )
-    con.print(
-        "\n[dim]Review the draft, edit as needed, then copy to config/taxonomy.local.yaml[/dim]"
-    )
+    # ── Offer to apply draft to taxonomy.local.yaml ───────────────────────────
+    local_taxonomy_path = CONFIG_DIR / "taxonomy.local.yaml"
+    if not json_output and typer.confirm(
+        "\nApply to config/taxonomy.local.yaml?", default=True
+    ):
+        if local_taxonomy_path.exists():
+            bak = local_taxonomy_path.with_suffix(".yaml.bak")
+            shutil.copy2(local_taxonomy_path, bak)
+            con.print(f"  [dim]Backed up existing taxonomy → {bak.name}[/dim]")
+        local_yaml: str = yaml.dump(
+            updated_taxonomy,
+            allow_unicode=True,
+            default_flow_style=False,
+            sort_keys=False,
+            indent=2,
+        )
+        local_taxonomy_path.write_text(local_yaml, encoding="utf-8")
+        con.print("[green]Updated[/green] config/taxonomy.local.yaml")
+    else:
+        con.print(
+            "\n[dim]Review the draft, edit as needed, then copy to config/taxonomy.local.yaml[/dim]"
+        )
 
     log_file = RunLogger("draft", logs_dir_path(settings)).finish(
         summary=draft_summary,
