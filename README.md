@@ -169,10 +169,10 @@ Run classification entirely on-device using Apple's Foundation Models framework 
 
 ```bash
 # From the repo root — requires Xcode 26 command-line tools
-swift build -c release --package-path swift/apple-llm
+make -C swift/apple-llm build
 ```
 
-The binary is placed at `swift/apple-llm/.build/release/apple-llm` (gitignored).
+The binary is placed at `swift/apple-llm/.build/release/apple-llm` (gitignored). Run `make -C swift/apple-llm` with no target to list all available targets (`build`, `debug`, `test`, `clean`, `smoke`).
 
 **Configure `settings.local.yaml`:**
 

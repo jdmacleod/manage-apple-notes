@@ -5,6 +5,21 @@ let package = Package(
     name: "apple-llm",
     platforms: [.macOS(.v26)],
     targets: [
-        .executableTarget(name: "apple-llm", path: "Sources/AppleLLM"),
+        // Pure-logic library — no FoundationModels dependency; imported by tests.
+        .target(
+            name: "AppleLLMCore",
+            path: "Sources/AppleLLMCore"
+        ),
+        // Thin entry point: reads stdin, calls FoundationModels, writes stdout.
+        .executableTarget(
+            name: "apple-llm",
+            dependencies: ["AppleLLMCore"],
+            path: "Sources/AppleLLM"
+        ),
+        .testTarget(
+            name: "AppleLLMTests",
+            dependencies: ["AppleLLMCore"],
+            path: "Tests/AppleLLMTests"
+        ),
     ]
 )

@@ -11,14 +11,9 @@
 //   3 — context window exceeded (reduce batch_size in settings.local.yaml)
 //   4 — unsupported language or locale (note content not supported by on-device model)
 
+import AppleLLMCore
 import Foundation
 import FoundationModels
-
-struct Input: Decodable {
-    let system: String
-    let user: String
-    let max_tokens: Int?
-}
 
 @available(macOS 26, *)
 func run() async {
@@ -38,7 +33,7 @@ func run() async {
             msg = "Apple Intelligence unavailable (\(reason))"
         }
         fputs("error: \(msg)\n", stderr)
-        exit(2)
+        exit(ExitCode.unavailable)
     }
 
     let inputData = FileHandle.standardInput.readDataToEndOfFile()
@@ -47,14 +42,12 @@ func run() async {
         input = try JSONDecoder().decode(Input.self, from: inputData)
     } catch {
         fputs("error: failed to decode input JSON: \(error)\n", stderr)
-        exit(1)
+        exit(ExitCode.generalError)
     }
 
     // Cap response tokens conservatively — total context is 4096 (system + user + response).
     // The system prompt alone is typically 1000–1500 tokens; leave headroom for the response.
-    let maxResponse = min(input.max_tokens ?? 4096, 800)
-
-    let options = GenerationOptions(maximumResponseTokens: maxResponse)
+    let options = GenerationOptions(maximumResponseTokens: cappedResponseTokens(requested: input.max_tokens))
 
     // First attempt — full content.
     do {
@@ -64,17 +57,17 @@ func run() async {
         return
     } catch {
         let desc = "\(error)"
-        if desc.contains("exceededContextWindowSize") || desc.contains("contextWindowSize") {
+        if isContextOverflowError(desc) {
             fputs(
                 "error: context window exceeded (4096 tokens total).\n"
                     + "  Set batch_size: 1 in settings.local.yaml when using the apple provider.\n",
                 stderr
             )
-            exit(3)
+            exit(ExitCode.contextOverflow)
         }
-        guard desc.contains("unsupportedLanguageOrLocale") else {
+        guard isLocaleError(desc) else {
             fputs("error: generation failed: \(error)\n", stderr)
-            exit(1)
+            exit(ExitCode.generalError)
         }
         // Fall through to retry with stripped content.
     }
@@ -83,19 +76,12 @@ func run() async {
     // Notes that contain pasted foreign-language text (recipes, quotes, etc.) often
     // trigger the locale filter even when the title and most of the content are English.
     // Stripping preserves the English framing while removing the offending characters.
-    let strippedUser = input.user
-        .unicodeScalars
-        .filter { $0.value < 0x80 }  // keep ASCII only
-        .map { Character($0) }
-        .reduce(into: "") { $0.append($1) }
-        .components(separatedBy: .whitespacesAndNewlines)
-        .filter { !$0.isEmpty }
-        .joined(separator: " ")
+    let strippedUser = stripToASCII(input.user)
 
-    guard strippedUser.split(separator: " ").count >= 5 else {
+    guard hasEnoughContent(strippedUser) else {
         // Too little ASCII content left to classify meaningfully.
         fputs("error: unsupported language or locale (insufficient ASCII content after stripping)\n", stderr)
-        exit(4)
+        exit(ExitCode.unsupportedLocale)
     }
 
     do {
@@ -104,7 +90,7 @@ func run() async {
         print(retryResponse.content)
     } catch {
         fputs("error: unsupported language or locale\n", stderr)
-        exit(4)
+        exit(ExitCode.unsupportedLocale)
     }
 }
 
@@ -116,10 +102,10 @@ DispatchQueue.main.async {
     Task {
         if #available(macOS 26, *) {
             await run()
-            exit(0)
+            exit(ExitCode.success)
         } else {
             fputs("error: macOS 26 or later is required for Apple Intelligence\n", stderr)
-            exit(2)
+            exit(ExitCode.unavailable)
         }
     }
 }

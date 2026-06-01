@@ -521,13 +521,25 @@ Python interface naturally.
 
 ### Building the CLI tool
 
+The Swift package includes a self-documenting `Makefile`. Run with no target to list
+all available targets:
+
 ```bash
 # From the repo root
-swift build -c release --package-path swift/apple-llm
-
-# Binary is placed at:
-swift/apple-llm/.build/release/apple-llm
+make -C swift/apple-llm          # list available targets (help)
+make -C swift/apple-llm build    # compile the release binary
+make -C swift/apple-llm smoke    # build and run a quick end-to-end smoke test
 ```
+
+Available targets:
+
+| Target | Description |
+|--------|-------------|
+| `build` | Compile the release binary → `.build/release/apple-llm` |
+| `debug` | Compile a debug binary with symbols → `.build/debug/apple-llm` |
+| `test` | Run the Swift test suite |
+| `clean` | Remove all build artefacts (`.build/`) |
+| `smoke` | Build then pipe a minimal JSON request through the binary |
 
 The `.build/` directory is gitignored. The binary must be compiled on the machine where
 it will run — it cannot be committed to or distributed from the repo.
