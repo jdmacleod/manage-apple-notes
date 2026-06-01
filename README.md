@@ -13,22 +13,25 @@ AI-powered organisation for Apple Notes. The pipeline is **export → discover �
 > macOS 26+ · Apple Silicon · Apple Intelligence enabled in System Settings → Apple Intelligence & Siri
 
 ```bash
-# 1. Clone and install
+# 1. Install uv (if you haven't already)
+# https://docs.astral.sh/uv/getting-started/installation/
+
+# 2. Clone and install
 git clone https://github.com/jdmacleod/manage-apple-notes.git
 cd manage-apple-notes
 git config core.hooksPath .git-hooks   # blocks accidental data commits
 uv sync
 
-# 2. Pick a framework and name your folders (takes ~2 minutes)
+# 3. Pick a framework and name your folders (takes ~2 minutes)
 uv run notes setup
 
-# 3. Build the on-device inference bridge (requires Xcode 26)
+# 4. Build the on-device inference bridge (requires Xcode 26)
 make -C swift/apple-llm build
 
-# 4. Grant Automation permission
+# 5. Grant Automation permission
 # System Settings → Privacy & Security → Automation → enable Notes for your terminal app.
 
-# 5. Run the pipeline
+# 6. Run the pipeline
 uv run notes export
 uv run notes classify
 # Review data/proposals/proposal-YYYY-MM-DD.json, then:

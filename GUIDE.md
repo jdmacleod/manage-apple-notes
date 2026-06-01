@@ -7,7 +7,7 @@ This document covers everything not in the [README quickstart](README.md): full 
 All providers require:
 
 - macOS with Apple Notes
-- [uv](https://docs.astral.sh/uv/) — `brew install uv` or `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) — see Astral's installation page for the recommended method on your platform
 - **Terminal Automation permission** — export, move, restore, and hub-sync commands run AppleScript via `osascript`. Grant it in **System Settings → Privacy & Security → Automation** — enable the Notes checkbox under your terminal app (Terminal, iTerm2, etc.). macOS will prompt on first run; if it doesn't, add it manually.
 - **Full Disk Access (some commands)** — commands that read `NoteStore.sqlite` (note-to-note link insertion) require Full Disk Access for your terminal app. Grant it in **System Settings → Privacy & Security → Full Disk Access**, run the relevant command, then revoke it if you prefer a conservative security posture. See [Technical Notes: Full Disk Access](docs/technical-notes.md#full-disk-access-requirement) for step-by-step instructions.
 
