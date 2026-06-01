@@ -178,11 +178,6 @@ class AppleProvider:
 
 def get_provider(settings: dict, dry_run: bool = False) -> LLMProvider:
     llm_cfg = settings.get("llm") or settings.get("claude", {})
-    # OLLAMA_BASE_URL in the environment takes precedence over settings.local.yaml
-    if os.environ.get("OLLAMA_BASE_URL"):
-        model = llm_cfg.get("model", "llama3")
-        timeout = float(llm_cfg.get("request_timeout", 1200))
-        return OllamaProvider(model, timeout=timeout, dry_run=dry_run)
     provider_name = llm_cfg.get("provider", "anthropic")
     default_model = "claude-opus-4-6" if provider_name == "anthropic" else "llama3"
     model = llm_cfg.get("model", default_model)

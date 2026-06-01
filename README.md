@@ -46,7 +46,7 @@ uv sync
 
 # 5. Set your API key / provider URL
 cp .env.example .env
-# Edit .env — add ANTHROPIC_API_KEY for cloud, or set OLLAMA_BASE_URL for local
+# Edit .env — add ANTHROPIC_API_KEY; set OLLAMA_BASE_URL/OLLAMA_MODEL if using Ollama
 ```
 
 ## Quick Reference
@@ -133,13 +133,13 @@ cdk bootstrap aws://<ACCOUNT_ID>/<REGION>
 cdk deploy
 ```
 
-CDK outputs an `SshTunnelCommand`. Run it once per session to forward the Ollama endpoint to `localhost:11434`, then set `OLLAMA_BASE_URL` in your `.env`:
+CDK outputs an `SshTunnelCommand`. Run it once per session to forward the Ollama endpoint to `localhost:11434`, then set `OLLAMA_BASE_URL` in your `.env` (connection URL only):
 
 ```
 OLLAMA_BASE_URL=http://localhost:11434
 ```
 
-**Configure `settings.local.yaml`:**
+**Configure `settings.local.yaml`** — set `provider: "ollama"` to activate Ollama, plus the `aws:` block for CDK:
 
 ```yaml
 aws:
@@ -157,7 +157,7 @@ llm:
     ollama: 8192      # safe for gpt-oss:20b on 24 GB VRAM; see technical notes
 ```
 
-The `OLLAMA_BASE_URL` env var activates the Ollama provider automatically once the SSH tunnel is running. Run `cdk destroy` to decommission all infrastructure. See [docs/aws-infrastructure.md](docs/aws-infrastructure.md) for the full guide including model persistence, cost notes, and troubleshooting.
+Run `cdk destroy` to decommission all infrastructure. See [docs/aws-infrastructure.md](docs/aws-infrastructure.md) for the full guide including model persistence, cost notes, and troubleshooting.
 
 ## Apple Intelligence provider
 

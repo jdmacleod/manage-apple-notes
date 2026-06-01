@@ -421,22 +421,22 @@ approximately 4–6 GB for the OS and running apps, leaving the rest available t
   a model running on CPU is 5–10× slower
 - If you see malformed or truncated JSON, reduce `batch_size` before switching models;
   context overflow is the most common cause
-- `OLLAMA_BASE_URL` in `.env` takes precedence over `settings.local.yaml` — set it there
-  to switch between cloud and local without editing config files
+- `OLLAMA_BASE_URL` in `.env` sets the connection URL; `OLLAMA_MODEL` overrides the model
+  name — both apply when `provider: "ollama"` is set in `settings.local.yaml`
 
 ### Pulling and configuring a model
 
 ```bash
 ollama pull llama3.1:8b
 
-# Add to .env (gitignored):
+# Add to .env (gitignored) — connection URL and optional model override:
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=llama3.1:8b
 ```
 
-Then in `settings.local.yaml` set `batch_size: 10` under the `llm:` key. The
-`OLLAMA_BASE_URL` env var activates the Ollama provider automatically — no need to change
-`llm.provider` in settings.
+Set `provider: "ollama"` and `batch_size: 10` in `settings.local.yaml`. The
+`llm.provider` setting is the authoritative selector — `OLLAMA_BASE_URL` configures
+where to connect, but does not change which provider runs.
 
 ---
 

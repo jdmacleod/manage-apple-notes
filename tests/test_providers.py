@@ -222,15 +222,32 @@ class TestGetProvider:
         provider = get_provider(settings, dry_run=True)
         assert provider.name == "anthropic"
 
-    def test_ollama_env_takes_precedence(
+    def test_ollama_base_url_env_does_not_override_provider(
         self, mocker: MagicMock, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        # OLLAMA_BASE_URL is a connection URL for Ollama, not a provider selector.
+        # Explicit provider: in settings always wins.
         monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        mocker.patch("openai.OpenAI")
+        mocker.patch("anthropic.Anthropic")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
 
         settings = {"llm": {"provider": "anthropic", "model": "claude-sonnet-4-6"}}
         provider = get_provider(settings, dry_run=True)
-        assert provider.name == "ollama"
+        assert provider.name == "anthropic"
+
+    def test_ollama_base_url_env_used_as_connection_url(
+        self, mocker: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # OLLAMA_BASE_URL is still read by OllamaProvider when provider: ollama is set.
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://custom-host:11434")
+        monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+        mock_openai = mocker.patch("openai.OpenAI")
+
+        settings = {"llm": {"provider": "ollama", "model": "llama3"}}
+        get_provider(settings, dry_run=True)
+
+        call_kwargs = mock_openai.call_args.kwargs
+        assert "custom-host" in call_kwargs.get("base_url", "")
 
     def test_ollama_provider_setting(
         self, mocker: MagicMock, monkeypatch: pytest.MonkeyPatch

@@ -60,8 +60,9 @@ llm:
 #   (via ~/.aws/credentials or AWS_* env vars), and an existing EC2 key pair in
 #   your target region. GPU quota for g5.xlarge may need to be requested from AWS
 #   Support (default quota is 0).
-# After deploy: run the SshTunnelCommand from CDK output once per session, then
-#   set OLLAMA_BASE_URL=http://localhost:11434 in your .env file.
+# After deploy: run the SshTunnelCommand from CDK output once per session, and
+#   set OLLAMA_BASE_URL=http://localhost:11434 in your .env file (connection URL only —
+#   set provider: "ollama" in the llm: block above to activate Ollama).
 # aws:
 #   region: "us-east-1"
 #   instance_type: "g5.xlarge"          # GPU instance; adjust for cost vs performance
