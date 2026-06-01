@@ -61,6 +61,62 @@ def find_latest_export() -> Path:
 
 _SETTINGS_EXAMPLE = CONFIG_DIR / "settings.example.yaml"
 
+# Built-in defaults for the nine standard taxonomy roles.
+# Any key a user defines in their taxonomy.yaml works regardless of whether it appears here;
+# these entries supply description / semantic flags when the user has not overridden them.
+_BUILTIN_CATEGORY_META: dict[str, dict] = {
+    "inbox": {"description": "temporary capture", "transit": True},
+    "fleeting": {"description": "quick, short-lived thoughts", "transit": True},
+    "literature": {"description": "notes tied to a specific source (book, article, talk)"},
+    "permanent": {"description": "refined, evergreen concepts in your own words"},
+    "projects": {"description": "notes tied to active projects"},
+    "areas": {"description": "ongoing responsibilities"},
+    "resources": {"description": "reference material and collections"},
+    "archive": {
+        "description": "inactive, completed, or outdated notes",
+        "exclude_from_classify": True,
+        "exclude_from_discover": True,
+    },
+    "review": {
+        "description": "use when classification is genuinely unclear",
+        "catchall": True,
+    },
+}
+
+
+def get_category_meta(settings: dict) -> dict[str, dict]:
+    """Return resolved per-category metadata keyed by taxonomy role name.
+
+    Resolution order (later wins):
+      1. Built-in defaults for the nine standard roles
+      2. settings categories: block — adds new keys and overrides built-ins
+      3. Legacy threshold keys (inbox_stale_days etc.) for backward compat
+
+    Supported flags per category:
+      description            str   — sent to the LLM alongside the folder name
+      transit                bool  — conservative mode: notes here may be freely moved
+      stale_days             int   — audit: flag notes not modified within this many days
+      active_days            int   — audit: flag notes not modified FOR this many days
+      exclude_from_classify  bool  — skip notes in this folder during notes classify
+      exclude_from_discover  bool  — skip notes in this folder during notes discover
+      catchall               bool  — route unclassifiable notes here
+    """
+    thresholds = settings.get("thresholds", {})
+    meta: dict[str, dict] = {k: dict(v) for k, v in _BUILTIN_CATEGORY_META.items()}
+
+    for key, cfg in (settings.get("categories") or {}).items():
+        meta.setdefault(key, {}).update(cfg or {})
+
+    # Backward compat: legacy threshold keys populate the new per-category flags
+    if "inbox_stale_days" in thresholds:
+        meta.setdefault("inbox", {})["stale_days"] = int(thresholds["inbox_stale_days"])
+    if "fleeting_stale_days" in thresholds:
+        meta.setdefault("fleeting", {})["stale_days"] = int(thresholds["fleeting_stale_days"])
+    if "inactive_project_days" in thresholds:
+        meta.setdefault("projects", {})["active_days"] = int(thresholds["inactive_project_days"])
+
+    return meta
+
 
 def get_llm_config(settings: dict) -> dict:
     """Resolve the active LLM config by merging provider defaults with user overrides.

@@ -18,6 +18,7 @@ from rich.progress import (
 
 from scripts.config import (
     find_latest_export,
+    get_category_meta,
     get_llm_config,
     load_settings,
     load_taxonomy,
@@ -75,33 +76,12 @@ def _subfolder_str(subfolders: list[str]) -> str:
     return ", ".join(subfolders) if subfolders else "none"
 
 
-# Canonical ordering and descriptions for all supported taxonomy categories.
-# Only categories present in the user's taxonomy are included in the prompt.
-_CATEGORY_META = [
-    ("inbox", "temporary capture, no subfolders"),
-    ("fleeting", "quick thoughts, no subfolders"),
-    ("literature", "notes tied to a specific source (book, article, talk)"),
-    ("permanent", "atomic, evergreen concepts in your own words"),
-    ("projects", "notes tied to a specific active project"),
-    ("areas", "ongoing responsibilities and reference for areas of life/work"),
-    ("resources", "reference material, how-tos, collections"),
-    ("archive", "inactive, completed, or outdated notes"),
-    ("review", "use when classification is genuinely unclear, no subfolders"),
-]
-
-_RELOCATION_GUIDANCE: dict[str, str] = {
-    "conservative": (
-        "Notes not currently in Inbox or Fleeting are already deliberately organized. "
-        "For these notes, only propose moving them if you are HIGH confidence the current "
-        "location is wrong — otherwise return their current folder path as the proposed_folder_path."
-    ),
-    "standard": "",
-    "full": (
-        "Classify each note based purely on its content. "
-        "The current_folder field is provided for reference only — "
-        "do not let it bias your classification."
-    ),
-}
+_RELOCATION_GUIDANCE_STANDARD = ""
+_RELOCATION_GUIDANCE_FULL = (
+    "Classify each note based purely on its content. "
+    "The current_folder field is provided for reference only — "
+    "do not let it bias your classification."
+)
 
 
 def inject_taxonomy(
@@ -111,24 +91,24 @@ def inject_taxonomy(
 ) -> str:
     """Inject the user's taxonomy into the classify prompt template.
 
-    Replaces {CATEGORY_LIST} with only the categories present in the taxonomy.
-    In flat mode only top-level folder names are listed; in natural/deep modes
-    all available sub-paths are shown indented by depth, up to max_folder_depth.
-    Replaces {CATCHALL} with the review folder name, or inbox as a fallback.
+    Replaces {CATEGORY_LIST} with every category present in the user's taxonomy,
+    in definition order. Descriptions come from the settings categories: block.
+    Replaces {CATCHALL} with the first catchall-flagged category, falling back to
+    the first transit category, then the first category in the taxonomy.
+    Replaces {RELOCATION_GUIDANCE} with mode-appropriate conservative guidance.
     """
     fn = taxonomy.get("taxonomy", {})
+    cat_meta = get_category_meta(settings or {})
     mode = nesting_mode(settings)
     max_depth = effective_max_depth(settings)
 
     lines: list[str] = []
-    for key, description in _CATEGORY_META:
-        entry = fn.get(key)
-        if not entry:
-            continue
+    for key, entry in fn.items():
         fld = folder_name(entry)
         if not fld:
             continue
-        lines.append(f"{fld} — {description}")
+        desc = (cat_meta.get(key) or {}).get("description", "")
+        lines.append(f"{fld}{' — ' + desc if desc else ''}")
 
         if mode != "flat":
             for path in enumerate_paths(entry):
@@ -139,8 +119,51 @@ def inject_taxonomy(
                 leaf = path.split("/")[-1]
                 lines.append(f"{indent}{leaf}  [{path}]")
 
-    catchall = folder_name(fn.get("review")) or folder_name(fn.get("inbox")) or "Inbox"
-    relocation = _RELOCATION_GUIDANCE.get(reorganization_mode(settings), "")
+    # Catchall: first category with catchall:true → first transit → first folder
+    catchall = (
+        next(
+            (
+                folder_name(fn[k])
+                for k, v in cat_meta.items()
+                if v.get("catchall") and k in fn and folder_name(fn[k])
+            ),
+            None,
+        )
+        or next(
+            (
+                folder_name(fn[k])
+                for k, v in cat_meta.items()
+                if v.get("transit") and k in fn and folder_name(fn[k])
+            ),
+            None,
+        )
+        or next((folder_name(e) for e in fn.values() if folder_name(e)), "Inbox")
+    )
+
+    # Relocation guidance for conservative mode: name the actual transit folders
+    reorg = reorganization_mode(settings)
+    if reorg == "conservative":
+        transit_names = [
+            folder_name(fn[k])
+            for k, v in cat_meta.items()
+            if v.get("transit") and k in fn and folder_name(fn[k])
+        ]
+        if transit_names:
+            names_str = " or ".join(f"'{n}'" for n in transit_names)
+            relocation = (
+                f"Notes not currently in {names_str} are already deliberately organized. "
+                "For these notes, only propose moving them if you are HIGH confidence the current "
+                "location is wrong — otherwise return their current folder path as the proposed_folder_path."
+            )
+        else:
+            relocation = (
+                "Notes already in organized folders should only be moved with HIGH confidence. "
+                "Otherwise return the current folder path as the proposed_folder_path."
+            )
+    elif reorg == "full":
+        relocation = _RELOCATION_GUIDANCE_FULL
+    else:
+        relocation = _RELOCATION_GUIDANCE_STANDARD
 
     return (
         system_prompt.replace("{CATEGORY_LIST}", "\n".join(lines))
@@ -255,23 +278,44 @@ def run_classify(export_file: str | None, dry_run: bool, json_output: bool = Fal
     )
 
     fn = taxonomy.get("taxonomy", {})
-    archive_folder = folder_name(fn.get("archive", ""))
-    exclude_archive = settings.get("classify", {}).get("exclude_archive", True)
+    cat_meta = get_category_meta(settings)
 
-    archive_notes: list[dict] = []
-    if exclude_archive and archive_folder:
-        archive_paths = set(enumerate_paths(fn.get("archive", {})))
+    # Build the set of folder paths to exclude from classification.
+    # Driven by exclude_from_classify: true in the categories: block.
+    # Backward compat: classify.exclude_archive: true maps to archive's built-in flag.
+    if settings.get("classify", {}).get("exclude_archive") is False and "archive" in cat_meta:
+        cat_meta["archive"] = {
+            k: v for k, v in cat_meta["archive"].items() if k != "exclude_from_classify"
+        }
 
-        def _is_archive(n: dict) -> bool:
+    excluded_paths: set[str] = set()
+    excluded_notes: list[dict] = []
+    excluded_label_parts: list[str] = []
+    for key, cfg in cat_meta.items():
+        if not cfg.get("exclude_from_classify"):
+            continue
+        entry = fn.get(key)
+        if not entry:
+            continue
+        top = folder_name(entry)
+        if not top:
+            continue
+        paths = set(enumerate_paths(entry)) | {top}
+        excluded_paths |= paths
+        excluded_label_parts.append(top)
+
+    if excluded_paths:
+
+        def _is_excluded(n: dict) -> bool:
             fp = n.get("folder_path") or n.get("folder", "")
-            return fp == archive_folder or fp in archive_paths
+            return fp in excluded_paths
 
-        archive_notes = [n for n in notes if _is_archive(n)]
-        notes = [n for n in notes if not _is_archive(n)]
-        if archive_notes:
+        excluded_notes = [n for n in notes if _is_excluded(n)]
+        notes = [n for n in notes if not _is_excluded(n)]
+        if excluded_notes:
+            label = ", ".join(f"'{f}'" for f in excluded_label_parts)
             con.print(
-                f"  [dim]Skipping {len(archive_notes)} Archive note(s) "
-                f"(classify.exclude_archive = true)[/dim]"
+                f"  [dim]Skipping {len(excluded_notes)} note(s) in excluded folder(s): {label}[/dim]"
             )
 
     llm_cfg = get_llm_config(settings)
@@ -327,16 +371,33 @@ def run_classify(export_file: str | None, dry_run: bool, json_output: bool = Fal
     if estimate:
         con.print(f"[dim]Estimated duration: {estimate}[/dim]")
 
-    review_folder = folder_name(fn.get("review", ""))
+    # Catchall folder: notes the LLM can't confidently classify go here (needs_review bucket)
+    catchall_folder = next(
+        (
+            folder_name(fn[k])
+            for k, v in cat_meta.items()
+            if v.get("catchall") and k in fn and folder_name(fn[k])
+        ),
+        None,
+    ) or next(
+        (
+            folder_name(fn[k])
+            for k, v in cat_meta.items()
+            if v.get("transit") and k in fn and folder_name(fn[k])
+        ),
+        None,
+    )
 
-    # In conservative mode, notes outside Inbox/Fleeting are already deliberately placed.
+    # In conservative mode, notes outside transit folders are deliberately placed.
     # Any non-high-confidence move for such notes goes to needs_review instead of moves.
     reorg_mode = reorganization_mode(settings)
     transit_folders: set[str] = set()
     if reorg_mode == "conservative":
-        inbox_top = folder_name(fn.get("inbox", ""))
-        fleeting_top = folder_name(fn.get("fleeting", ""))
-        transit_folders = {f for f in [inbox_top, fleeting_top] if f}
+        transit_folders = {
+            folder_name(fn[k])
+            for k, v in cat_meta.items()
+            if v.get("transit") and k in fn and folder_name(fn[k])
+        }
 
     moves: list[dict] = []
     needs_review: list[dict] = []
@@ -383,7 +444,7 @@ def run_classify(export_file: str | None, dry_run: bool, json_output: bool = Fal
                 proposed_subfolder = parts[1] if len(parts) > 1 else None
 
                 current_path = note.get("folder_path") or note.get("folder", "")
-                if confidence == "low" or proposed_folder == review_folder:
+                if confidence == "low" or (catchall_folder and proposed_folder == catchall_folder):
                     needs_review.append(
                         {
                             "id": note_id,
@@ -429,7 +490,7 @@ def run_classify(export_file: str | None, dry_run: bool, json_output: bool = Fal
 
             progress.advance(task)
 
-    for n in archive_notes:
+    for n in excluded_notes:
         no_change.append(
             {
                 "id": n["id"],

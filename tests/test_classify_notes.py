@@ -122,7 +122,7 @@ class TestInjectTaxonomy:
         result = inject_taxonomy(
             "{RELOCATION_GUIDANCE}", minimal_taxonomy, {"reorganization_mode": "conservative"}
         )
-        assert "Inbox or Fleeting" in result
+        assert "already deliberately organized" in result
         assert "{RELOCATION_GUIDANCE}" not in result
 
     def test_relocation_guidance_full_has_content(self, minimal_taxonomy: dict) -> None:
@@ -165,7 +165,9 @@ class TestConservativeModePostProcessing:
         settings = {
             "reorganization_mode": "conservative",
             "llm_provider": "anthropic",
-            "llm_providers": {"anthropic": {"model": "mock-model", "context_size": 4096, "batch_size": 50}},
+            "llm_providers": {
+                "anthropic": {"model": "mock-model", "context_size": 4096, "batch_size": 50}
+            },
             "export": {"skip_empty": False},
             "classify": {"exclude_archive": False},
         }

@@ -89,12 +89,11 @@ class TestRunAuditStructure:
         content = report_path.read_text()
         for section in [
             "Library Statistics",
-            "Inactive Projects",
+            "Inactive",  # dynamic: "Inactive 'Projects'"
             "Untitled Notes",
             "Stub Notes",
             "Duplicate Titles",
-            "Stale Inbox",
-            "Stale Fleeting",
+            "Stale",  # dynamic: "Stale 'Inbox'", "Stale 'Fleeting'"
             "Untracked Folders",
             "Uncategorized Notes",
             "Subfolder Candidates",

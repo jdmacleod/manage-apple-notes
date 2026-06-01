@@ -10,8 +10,7 @@ from pathlib import Path
 import yaml
 from rich.console import Console
 
-from scripts.classify.classify_notes import _CATEGORY_META
-from scripts.config import load_settings, load_taxonomy, local_taxonomy_exists
+from scripts.config import get_category_meta, load_settings, load_taxonomy, local_taxonomy_exists
 from scripts.folder_utils import enumerate_paths
 from scripts.json_output import emit_result
 from scripts.json_utils import extract_json_object
@@ -47,17 +46,42 @@ def load_bootstrap_prompt() -> str:
     return path.read_text()
 
 
+def _build_role_list(taxonomy: dict, settings: dict) -> str:
+    """Build a human-readable role list for the bootstrap prompt.
+
+    If the user already has taxonomy categories defined, describe those.
+    Otherwise fall back to the full built-in / settings-configured category list.
+    """
+    fn = taxonomy.get("taxonomy", {})
+    cat_meta = get_category_meta(settings)
+    if fn:
+        lines = [
+            f"- {key}: {(cat_meta.get(key) or {}).get('description', '') or 'user-defined category'}"
+            for key, entry in fn.items()
+            if (cat_meta.get(key) or {}).get("description") or key in cat_meta
+        ]
+        if lines:
+            return "\n".join(lines)
+    # Fresh install — list all configured/built-in categories
+    return "\n".join(
+        f"- {key}: {cfg['description']}" for key, cfg in cat_meta.items() if cfg.get("description")
+    )
+
+
 def bootstrap_taxonomy(
     top_level_folders: list[str],
     provider: LLMProvider,
     settings: dict,
+    taxonomy: dict | None = None,
 ) -> dict:
     """Use LLM to map actual Apple Notes top-level folders to taxonomy roles.
 
     Returns a taxonomy dict like {"taxonomy": {"areas": {"folder": "Areas"}, ...}}.
     Returns {} on any LLM or parse error so the caller can fall back gracefully.
     """
-    valid_roles = {key for key, _ in _CATEGORY_META}
+    cat_meta = get_category_meta(settings)
+    valid_roles = set(cat_meta.keys())
+    role_list = _build_role_list(taxonomy or {}, settings)
 
     folder_list = "\n".join(f"- {f}" for f in top_level_folders)
 
@@ -72,6 +96,7 @@ def bootstrap_taxonomy(
 
     system = (
         load_bootstrap_prompt()
+        .replace("{ROLE_LIST}", role_list)
         .replace("{FOLDER_LIST}", folder_list)
         .replace("{TOPLEVEL_NOTE}", toplevel_note)
     )
@@ -274,7 +299,9 @@ def run_draft(theme_map_file: str | None, dry_run: bool, json_output: bool = Fal
                 model = provider.model
                 con.print(f"[dim]Bootstrap  ·  {provider.name} / {model}[/dim]")
                 with con.status("Bootstrapping taxonomy from folder structure…", spinner="dots"):
-                    taxonomy = bootstrap_taxonomy(top_level, provider, settings)
+                    taxonomy = bootstrap_taxonomy(
+                        top_level, provider, settings, taxonomy=load_taxonomy()
+                    )
                 if not taxonomy.get("taxonomy"):
                     con.print(
                         "[yellow]Warning:[/yellow] Bootstrap failed — falling back to example taxonomy."

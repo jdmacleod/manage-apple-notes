@@ -16,12 +16,10 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
-from scripts.classify.classify_notes import (
-    _CATEGORY_META,
-    price_per_million,
-)
+from scripts.classify.classify_notes import price_per_million
 from scripts.config import (
     find_latest_export,
+    get_category_meta,
     get_llm_config,
     load_settings,
     load_taxonomy,
@@ -112,11 +110,12 @@ def inject_discover_taxonomy(
 ) -> str:
     """Replace {CATEGORIES}, {ESTABLISHED_PATHS}, and {NESTING_GUIDANCE} in the discover prompt."""
     fn = taxonomy.get("taxonomy", {})
+    cat_meta = get_category_meta(settings or {})
     # Build "Folder — description" lines so the LLM knows each category's intent
     category_lines = [
-        f"{folder_name(fn[key])} — {desc}"
-        for key, desc in _CATEGORY_META
-        if key in fn and folder_name(fn[key])
+        f"{folder_name(fn[key])}{' — ' + (cat_meta.get(key) or {}).get('description', '') if (cat_meta.get(key) or {}).get('description') else ''}"
+        for key in fn
+        if folder_name(fn[key])
     ]
 
     mode = nesting_mode(settings)
@@ -354,9 +353,7 @@ def run_discover(export_file: str | None, dry_run: bool, json_output: bool = Fal
     # so it would otherwise have no knowledge of the user's actual folder names. Injecting the
     # category list here prevents the synthesis LLM from drifting to generic names (e.g.
     # "Permanent/Topic" instead of the user's actual folder name "Notes/Topic").
-    category_names = [
-        folder_name(fn[key]) for key, _ in _CATEGORY_META if key in fn and folder_name(fn[key])
-    ]
+    category_names = [folder_name(fn[key]) for key in fn if folder_name(fn[key])]
     top_level_constraint = (
         f"The valid top-level folder names are exactly: {', '.join(category_names)}. "
         "Use these exact names as the first component of every suggested_path — "
@@ -486,9 +483,7 @@ def run_discover(export_file: str | None, dry_run: bool, json_output: bool = Fal
 
     # ── Per-category breakdown ───────────────────────────────────────────────
 
-    top_level_folders = {
-        folder_name(fn[key]) for key, _ in _CATEGORY_META if key in fn and folder_name(fn[key])
-    }
+    top_level_folders = {folder_name(fn[key]) for key in fn if folder_name(fn[key])}
     by_category: dict[str, list[dict]] = {}
     for theme in final_themes:
         sp = theme.get("suggested_path") or ""

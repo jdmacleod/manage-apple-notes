@@ -11,9 +11,9 @@ from pathlib import Path
 
 from rich.console import Console
 
-from scripts.classify.classify_notes import _CATEGORY_META
 from scripts.config import (
     find_latest_export,
+    get_category_meta,
     load_settings,
     load_taxonomy,
     local_taxonomy_exists,
@@ -35,9 +35,6 @@ console = Console()
 REPORTS_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "reports"
 
 STUB_MAX_WORDS = 5
-STALE_INBOX_DAYS = 7
-STALE_FLEETING_DAYS = 30
-INACTIVE_PROJECT_DAYS = 90
 MIN_NOTES_FOR_SUBFOLDER = 8
 
 
@@ -133,18 +130,32 @@ def run_audit(
             "  cp config/taxonomy.example.yaml config/taxonomy.local.yaml"
         )
     fn = taxonomy.get("taxonomy", {})
-
-    archive_folder = folder_name(fn.get("archive", ""))
-    inbox_folder = folder_name(fn.get("inbox", ""))
-    fleeting_folder = folder_name(fn.get("fleeting", ""))
-    projects_folder = folder_name(fn.get("projects", ""))
+    cat_meta = get_category_meta(settings)
 
     thresholds = settings.get("thresholds", {})
     stub_words = thresholds.get("stub_words", STUB_MAX_WORDS)
-    inbox_stale_days = thresholds.get("inbox_stale_days", STALE_INBOX_DAYS)
-    fleeting_stale_days = thresholds.get("fleeting_stale_days", STALE_FLEETING_DAYS)
-    inactive_project_days = thresholds.get("inactive_project_days", INACTIVE_PROJECT_DAYS)
     min_subfolder = thresholds.get("min_notes_for_subfolder", MIN_NOTES_FOR_SUBFOLDER)
+
+    # Excluded folders: categories with exclude_from_classify (archive-like)
+    excluded_folders: set[str] = {
+        folder_name(fn[k])
+        for k, v in cat_meta.items()
+        if v.get("exclude_from_classify") and k in fn and folder_name(fn[k])
+    }
+
+    # Stale thresholds: categories with stale_days (e.g. inbox, fleeting)
+    stale_thresholds: list[tuple[str, int]] = [
+        (folder_name(fn[k]), int(v["stale_days"]))
+        for k, v in cat_meta.items()
+        if v.get("stale_days") and k in fn and folder_name(fn[k])
+    ]
+
+    # Activity thresholds: categories with active_days (e.g. projects)
+    active_thresholds: list[tuple[str, int]] = [
+        (folder_name(fn[k]), int(v["active_days"]))
+        for k, v in cat_meta.items()
+        if v.get("active_days") and k in fn and folder_name(fn[k])
+    ]
 
     # Build complete set of all known taxonomy paths for orphan detection
     all_taxonomy_paths: set[str] = set()
@@ -171,16 +182,18 @@ def run_audit(
     date_str = now.strftime("%Y-%m-%d")
     report_path = Path(output_override) if output_override else REPORTS_DIR / f"audit-{date_str}.md"
 
-    proj_label = (
-        f"in {projects_folder!r}" if projects_folder else "(projects folder not configured)"
-    )
     checks = [
-        f"Inactive projects — {proj_label}, not modified >{inactive_project_days} days",
         "Untitled notes — no meaningful title",
-        f"Stub notes — ≤{stub_words} combined title+body words, no attachments, not in Archive",
+        f"Stub notes — ≤{stub_words} combined title+body words, no attachments",
         "Duplicate titles",
-        f"Stale inbox — {inbox_folder!r} older than {inbox_stale_days} days",
-        f"Stale fleeting — {fleeting_folder!r} older than {fleeting_stale_days} days",
+        *[
+            f"Stale {cat_folder!r} — not updated in >{days} days"
+            for cat_folder, days in stale_thresholds
+        ],
+        *[
+            f"Inactive {cat_folder!r} — not modified in >{days} days"
+            for cat_folder, days in active_thresholds
+        ],
         "Untracked folders — children of taxonomy paths, not yet in taxonomy",
         "Uncategorized notes — no taxonomy relationship",
         f"Subfolder candidates — flat folders with >{min_subfolder} notes sharing a theme",
@@ -212,25 +225,6 @@ def run_audit(
     # ── Run checks ───────────────────────────────────────────────────────────
 
     with con.status(f"Scanning {len(notes)} notes…"):
-        inactive_cutoff = now - timedelta(days=inactive_project_days)
-        inbox_cutoff = now - timedelta(days=inbox_stale_days)
-        fleeting_cutoff = now - timedelta(days=fleeting_stale_days)
-
-        inactive_projects = sorted(
-            [
-                n
-                for n in notes
-                if projects_folder
-                and (
-                    n.get("folder") == projects_folder
-                    or (n.get("folder_path") or "").startswith(projects_folder + "/")
-                )
-                and (d := _parse_date(n.get("modified", ""))) is not None
-                and d < inactive_cutoff
-            ],
-            key=lambda n: n.get("modified", ""),
-        )
-
         untitled_notes = [n for n in notes if not (n.get("title") or "").strip()]
         untitled_display = [{**n, "body": (n.get("body") or "")[:80]} for n in untitled_notes]
 
@@ -238,7 +232,7 @@ def run_audit(
             n
             for n in notes
             if (n.get("attachment_count") or 0) == 0
-            and n.get("folder") != archive_folder
+            and n.get("folder") not in excluded_folders
             and (n.get("word_count") or 0) + len((n.get("title") or "").split()) <= stub_words
         ]
 
@@ -249,23 +243,37 @@ def run_audit(
                 title_groups[key].append(note)
         duplicate_groups = {k: v for k, v in title_groups.items() if len(v) > 1}
 
-        stale_inbox = [
-            n
-            for n in notes
-            if n.get("folder") == inbox_folder
-            and inbox_folder
-            and (d := _parse_date(n.get("modified", ""))) is not None
-            and d < inbox_cutoff
-        ]
+        # Stale checks: one per category with stale_days configured
+        stale_by_folder: dict[str, list[dict]] = {}
+        for cat_folder, days in stale_thresholds:
+            cutoff = now - timedelta(days=days)
+            stale = [
+                n
+                for n in notes
+                if n.get("folder") == cat_folder
+                and (d := _parse_date(n.get("modified", ""))) is not None
+                and d < cutoff
+            ]
+            stale_by_folder[cat_folder] = stale
 
-        stale_fleeting = [
-            n
-            for n in notes
-            if n.get("folder") == fleeting_folder
-            and fleeting_folder
-            and (d := _parse_date(n.get("modified", ""))) is not None
-            and d < fleeting_cutoff
-        ]
+        # Activity checks: one per category with active_days configured
+        inactive_by_folder: dict[str, list[dict]] = {}
+        for cat_folder, days in active_thresholds:
+            cutoff = now - timedelta(days=days)
+            inactive = sorted(
+                [
+                    n
+                    for n in notes
+                    if (
+                        n.get("folder") == cat_folder
+                        or (n.get("folder_path") or "").startswith(cat_folder + "/")
+                    )
+                    and (d := _parse_date(n.get("modified", ""))) is not None
+                    and d < cutoff
+                ],
+                key=lambda n: n.get("modified", ""),
+            )
+            inactive_by_folder[cat_folder] = inactive
 
         untracked_folder_notes: list[dict] = []
         uncategorized_notes: list[dict] = []
@@ -299,10 +307,7 @@ def run_audit(
         # ── Library statistics ───────────────────────────────────────────────
 
         category_counts: list[tuple[str, str, int]] = []
-        for key, _desc in _CATEGORY_META:
-            entry = fn.get(key)
-            if not entry:
-                continue
+        for key, entry in fn.items():
             folder = folder_name(entry)
             if not folder or folder.startswith("["):
                 continue
@@ -357,7 +362,7 @@ def run_audit(
         "",
         "## Library Statistics",
         "",
-        "### By PARA Category",
+        "### By Taxonomy Category",
         "",
         "| Category | Folder | Notes | Share |",
         "| --- | --- | --- | --- |",
@@ -379,21 +384,27 @@ def run_audit(
         lines.append(f"| {window} | {count} | {_pct(count)} |")
     if no_date_count:
         lines.append(f"| *(no date)* | {no_date_count} | {_pct(no_date_count)} |")
+    # Dynamic inactive-activity sections (one per category with active_days)
+    for cat_folder, days in active_thresholds:
+        inactive_notes = inactive_by_folder.get(cat_folder, [])
+        lines += [
+            "",
+            "---",
+            "",
+            f"## Inactive {cat_folder!r} — not modified in >{days} days",
+            "",
+            f"Found {len(inactive_notes)} notes.",
+            "",
+            "Notes untouched for this long may be completed, stalled, or abandoned. "
+            "Consider archiving completed items or reactivating stalled ones.",
+            "",
+            *_md_table(
+                inactive_notes,
+                [("Title", "title"), ("Folder", "folder"), ("Last Modified", "modified")],
+            ),
+        ]
+
     lines += [
-        "",
-        "---",
-        "",
-        f"## Inactive Projects — {proj_label}, not modified >{inactive_project_days} days",
-        "",
-        f"Found {len(inactive_projects)} notes.",
-        "",
-        "A project note untouched for this long likely means the project completed, stalled, "
-        "or was abandoned. Consider archiving completed projects or reactivating stalled ones.",
-        "",
-        *_md_table(
-            inactive_projects,
-            [("Title", "title"), ("Folder", "folder"), ("Last Modified", "modified")],
-        ),
         "---",
         "",
         "## Untitled Notes",
@@ -403,7 +414,7 @@ def run_audit(
         *_md_table(untitled_display, [("Folder", "folder"), ("Body preview", "body")]),
         "---",
         "",
-        f"## Stub Notes — ≤{stub_words} combined title+body words, no attachments, not in Archive",
+        f"## Stub Notes — ≤{stub_words} combined title+body words, no attachments",
         "",
         f"Found {len(stub_notes)} notes.",
         "",
@@ -428,21 +439,20 @@ def run_audit(
     else:
         lines += ["_None._", ""]
 
+    # Dynamic stale sections (one per category with stale_days)
+    for cat_folder, days in stale_thresholds:
+        stale_notes = stale_by_folder.get(cat_folder, [])
+        lines += [
+            "---",
+            "",
+            f"## Stale {cat_folder!r} — not updated in >{days} days",
+            "",
+            f"Found {len(stale_notes)} notes.",
+            "",
+            *_md_table(stale_notes, [("Title", "title"), ("Modified", "modified")]),
+        ]
+
     lines += [
-        "---",
-        "",
-        f"## Stale Inbox — in {inbox_folder!r}, not updated in >{inbox_stale_days} days",
-        "",
-        f"Found {len(stale_inbox)} notes.",
-        "",
-        *_md_table(stale_inbox, [("Title", "title"), ("Modified", "modified")]),
-        "---",
-        "",
-        f"## Stale Fleeting — in {fleeting_folder!r}, not updated in >{fleeting_stale_days} days",
-        "",
-        f"Found {len(stale_fleeting)} notes.",
-        "",
-        *_md_table(stale_fleeting, [("Title", "title"), ("Modified", "modified")]),
         "---",
         "",
         "## Untracked Folders — in Apple Notes, not defined in taxonomy",
@@ -498,12 +508,15 @@ def run_audit(
     report_path.write_text("\n".join(lines), encoding="utf-8")
 
     con.print(f"[green]Done.[/green] Report written to [bold]{report_path}[/bold]")
-    con.print(f"  Inactive projects:  {len(inactive_projects)}")
     con.print(f"  Untitled:           {len(untitled_notes)}")
     con.print(f"  Stubs:              {len(stub_notes)}")
     con.print(f"  Duplicate titles:   {len(duplicate_groups)}")
-    con.print(f"  Stale inbox:        {len(stale_inbox)}")
-    con.print(f"  Stale fleeting:     {len(stale_fleeting)}")
+    for cat_folder, _days in stale_thresholds:
+        count = len(stale_by_folder.get(cat_folder, []))
+        con.print(f"  Stale {cat_folder!r}:{' ' * max(1, 14 - len(cat_folder))}{count}")
+    for cat_folder, _days in active_thresholds:
+        count = len(inactive_by_folder.get(cat_folder, []))
+        con.print(f"  Inactive {cat_folder!r}:{' ' * max(1, 11 - len(cat_folder))}{count}")
     con.print(
         f"  Untracked folders:  {len(untracked_folder_rows)} folder(s), {len(untracked_folder_notes)} note(s)"
     )
@@ -513,14 +526,15 @@ def run_audit(
     else:
         con.print(f"  Subfolder candid.:  {len(subfolder_candidates)}")
 
+    total_stale = sum(len(v) for v in stale_by_folder.values())
+    total_inactive = sum(len(v) for v in inactive_by_folder.values())
     audit_summary: dict[str, object] = {
         "notes_scanned": len(notes),
-        "inactive_projects": len(inactive_projects),
         "untitled": len(untitled_notes),
         "stubs": len(stub_notes),
         "duplicate_title_groups": len(duplicate_groups),
-        "stale_inbox": len(stale_inbox),
-        "stale_fleeting": len(stale_fleeting),
+        "stale_notes": total_stale,
+        "inactive_notes": total_inactive,
         "untracked_folders": len(untracked_folder_rows),
         "untracked_folder_notes": len(untracked_folder_notes),
         "uncategorized": len(uncategorized_notes),

@@ -124,10 +124,57 @@ thresholds:
                                   # subfolders below min_notes_for_hub appear as plain text (no Hub
                                   # note to link to) and gain a Hub once they cross that threshold
   max_folder_depth: 3            # absolute ceiling on proposed nesting (Apple Notes max: 5)
-  inactive_project_days: 90      # notes in Projects not modified longer than this → flag for review
   stub_words: 5                  # notes with ≤ this many combined title+body words AND no attachments → flag as stub
-  inbox_stale_days: 7            # inbox notes older than this → stale
-  fleeting_stale_days: 30        # fleeting notes older than this → stale
+
+# Per-category metadata — controls classifier behaviour and audit checks.
+# Any key you define in taxonomy.local.yaml can have an entry here.
+# Keys not listed here inherit defaults from the nine built-in roles (see config.py).
+#
+# Supported flags (all optional):
+#   description           — text sent to the LLM alongside the folder name during classification
+#   transit: true         — conservative mode: notes here are "in-flight" and may be freely moved
+#   stale_days: N         — audit: flag notes not modified within N days
+#   active_days: N        — audit: flag notes not modified FOR N days (e.g. inactive projects)
+#   exclude_from_classify — skip notes in this folder during `notes classify`
+#   exclude_from_discover — skip notes in this folder during `notes discover`
+#   catchall: true        — route notes the LLM cannot confidently classify here
+#
+# Example for a GTD taxonomy:
+#   capture:
+#     description: "unprocessed inputs"
+#     transit: true
+#     stale_days: 3
+#   someday_maybe:
+#     description: "deferred ideas and projects"
+#   reference:
+#     exclude_from_classify: true
+categories:
+  inbox:
+    description: "temporary capture"
+    transit: true
+    stale_days: 7
+  fleeting:
+    description: "quick, short-lived thoughts"
+    transit: true
+    stale_days: 30
+  literature:
+    description: "notes tied to a specific source (book, article, talk)"
+  permanent:
+    description: "refined, evergreen concepts in your own words"
+  projects:
+    description: "notes tied to active projects"
+    active_days: 90
+  areas:
+    description: "ongoing responsibilities"
+  resources:
+    description: "reference material and collections"
+  archive:
+    description: "inactive, completed, or outdated notes"
+    exclude_from_classify: true
+    exclude_from_discover: true
+  review:
+    description: "use when classification is genuinely unclear"
+    catchall: true
 
 # Settings below apply only when forever_notes_mode is "strict".
 strict_mode:
