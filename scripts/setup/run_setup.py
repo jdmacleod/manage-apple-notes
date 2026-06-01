@@ -248,6 +248,58 @@ def _write_env_line(key: str, value: str, dry_run: bool) -> None:
     con.print(f"  Wrote [green]{key}[/green] to .env")
 
 
+def _write_toplevel_folder_to_settings(enabled: bool, name: str, dry_run: bool) -> None:
+    settings_path = CONFIG_DIR / "settings.local.yaml"
+    if not settings_path.exists():
+        return
+    content = settings_path.read_text(encoding="utf-8")
+    new_content = re.sub(
+        r"^(\s*enabled:)\s*\S+",
+        rf"\g<1> {str(enabled).lower()}",
+        content,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    new_content = re.sub(
+        r'^(\s*name:)\s*"[^"]*"',
+        rf'\g<1> "{name}"',
+        new_content,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if dry_run:
+        con.print(
+            f"  [dim]Would set toplevel_folder.enabled: {str(enabled).lower()}"
+            f"{f', name: {name!r}' if enabled else ''} in settings.local.yaml[/dim]"
+        )
+        return
+    settings_path.write_text(new_content, encoding="utf-8")
+    if enabled:
+        con.print(
+            f"  Set [green]toplevel_folder.enabled: true[/green], "
+            f"[green]name: {name!r}[/green] in settings.local.yaml"
+        )
+    else:
+        con.print("  Set [green]toplevel_folder.enabled: false[/green] in settings.local.yaml")
+
+
+def _ask_container(dry_run: bool) -> None:
+    """Ask whether to nest taxonomy folders inside a container. Writes to settings."""
+    con.print("\n[bold]Folder structure[/bold]")
+    con.print(
+        "  By default, taxonomy folders are placed at the Apple Notes account root\n"
+        "  (e.g. Inbox, Projects, Areas, Resources at the top level).\n\n"
+        "  Alternatively, you can nest them all inside a single container folder\n"
+        "  (e.g. Library/Inbox, Library/Projects) to keep the sidebar tidy."
+    )
+    use_container = typer.confirm("\nNest all folders inside a container folder?", default=False)
+    if use_container:
+        name = typer.prompt("  Container folder name", default="Library").strip() or "Library"
+        _write_toplevel_folder_to_settings(enabled=True, name=name, dry_run=dry_run)
+    else:
+        _write_toplevel_folder_to_settings(enabled=False, name="Library", dry_run=dry_run)
+
+
 def _select_provider(dry_run: bool) -> bool:
     """Ask which LLM provider to use and write config. Returns True if a provider was selected."""
     con.print("\n[bold]LLM provider[/bold]")
@@ -482,6 +534,10 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
     provider_configured = False
     if settings_created:
         provider_configured = _select_provider(dry_run)
+
+    # ── Phase 8: Container folder structure ───────────────────────────────────
+    if settings_created:
+        _ask_container(dry_run)
 
     # ── Next steps ─────────────────────────────────────────────────────────────
     next_steps: list[str] = []

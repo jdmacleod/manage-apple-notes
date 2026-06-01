@@ -11,6 +11,7 @@ import yaml
 
 from scripts.setup.frameworks import FRAMEWORKS, framework_choices, get_framework
 from scripts.setup.run_setup import (
+    _ask_container,
     _build_existing_taxonomy_yaml,
     _build_taxonomy_yaml,
     _ensure_settings,
@@ -20,6 +21,7 @@ from scripts.setup.run_setup import (
     _write_env_line,
     _write_provider_to_settings,
     _write_taxonomy,
+    _write_toplevel_folder_to_settings,
     analyze_corpus,
     run_setup,
 )
@@ -494,7 +496,7 @@ class TestRunSetup:
             return_value={"inbox": "My Inbox", "archive": "Archive"},
         )
         write_mock = mocker.patch("scripts.setup.run_setup._write_taxonomy")
-        mocker.patch("scripts.setup.run_setup._ensure_settings")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
         run_setup(dry_run=False, no_corpus=True)
         write_mock.assert_called_once()
 
@@ -645,6 +647,7 @@ class TestRunSetup:
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
         select_mock = mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
+        mocker.patch("scripts.setup.run_setup._ask_container")
         run_setup(dry_run=False, no_corpus=True)
         select_mock.assert_called_once()
 
@@ -665,8 +668,31 @@ class TestRunSetup:
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
         select_mock = mocker.patch("scripts.setup.run_setup._select_provider")
+        container_mock = mocker.patch("scripts.setup.run_setup._ask_container")
         run_setup(dry_run=False, no_corpus=True)
         select_mock.assert_not_called()
+        container_mock.assert_not_called()
+
+    def test_container_question_triggered_when_settings_created(self, mocker: MagicMock) -> None:
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", side_effect=[2, 1, 2])
+        mocker.patch("typer.confirm", return_value=True)
+        mocker.patch(
+            "scripts.setup.run_setup._collect_folder_names",
+            return_value={
+                "inbox": "Inbox",
+                "projects": "P",
+                "areas": "A",
+                "resources": "R",
+                "archive": "Arc",
+            },
+        )
+        mocker.patch("scripts.setup.run_setup._write_taxonomy")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
+        mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
+        container_mock = mocker.patch("scripts.setup.run_setup._ask_container")
+        run_setup(dry_run=False, no_corpus=True)
+        container_mock.assert_called_once()
 
 
 # ── run_setup.py — provider selection ─────────────────────────────────────────
@@ -819,3 +845,100 @@ class TestSelectProvider:
         assert result is True
         assert (config_dir / "settings.local.yaml").read_text() == original
         assert not (tmp_path / ".env").exists()
+
+
+# ── run_setup.py — container question ─────────────────────────────────────────
+
+_SETTINGS_WITH_TOPLEVEL = """\
+reorganization_mode: "standard"
+toplevel_folder:
+  enabled: false         # true = nest all taxonomy folders inside `name` at account root
+  name: "Library"        # container folder name (only used when enabled: true)
+llm_provider: "apple"
+"""
+
+
+class TestWriteTopLevelFolderToSettings:
+    def test_enables_container(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(_SETTINGS_WITH_TOPLEVEL)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_toplevel_folder_to_settings(enabled=True, name="Library", dry_run=False)
+        assert "  enabled: true" in settings.read_text()
+
+    def test_disables_container(self, tmp_path: Path) -> None:
+        content = _SETTINGS_WITH_TOPLEVEL.replace("enabled: false", "enabled: true")
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(content)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_toplevel_folder_to_settings(enabled=False, name="Library", dry_run=False)
+        assert "  enabled: false" in settings.read_text()
+
+    def test_custom_name_written(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(_SETTINGS_WITH_TOPLEVEL)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_toplevel_folder_to_settings(enabled=True, name="Notes", dry_run=False)
+        text = settings.read_text()
+        assert "  enabled: true" in text
+        assert '"Notes"' in text
+
+    def test_other_settings_preserved(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(_SETTINGS_WITH_TOPLEVEL)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_toplevel_folder_to_settings(enabled=True, name="Library", dry_run=False)
+        assert 'llm_provider: "apple"' in settings.read_text()
+        assert 'reorganization_mode: "standard"' in settings.read_text()
+
+    def test_dry_run_does_not_write(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(_SETTINGS_WITH_TOPLEVEL)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_toplevel_folder_to_settings(enabled=True, name="Library", dry_run=True)
+        assert "  enabled: false" in settings.read_text()
+
+    def test_no_op_when_file_missing(self, tmp_path: Path) -> None:
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_toplevel_folder_to_settings(enabled=True, name="Library", dry_run=False)
+        assert not (tmp_path / "settings.local.yaml").exists()
+
+
+class TestAskContainer:
+    def _make_settings(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(_SETTINGS_WITH_TOPLEVEL)
+
+    def test_yes_enables_container_default_name(self, mocker: MagicMock, tmp_path: Path) -> None:
+        self._make_settings(tmp_path)
+        mocker.patch("typer.confirm", return_value=True)
+        mocker.patch("typer.prompt", return_value="Library")
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _ask_container(dry_run=False)
+        assert "  enabled: true" in (tmp_path / "settings.local.yaml").read_text()
+
+    def test_yes_enables_container_custom_name(self, mocker: MagicMock, tmp_path: Path) -> None:
+        self._make_settings(tmp_path)
+        mocker.patch("typer.confirm", return_value=True)
+        mocker.patch("typer.prompt", return_value="Notes")
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _ask_container(dry_run=False)
+        text = (tmp_path / "settings.local.yaml").read_text()
+        assert "  enabled: true" in text
+        assert '"Notes"' in text
+
+    def test_no_writes_enabled_false(self, mocker: MagicMock, tmp_path: Path) -> None:
+        self._make_settings(tmp_path)
+        mocker.patch("typer.confirm", return_value=False)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _ask_container(dry_run=False)
+        assert "  enabled: false" in (tmp_path / "settings.local.yaml").read_text()
+
+    def test_dry_run_does_not_write(self, mocker: MagicMock, tmp_path: Path) -> None:
+        self._make_settings(tmp_path)
+        original = (tmp_path / "settings.local.yaml").read_text()
+        mocker.patch("typer.confirm", return_value=True)
+        mocker.patch("typer.prompt", return_value="Library")
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _ask_container(dry_run=True)
+        assert (tmp_path / "settings.local.yaml").read_text() == original
