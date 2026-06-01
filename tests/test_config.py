@@ -19,11 +19,11 @@ from scripts.config import (
 class TestLoadSettings:
     def test_returns_dict_when_local_present(self, tmp_path: Path, mocker) -> None:
         local = tmp_path / "settings.local.yaml"
-        local.write_text("llm:\n  provider: anthropic\n")
+        local.write_text("llm_provider: anthropic\n")
         mocker.patch("scripts.config.CONFIG_DIR", tmp_path)
         result = load_settings()
         assert isinstance(result, dict)
-        assert result.get("llm", {}).get("provider") == "anthropic"
+        assert result.get("llm_provider") == "anthropic"
 
     def test_returns_empty_dict_when_no_files(self, tmp_path: Path, mocker) -> None:
         mocker.patch("scripts.config.CONFIG_DIR", tmp_path)

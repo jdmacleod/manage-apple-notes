@@ -306,20 +306,22 @@ def run_dedup(
     if candidates:
         system_prompt = load_prompt_template()
         provider = get_provider(settings)
-        con.print(f"Pass 3: reviewing {len(candidates)} pair(s) with {provider.model}…")
-        try:
-            llm_results = pass3_llm(
-                candidates,
-                system_prompt,
-                provider,
-                preview_chars,
-                max_tokens=get_max_tokens(settings, provider),
-            )
-            logger.event("pass", n=3, count=len(candidates), status="ok")
-        except Exception as exc:
-            con.print(f"[yellow]Warning:[/yellow] LLM review failed: {exc}")
-            logger.error(f"pass3 LLM failed: {exc}")
-            llm_results = []
+        with con.status(
+            f"Pass 3: reviewing {len(candidates)} pair(s) with {provider.model}…", spinner="dots"
+        ):
+            try:
+                llm_results = pass3_llm(
+                    candidates,
+                    system_prompt,
+                    provider,
+                    preview_chars,
+                    max_tokens=get_max_tokens(settings, provider),
+                )
+                logger.event("pass", n=3, count=len(candidates), status="ok")
+            except Exception as exc:
+                con.print(f"[yellow]Warning:[/yellow] LLM review failed: {exc}")
+                logger.error(f"pass3 LLM failed: {exc}")
+                llm_results = []
 
         result_by_gid = {r.get("group_id"): r for r in llm_results}
 

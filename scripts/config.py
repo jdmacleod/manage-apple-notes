@@ -57,3 +57,40 @@ def find_latest_export() -> Path:
             f"No export files found in {EXPORTS_DIR}. Run 'uv run notes export' first."
         )
     return files[0]
+
+
+_SETTINGS_EXAMPLE = CONFIG_DIR / "settings.example.yaml"
+
+
+def get_llm_config(settings: dict) -> dict:
+    """Resolve the active LLM config by merging provider defaults with user overrides.
+
+    Resolution order (later wins):
+      1. provider block from llm_providers (loaded settings if present, else example.yaml)
+      2. llm_overrides from settings
+    The returned dict always contains a "provider" key.
+    """
+    if "llm" in settings and "llm_provider" not in settings:
+        raise SystemExit(
+            "settings.local.yaml uses the old 'llm:' format.\n"
+            'Replace it with:\n  llm_provider: "<name>"\n'
+            "See config/settings.example.yaml for the new structure."
+        )
+
+    provider_name = str(settings.get("llm_provider") or "anthropic")
+
+    # Use llm_providers from loaded settings if present (user may have customised it);
+    # fall back to example.yaml so settings.local.yaml only needs llm_provider.
+    providers = settings.get("llm_providers")
+    if providers is None:
+        try:
+            with open(_SETTINGS_EXAMPLE) as f:
+                example = yaml.safe_load(f) or {}
+            providers = example.get("llm_providers", {})
+        except OSError:
+            providers = {}
+
+    provider_defaults = dict((providers or {}).get(provider_name) or {})
+    overrides = dict(settings.get("llm_overrides") or {})
+
+    return {**provider_defaults, "provider": provider_name, **overrides}

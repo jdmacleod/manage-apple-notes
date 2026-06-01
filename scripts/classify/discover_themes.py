@@ -20,7 +20,13 @@ from scripts.classify.classify_notes import (
     _CATEGORY_META,
     price_per_million,
 )
-from scripts.config import find_latest_export, load_settings, load_taxonomy, reorganization_mode
+from scripts.config import (
+    find_latest_export,
+    get_llm_config,
+    load_settings,
+    load_taxonomy,
+    reorganization_mode,
+)
 from scripts.folder_utils import (
     effective_max_depth,
     enumerate_paths,
@@ -116,7 +122,7 @@ def inject_discover_taxonomy(
     mode = nesting_mode(settings)
     max_depth = effective_max_depth(settings)
     current_depth = max_taxonomy_depth(taxonomy)
-    discover_mode = (settings or {}).get("llm", {}).get("theme_discovery_mode", "anchored")
+    discover_mode = get_llm_config(settings or {}).get("theme_discovery_mode", "anchored")
 
     if mode == "flat":
         guidance = "Do not suggest subfolders. All themes should map to top-level categories only."
@@ -234,7 +240,7 @@ def run_discover(export_file: str | None, dry_run: bool, json_output: bool = Fal
         load_discover_prompt(), taxonomy, settings, notes=all_notes
     )
 
-    llm_cfg = settings.get("llm") or settings.get("claude", {})
+    llm_cfg = get_llm_config(settings)
     sample_size = llm_cfg.get("theme_discovery_sample", _DEFAULT_SAMPLE)
     min_subfolder = settings.get("thresholds", {}).get(
         "min_notes_for_subfolder", _MIN_SUBFOLDER_DEFAULT
@@ -316,7 +322,7 @@ def run_discover(export_file: str | None, dry_run: bool, json_output: bool = Fal
     mode = nesting_mode(settings)
     max_depth = effective_max_depth(settings)
     current_depth = max_taxonomy_depth(taxonomy)
-    discover_mode = (settings or {}).get("llm", {}).get("theme_discovery_mode", "anchored")
+    discover_mode = llm_cfg.get("theme_discovery_mode", "anchored")
 
     if mode == "flat":
         nesting_guidance = "Do not suggest subfolders. All themes map to top-level categories only."

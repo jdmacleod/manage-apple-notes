@@ -90,7 +90,7 @@ class OllamaProvider:
                         m == self._model or m.startswith(f"{self._model}:") for m in available
                     ):
                         available_str = ", ".join(available) if available else "(none pulled)"
-                        if self._provider_name == "ollama-aws":
+                        if self._provider_name == "aws-ollama":
                             sys.exit(
                                 f"Model {self._model!r} not found on the remote Ollama instance.\n"
                                 f"  Available: {available_str}\n"
@@ -107,7 +107,7 @@ class OllamaProvider:
         except urllib.error.HTTPError:
             pass  # server responded with an error — Ollama is up, or llama.cpp
         except (urllib.error.URLError, OSError):
-            if self._provider_name == "ollama-aws":
+            if self._provider_name == "aws-ollama":
                 sys.exit(
                     f"Ollama is not responding at {raw}\n"
                     "Is the SSH tunnel active? Start it with the SshTunnelCommand "
@@ -142,7 +142,7 @@ class OllamaProvider:
             )
             return response.choices[0].message.content or ""
         except (openai.APIConnectionError, openai.APITimeoutError) as exc:
-            if self._provider_name == "ollama-aws":
+            if self._provider_name == "aws-ollama":
                 sys.exit(
                     f"Lost connection to Ollama at {self._raw_url}\n"
                     f"  Is the SSH tunnel still active?\n"
@@ -171,7 +171,7 @@ class AppleProvider:
                 f"Apple LLM binary not found: {self._binary}\n"
                 "  Build it with:\n"
                 "    swift build -c release --package-path swift/apple-llm\n"
-                "  Then set llm.provider: apple in config/settings.local.yaml"
+                "  Then set llm_provider: apple in config/settings.local.yaml"
             )
 
     @property
@@ -207,11 +207,12 @@ class AppleProvider:
 
 
 def get_provider(settings: dict, dry_run: bool = False) -> LLMProvider:
-    llm_cfg = settings.get("llm") or settings.get("claude", {})
-    provider_name = llm_cfg.get("provider", "anthropic")
-    default_model = "claude-opus-4-6" if provider_name == "anthropic" else "llama3"
-    model = llm_cfg.get("model", default_model)
-    if provider_name in ("ollama", "ollama-aws"):
+    from scripts.config import get_llm_config
+
+    llm_cfg = get_llm_config(settings)
+    provider_name = llm_cfg["provider"]
+    model = llm_cfg.get("model", "")
+    if provider_name in ("ollama", "aws-ollama"):
         timeout = float(llm_cfg.get("request_timeout", 1200))
         return OllamaProvider(model, timeout=timeout, dry_run=dry_run, provider_name=provider_name)
     if provider_name == "apple":
@@ -224,9 +225,8 @@ def get_provider(settings: dict, dry_run: bool = False) -> LLMProvider:
 
 
 def get_max_tokens(settings: dict, provider: LLMProvider) -> int:
-    """Return the configured max_tokens for the given provider, defaulting to 4096."""
-    llm_cfg = settings.get("llm") or settings.get("claude", {})
-    context_size = llm_cfg.get("context_size", {})
-    if isinstance(context_size, dict):
-        return int(context_size.get(provider.name, 4096))
-    return int(context_size or 4096)
+    """Return the configured max output tokens for the active provider, defaulting to 4096."""
+    from scripts.config import get_llm_config
+
+    llm_cfg = get_llm_config(settings)
+    return int(llm_cfg.get("context_size", 4096))

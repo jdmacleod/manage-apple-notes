@@ -10,7 +10,6 @@ from datetime import datetime
 from pathlib import Path
 
 from rich.console import Console
-from rich.live import Live
 
 from scripts.config import find_latest_export, load_settings
 from scripts.json_output import emit_result
@@ -90,10 +89,11 @@ def run_export(json_output: bool = False, _emit: bool = True) -> Path:
     )
 
     account_label = f" [dim]({primary_account})[/dim]" if primary_account else ""
-    with Live(console=con, refresh_per_second=5, transient=True) as live:
+    base_msg = f"Exporting notes from Apple Notes…{account_label}"
+    with con.status(base_msg, spinner="dots") as status:
         while proc.poll() is None:
             counter = _read_export_progress()
-            live.update(f"Exporting notes from Apple Notes…{account_label} {counter}")
+            status.update(f"{base_msg} {counter}")
             time.sleep(0.2)
 
     _stdout, stderr = proc.communicate()

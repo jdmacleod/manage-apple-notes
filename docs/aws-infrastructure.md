@@ -77,7 +77,7 @@ Also set `context_size` for the Ollama provider in your `llm:` block. The recomm
 
 ```yaml
 llm:
-  provider: "ollama-aws"
+  provider: "aws-ollama"
   model: "gpt-oss:20b"
   batch_size: 10
   context_size:

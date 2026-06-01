@@ -16,6 +16,37 @@ from scripts.providers import (
     get_provider,
 )
 
+# ── Settings helper ────────────────────────────────────────────────────────────
+
+_PROVIDER_BLOCKS: dict[str, dict] = {
+    "anthropic": {"model": "claude-opus-4-6", "context_size": 8192, "batch_size": 20},
+    "ollama": {
+        "model": "llama3",
+        "context_size": 4096,
+        "batch_size": 10,
+        "request_timeout": 1200,
+    },
+    "aws-ollama": {
+        "model": "gpt-oss:20b",
+        "context_size": 8192,
+        "batch_size": 10,
+        "request_timeout": 1200,
+    },
+    "apple": {
+        "context_size": 4096,
+        "batch_size": 1,
+        "apple_llm_binary": "apple-llm",
+    },
+}
+
+
+def _llm_settings(provider: str, overrides: dict | None = None) -> dict:
+    """Build a minimal settings dict for a given provider, with optional llm_overrides."""
+    base: dict = {"llm_provider": provider, "llm_providers": _PROVIDER_BLOCKS}
+    if overrides:
+        base["llm_overrides"] = overrides
+    return base
+
 
 class TestAnthropicProvider:
     def test_classify_messages_returns_text(self, mock_anthropic_success: MagicMock) -> None:
@@ -161,8 +192,8 @@ class TestOllamaProvider:
     ) -> None:
         monkeypatch.delenv("OLLAMA_MODEL", raising=False)
         mocker.patch("openai.OpenAI")
-        provider = OllamaProvider(model="gpt-oss:20b", dry_run=True, provider_name="ollama-aws")
-        assert provider.name == "ollama-aws"
+        provider = OllamaProvider(model="gpt-oss:20b", dry_run=True, provider_name="aws-ollama")
+        assert provider.name == "aws-ollama"
         assert provider.model == "gpt-oss:20b"
 
     def test_ollama_aws_probe_url_error_mentions_tunnel(self, mocker: MagicMock) -> None:
@@ -174,11 +205,9 @@ class TestOllamaProvider:
             side_effect=urllib.error.URLError("connection refused"),
         )
         with pytest.raises(SystemExit, match="SSH tunnel"):
-            OllamaProvider(model="gpt-oss:20b", dry_run=False, provider_name="ollama-aws")
+            OllamaProvider(model="gpt-oss:20b", dry_run=False, provider_name="aws-ollama")
 
-    def test_ollama_aws_classify_connection_error_mentions_tunnel(
-        self, mocker: MagicMock
-    ) -> None:
+    def test_ollama_aws_classify_connection_error_mentions_tunnel(self, mocker: MagicMock) -> None:
         import openai
 
         mock_openai = mocker.patch("openai.OpenAI")
@@ -188,7 +217,7 @@ class TestOllamaProvider:
         )
         mock_openai.return_value = mock_client
 
-        provider = OllamaProvider(model="gpt-oss:20b", dry_run=True, provider_name="ollama-aws")
+        provider = OllamaProvider(model="gpt-oss:20b", dry_run=True, provider_name="aws-ollama")
         with pytest.raises(SystemExit, match="SSH tunnel"):
             provider.classify_messages("system", "user")
 
@@ -254,33 +283,30 @@ class TestGetProvider:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         mocker.patch("anthropic.Anthropic")
 
-        settings = {"llm": {"provider": "anthropic", "model": "claude-sonnet-4-6"}}
-        provider = get_provider(settings, dry_run=True)
+        provider = get_provider(_llm_settings("anthropic"), dry_run=True)
         assert provider.name == "anthropic"
 
     def test_ollama_base_url_env_does_not_override_provider(
         self, mocker: MagicMock, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # OLLAMA_BASE_URL is a connection URL for Ollama, not a provider selector.
-        # Explicit provider: in settings always wins.
+        # Explicit llm_provider in settings always wins.
         monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")
         mocker.patch("anthropic.Anthropic")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
 
-        settings = {"llm": {"provider": "anthropic", "model": "claude-sonnet-4-6"}}
-        provider = get_provider(settings, dry_run=True)
+        provider = get_provider(_llm_settings("anthropic"), dry_run=True)
         assert provider.name == "anthropic"
 
     def test_ollama_base_url_env_used_as_connection_url(
         self, mocker: MagicMock, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # OLLAMA_BASE_URL is still read by OllamaProvider when provider: ollama is set.
+        # OLLAMA_BASE_URL is still read by OllamaProvider when llm_provider: ollama is set.
         monkeypatch.setenv("OLLAMA_BASE_URL", "http://custom-host:11434")
         monkeypatch.delenv("OLLAMA_MODEL", raising=False)
         mock_openai = mocker.patch("openai.OpenAI")
 
-        settings = {"llm": {"provider": "ollama", "model": "llama3"}}
-        get_provider(settings, dry_run=True)
+        get_provider(_llm_settings("ollama"), dry_run=True)
 
         call_kwargs = mock_openai.call_args.kwargs
         assert "custom-host" in call_kwargs.get("base_url", "")
@@ -291,8 +317,7 @@ class TestGetProvider:
         monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
         mocker.patch("openai.OpenAI")
 
-        settings = {"llm": {"provider": "ollama", "model": "llama3"}}
-        provider = get_provider(settings, dry_run=True)
+        provider = get_provider(_llm_settings("ollama"), dry_run=True)
         assert provider.name == "ollama"
 
     def test_default_anthropic_when_no_settings(
@@ -301,6 +326,7 @@ class TestGetProvider:
         monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
         mocker.patch("anthropic.Anthropic")
 
+        # Empty settings: llm_provider defaults to "anthropic", reads from example.yaml
         provider = get_provider({}, dry_run=True)
         assert provider.name == "anthropic"
 
@@ -311,9 +337,8 @@ class TestGetProvider:
         monkeypatch.delenv("OLLAMA_MODEL", raising=False)
         mocker.patch("openai.OpenAI")
 
-        settings = {"llm": {"provider": "ollama-aws", "model": "gpt-oss:20b"}}
-        provider = get_provider(settings, dry_run=True)
-        assert provider.name == "ollama-aws"
+        provider = get_provider(_llm_settings("aws-ollama"), dry_run=True)
+        assert provider.name == "aws-ollama"
         assert provider.model == "gpt-oss:20b"
 
     def test_apple_provider_setting(
@@ -321,8 +346,9 @@ class TestGetProvider:
     ) -> None:
         monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
         binary = str(tmp_path / "apple-llm")
-        settings = {"llm": {"provider": "apple", "apple_llm_binary": binary}}
-        provider = get_provider(settings, dry_run=True)
+        provider = get_provider(
+            _llm_settings("apple", overrides={"apple_llm_binary": binary}), dry_run=True
+        )
         assert provider.name == "apple"
 
 
@@ -332,31 +358,21 @@ class TestGetMaxTokens:
         p.name = name
         return p
 
-    def test_dict_returns_provider_specific_value(self) -> None:
-        settings = {
-            "llm": {"context_size": {"anthropic": 8192, "ollama": 4096, "ollama-aws": 8192}}
-        }
-        assert get_max_tokens(settings, self._make_provider("anthropic")) == 8192
-        assert get_max_tokens(settings, self._make_provider("ollama")) == 4096
-        assert get_max_tokens(settings, self._make_provider("ollama-aws")) == 8192
+    def test_returns_provider_context_size(self) -> None:
+        assert get_max_tokens(_llm_settings("anthropic"), self._make_provider("anthropic")) == 8192
+        assert get_max_tokens(_llm_settings("ollama"), self._make_provider("ollama")) == 4096
+        assert (
+            get_max_tokens(_llm_settings("aws-ollama"), self._make_provider("aws-ollama")) == 8192
+        )
 
-    def test_missing_key_uses_default(self) -> None:
-        settings = {"llm": {"context_size": {"anthropic": 8192}}}
-        # "ollama" not in dict → default 4096
-        assert get_max_tokens(settings, self._make_provider("ollama")) == 4096
+    def test_unknown_provider_uses_default(self) -> None:
+        settings = {"llm_provider": "unknown", "llm_providers": {}}
+        assert get_max_tokens(settings, self._make_provider("unknown")) == 4096
 
-    def test_empty_context_size_uses_default(self) -> None:
-        settings = {"llm": {}}
-        assert get_max_tokens(settings, self._make_provider("anthropic")) == 4096
-
-    def test_no_llm_section_uses_default(self) -> None:
-        assert get_max_tokens({}, self._make_provider("anthropic")) == 4096
-
-    def test_scalar_fallback(self) -> None:
-        # Legacy scalar value (not a dict) is respected
-        settings = {"llm": {"context_size": 2048}}
+    def test_override_context_size(self) -> None:
+        settings = _llm_settings("anthropic", overrides={"context_size": 2048})
         assert get_max_tokens(settings, self._make_provider("anthropic")) == 2048
 
-    def test_legacy_claude_key(self) -> None:
-        settings = {"claude": {"context_size": {"anthropic": 6000}}}
-        assert get_max_tokens(settings, self._make_provider("anthropic")) == 6000
+    def test_empty_settings_uses_example_yaml_default(self) -> None:
+        # Empty settings → defaults to "anthropic" provider from example.yaml
+        assert get_max_tokens({}, self._make_provider("anthropic")) == 8192

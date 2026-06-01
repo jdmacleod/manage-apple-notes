@@ -31,7 +31,10 @@ def minimal_settings() -> dict:
         "capture_inbox_folder": "Notes",
         "notes_account": "iCloud",
         "anthropic_api_key_env": "ANTHROPIC_API_KEY",
-        "llm": {"provider": "anthropic", "model": "claude-sonnet-4-6", "batch_size": 20},
+        "llm_provider": "anthropic",
+        "llm_providers": {
+            "anthropic": {"model": "claude-sonnet-4-6", "context_size": 8192, "batch_size": 20},
+        },
         "export": {"max_body_chars": 2000, "skip_empty": True},
         "folder_nesting": "natural",
         "thresholds": {

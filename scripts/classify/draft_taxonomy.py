@@ -273,7 +273,8 @@ def run_draft(theme_map_file: str | None, dry_run: bool, json_output: bool = Fal
                 provider = get_provider(settings)
                 model = provider.model
                 con.print(f"[dim]Bootstrap  ·  {provider.name} / {model}[/dim]")
-                taxonomy = bootstrap_taxonomy(top_level, provider, settings)
+                with con.status("Bootstrapping taxonomy from folder structure…", spinner="dots"):
+                    taxonomy = bootstrap_taxonomy(top_level, provider, settings)
                 if not taxonomy.get("taxonomy"):
                     con.print(
                         "[yellow]Warning:[/yellow] Bootstrap failed — falling back to example taxonomy."

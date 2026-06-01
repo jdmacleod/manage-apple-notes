@@ -164,7 +164,8 @@ class TestConservativeModePostProcessing:
 
         settings = {
             "reorganization_mode": "conservative",
-            "llm": {"batch_size": 50},
+            "llm_provider": "anthropic",
+            "llm_providers": {"anthropic": {"model": "mock-model", "context_size": 4096, "batch_size": 50}},
             "export": {"skip_empty": False},
             "classify": {"exclude_archive": False},
         }

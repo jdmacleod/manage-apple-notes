@@ -22,7 +22,7 @@ from scripts.classify.classify_notes import (
     load_prompt_template,
     price_per_million,
 )
-from scripts.config import find_latest_export, load_settings, load_taxonomy
+from scripts.config import find_latest_export, get_llm_config, load_settings, load_taxonomy
 from scripts.folder_utils import folder_name
 from scripts.json_output import emit_result
 from scripts.providers import get_provider
@@ -60,7 +60,7 @@ def run_inbox(dry_run: bool, json_output: bool = False) -> None:
             emit_result("triage", dry_run=dry_run, summary={"notes_processed": 0, "moves": 0})
         return
 
-    llm_cfg = settings.get("llm") or settings.get("claude", {})
+    llm_cfg = get_llm_config(settings)
     batch_size = llm_cfg.get("batch_size", 20)
     provider = get_provider(settings, dry_run=dry_run)
     model = provider.model

@@ -18,6 +18,7 @@ from rich.progress import (
 
 from scripts.config import (
     find_latest_export,
+    get_llm_config,
     load_settings,
     load_taxonomy,
     local_taxonomy_exists,
@@ -273,7 +274,7 @@ def run_classify(export_file: str | None, dry_run: bool, json_output: bool = Fal
                 f"(classify.exclude_archive = true)[/dim]"
             )
 
-    llm_cfg = settings.get("llm") or settings.get("claude", {})
+    llm_cfg = get_llm_config(settings)
     batch_size = llm_cfg.get("batch_size", 20)
     provider = get_provider(settings, dry_run=dry_run)
     model = provider.model

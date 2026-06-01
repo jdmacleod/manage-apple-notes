@@ -27,27 +27,51 @@ toplevel_folder:
   enabled: true          # set to false to place folders at the account root
   name: "Library"        # name of the container folder in Apple Notes
 
-# LLM provider — choose one of: "anthropic", "ollama", "ollama-aws", "apple"
-#   "anthropic"  — Anthropic cloud API (requires ANTHROPIC_API_KEY in .env)
-#   "ollama"     — local Ollama (set OLLAMA_BASE_URL in .env; defaults to http://localhost:11434)
-#   "ollama-aws" — Ollama on AWS EC2 via SSH tunnel (same OLLAMA_BASE_URL; see docs/aws-infrastructure.md)
-#   "apple"      — on-device Apple Intelligence (macOS 26+, Apple Silicon; build swift/apple-llm first)
-llm:
-  provider: "anthropic"
-  model: "claude-opus-4-6"        # anthropic: claude-* · ollama/ollama-aws: llama3, gpt-oss:20b, etc.
-                                   # apple: field is ignored — uses the on-device model
-  batch_size: 20                  # notes per API call; use 1 for "apple" (tight 4096-token context)
-  theme_discovery_sample: 50      # notes sampled per batch during notes discover
-  theme_discovery_mode: "anchored"   # "anchored" = prefer existing taxonomy paths (default)
-                                     # "full" = ignore existing paths, propose from scratch
-  context_size:                   # max output tokens per provider call; omit a key to use the default (4096)
-    anthropic: 8192
-    ollama: 4096                  # adjust for your local model's context window
-    ollama-aws: 8192              # recommended for gpt-oss:20b on g5.xlarge (24 GB VRAM)
-  request_timeout: 1200           # seconds before timeout; applies to ollama and ollama-aws only
-  apple_llm_binary: "swift/apple-llm/.build/release/apple-llm"  # path to compiled Swift bridge (apple only)
+# LLM provider — choose one of: "anthropic", "ollama", "aws-ollama", "apple"
+# Set this single value to switch providers. All other LLM settings (model, batch_size,
+# context_size, etc.) are filled automatically from the llm_providers block below.
+llm_provider: "apple"
 
-# AWS EC2 Ollama deployment — required by `cd infra && cdk deploy` when using provider: "ollama-aws".
+# Override individual values on top of the active provider's defaults (optional).
+# llm_overrides:
+#   model: "claude-sonnet-4-6"
+#   batch_size: 5
+
+# Per-provider defaults — loaded automatically based on llm_provider.
+# Edit a provider's block here to change its baseline, or use llm_overrides for
+# one-off tweaks without altering the defaults.
+llm_providers:
+  anthropic:
+    model: "claude-opus-4-6"      # any claude-* model identifier
+    batch_size: 20                 # notes per API call
+    theme_discovery_sample: 50     # notes sampled per batch during notes discover
+    theme_discovery_mode: "anchored"  # "anchored" = prefer existing paths; "full" = propose from scratch
+    context_size: 8192             # max output tokens per call
+
+  ollama:
+    model: "llama3"                # any model tag pulled in your local Ollama (llama3, mistral, etc.)
+    batch_size: 10
+    theme_discovery_sample: 30
+    theme_discovery_mode: "anchored"
+    context_size: 4096             # adjust for your local model's context window
+    request_timeout: 1200          # seconds; increase for slow hardware
+
+  aws-ollama:
+    model: "gpt-oss:20b"          # model pre-pulled on the EC2 instance (see docs/aws-infrastructure.md)
+    batch_size: 10
+    theme_discovery_sample: 30
+    theme_discovery_mode: "anchored"
+    context_size: 8192             # recommended for gpt-oss:20b on g5.xlarge (24 GB VRAM)
+    request_timeout: 1200
+
+  apple:
+    batch_size: 1                  # on-device model has a tight 4096-token context; process one note at a time
+    theme_discovery_sample: 20
+    theme_discovery_mode: "anchored"
+    context_size: 4096
+    apple_llm_binary: "swift/apple-llm/.build/release/apple-llm"  # path to compiled Swift bridge
+
+# AWS EC2 Ollama deployment — required by `cd infra && cdk deploy` when using provider: "aws-ollama".
 # See docs/aws-infrastructure.md for full prerequisites and setup steps.
 # aws.ssh_key_path and aws.allowed_cidr can also be set via AWS_SSH_KEY_PATH and AWS_ALLOWED_CIDR
 # in .env — env vars take precedence over settings values.
