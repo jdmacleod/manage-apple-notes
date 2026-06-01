@@ -14,11 +14,14 @@ from scripts.setup.run_setup import (
     _ask_container,
     _build_existing_taxonomy_yaml,
     _build_taxonomy_yaml,
+    _detect_accounts,
     _ensure_settings,
     _find_export_optional,
     _gtd_categories_snippet,
+    _handle_multiple_accounts,
     _select_provider,
     _write_env_line,
+    _write_primary_account_to_settings,
     _write_provider_to_settings,
     _write_taxonomy,
     _write_toplevel_folder_to_settings,
@@ -456,6 +459,11 @@ class TestFindExportOptional:
 
 
 class TestRunSetup:
+    @pytest.fixture(autouse=True)
+    def _stub_accounts(self, mocker: MagicMock) -> None:
+        """Prevent live AppleScript execution in all TestRunSetup tests."""
+        mocker.patch("scripts.setup.run_setup._detect_accounts", return_value=["iCloud"])
+
     def _para_mocks(self, mocker: MagicMock, tmp_path: Path) -> None:
         """Set up mocks for a PARA path through run_setup."""
         mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
@@ -942,3 +950,193 @@ class TestAskContainer:
         with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
             _ask_container(dry_run=True)
         assert (tmp_path / "settings.local.yaml").read_text() == original
+
+
+# ── run_setup.py — account detection ──────────────────────────────────────────
+
+_SETTINGS_WITH_PRIMARY_ACCOUNT = """\
+export:
+  include_body: true
+  primary_account: ""         # Export only notes from this Apple Notes account
+"""
+
+
+class TestDetectAccounts:
+    def test_returns_account_names(self, mocker: MagicMock) -> None:
+        mock_run = mocker.patch("scripts.setup.run_setup.subprocess.run")
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = "iCloud\nWork Gmail\n"
+        # Ensure script path exists for the check
+        mocker.patch(
+            "scripts.setup.run_setup._LIST_ACCOUNTS_SCRIPT",
+            new=MagicMock(exists=lambda: True),
+        )
+        result = _detect_accounts()
+        assert result == ["iCloud", "Work Gmail"]
+
+    def test_returns_empty_on_nonzero_returncode(self, mocker: MagicMock) -> None:
+        mock_run = mocker.patch("scripts.setup.run_setup.subprocess.run")
+        mock_run.return_value.returncode = 1
+        mock_run.return_value.stdout = ""
+        mocker.patch(
+            "scripts.setup.run_setup._LIST_ACCOUNTS_SCRIPT",
+            new=MagicMock(exists=lambda: True),
+        )
+        assert _detect_accounts() == []
+
+    def test_returns_empty_on_timeout(self, mocker: MagicMock) -> None:
+        import subprocess as _subprocess
+
+        mocker.patch(
+            "scripts.setup.run_setup.subprocess.run",
+            side_effect=_subprocess.TimeoutExpired(cmd="osascript", timeout=10),
+        )
+        mocker.patch(
+            "scripts.setup.run_setup._LIST_ACCOUNTS_SCRIPT",
+            new=MagicMock(exists=lambda: True),
+        )
+        assert _detect_accounts() == []
+
+    def test_returns_empty_on_oserror(self, mocker: MagicMock) -> None:
+        mocker.patch(
+            "scripts.setup.run_setup.subprocess.run", side_effect=OSError("osascript not found")
+        )
+        mocker.patch(
+            "scripts.setup.run_setup._LIST_ACCOUNTS_SCRIPT",
+            new=MagicMock(exists=lambda: True),
+        )
+        assert _detect_accounts() == []
+
+    def test_returns_empty_when_script_missing(self, mocker: MagicMock) -> None:
+        mocker.patch(
+            "scripts.setup.run_setup._LIST_ACCOUNTS_SCRIPT",
+            new=MagicMock(exists=lambda: False),
+        )
+        assert _detect_accounts() == []
+
+    def test_strips_blank_lines(self, mocker: MagicMock) -> None:
+        mock_run = mocker.patch("scripts.setup.run_setup.subprocess.run")
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = "\niCloud\n\n"
+        mocker.patch(
+            "scripts.setup.run_setup._LIST_ACCOUNTS_SCRIPT",
+            new=MagicMock(exists=lambda: True),
+        )
+        assert _detect_accounts() == ["iCloud"]
+
+
+class TestHandleMultipleAccounts:
+    def test_returns_selected_account(self, mocker: MagicMock) -> None:
+        mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=2)
+        result = _handle_multiple_accounts(["iCloud", "Work Gmail"])
+        assert result == "Work Gmail"
+
+    def test_first_account_on_selection_one(self, mocker: MagicMock) -> None:
+        mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=1)
+        result = _handle_multiple_accounts(["iCloud", "Personal Gmail"])
+        assert result == "iCloud"
+
+
+class TestWritePrimaryAccountToSettings:
+    def test_writes_account_name(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(_SETTINGS_WITH_PRIMARY_ACCOUNT)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_primary_account_to_settings("iCloud", dry_run=False)
+        assert '  primary_account: "iCloud"' in settings.read_text()
+
+    def test_replaces_existing_value(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(_SETTINGS_WITH_PRIMARY_ACCOUNT.replace('""', '"OldAccount"'))
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_primary_account_to_settings("iCloud", dry_run=False)
+        assert '  primary_account: "iCloud"' in settings.read_text()
+        assert "OldAccount" not in settings.read_text()
+
+    def test_other_settings_preserved(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(_SETTINGS_WITH_PRIMARY_ACCOUNT)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_primary_account_to_settings("iCloud", dry_run=False)
+        assert "include_body: true" in settings.read_text()
+
+    def test_dry_run_does_not_write(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        original = _SETTINGS_WITH_PRIMARY_ACCOUNT
+        settings.write_text(original)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_primary_account_to_settings("iCloud", dry_run=True)
+        assert settings.read_text() == original
+
+    def test_no_op_when_file_missing(self, tmp_path: Path) -> None:
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_primary_account_to_settings("iCloud", dry_run=False)
+        assert not (tmp_path / "settings.local.yaml").exists()
+
+
+class TestRunSetupAccountIntegration:
+    """Integration tests for account detection wired into run_setup."""
+
+    def _base_mocks(self, mocker: MagicMock) -> None:
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", side_effect=[2, 1, 2])
+        mocker.patch("typer.confirm", return_value=True)
+        mocker.patch(
+            "scripts.setup.run_setup._collect_folder_names",
+            return_value={
+                "inbox": "Inbox",
+                "projects": "P",
+                "areas": "A",
+                "resources": "R",
+                "archive": "Arc",
+            },
+        )
+        mocker.patch("scripts.setup.run_setup._write_taxonomy")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
+        mocker.patch("scripts.setup.run_setup._select_provider", return_value=False)
+        mocker.patch("scripts.setup.run_setup._ask_container")
+
+    def test_single_account_no_prompt(self, mocker: MagicMock) -> None:
+        mocker.patch("scripts.setup.run_setup._detect_accounts", return_value=["iCloud"])
+        write_mock = mocker.patch("scripts.setup.run_setup._write_primary_account_to_settings")
+        self._base_mocks(mocker)
+        run_setup(dry_run=False, no_corpus=True)
+        write_mock.assert_not_called()
+
+    def test_multiple_accounts_writes_selection(self, mocker: MagicMock) -> None:
+        mocker.patch("scripts.setup.run_setup._detect_accounts", return_value=["iCloud", "Gmail"])
+        mocker.patch("scripts.setup.run_setup._handle_multiple_accounts", return_value="Gmail")
+        write_mock = mocker.patch("scripts.setup.run_setup._write_primary_account_to_settings")
+        self._base_mocks(mocker)
+        run_setup(dry_run=False, no_corpus=True)
+        write_mock.assert_called_once_with("Gmail", False)
+
+    def test_no_accounts_detected_skips_write(self, mocker: MagicMock) -> None:
+        mocker.patch("scripts.setup.run_setup._detect_accounts", return_value=[])
+        write_mock = mocker.patch("scripts.setup.run_setup._write_primary_account_to_settings")
+        self._base_mocks(mocker)
+        run_setup(dry_run=False, no_corpus=True)
+        write_mock.assert_not_called()
+
+    def test_account_write_skipped_when_settings_exist(self, mocker: MagicMock) -> None:
+        mocker.patch("scripts.setup.run_setup._detect_accounts", return_value=["iCloud", "Gmail"])
+        mocker.patch("scripts.setup.run_setup._handle_multiple_accounts", return_value="Gmail")
+        write_mock = mocker.patch("scripts.setup.run_setup._write_primary_account_to_settings")
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", side_effect=[2, 1, 2])
+        mocker.patch("typer.confirm", return_value=True)
+        mocker.patch(
+            "scripts.setup.run_setup._collect_folder_names",
+            return_value={
+                "inbox": "Inbox",
+                "projects": "P",
+                "areas": "A",
+                "resources": "R",
+                "archive": "Arc",
+            },
+        )
+        mocker.patch("scripts.setup.run_setup._write_taxonomy")
+        # settings_created=False → Phase 9 is skipped
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
+        run_setup(dry_run=False, no_corpus=True)
+        write_mock.assert_not_called()

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from statistics import mean
@@ -208,6 +209,68 @@ def _gtd_categories_snippet() -> str:
     )
 
 
+# ── Account detection ──────────────────────────────────────────────────────────
+
+_LIST_ACCOUNTS_SCRIPT = CONFIG_DIR.parent / "scripts" / "export" / "list-accounts.applescript"
+
+
+def _detect_accounts() -> list[str]:
+    """Return Apple Notes account names via AppleScript. Empty list if detection fails."""
+    if not _LIST_ACCOUNTS_SCRIPT.exists():
+        return []
+    try:
+        result = subprocess.run(
+            ["osascript", str(_LIST_ACCOUNTS_SCRIPT)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return []
+        return [n.strip() for n in result.stdout.strip().splitlines() if n.strip()]
+    except (subprocess.TimeoutExpired, OSError):
+        return []
+
+
+def _handle_multiple_accounts(accounts: list[str]) -> str:
+    """Display a multiple-accounts panel and return the account the user selects."""
+    account_list = "\n".join(f"  {i + 1}) {a}" for i, a in enumerate(accounts))
+    con.print(
+        Panel(
+            f"[bold]Multiple Apple Notes accounts detected:[/bold]\n\n"
+            f"{account_list}\n\n"
+            "Classifying and moving notes across accounts can cause confusion — "
+            "folders may share names across accounts and the pipeline will treat "
+            "them as one library.\n\n"
+            "Select the account you want to organise. Notes from other accounts "
+            "will not be exported or moved.",
+            title="Multiple accounts",
+            border_style="yellow",
+        )
+    )
+    selected = _ask_numbered("Which account do you want to organise?", accounts)
+    return accounts[selected - 1]
+
+
+def _write_primary_account_to_settings(account: str, dry_run: bool) -> None:
+    settings_path = CONFIG_DIR / "settings.local.yaml"
+    if not settings_path.exists():
+        return
+    content = settings_path.read_text(encoding="utf-8")
+    new_content = re.sub(
+        r'^(\s+primary_account:)\s+"[^"]*"',
+        rf'\g<1> "{account}"',
+        content,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if dry_run:
+        con.print(f'  [dim]Would set primary_account: "{account}" in settings.local.yaml[/dim]')
+        return
+    settings_path.write_text(new_content, encoding="utf-8")
+    con.print(f'  Set [green]primary_account: "{account}"[/green] in settings.local.yaml')
+
+
 # ── Provider selection ─────────────────────────────────────────────────────────
 
 
@@ -405,6 +468,20 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
         )
     )
 
+    # ── Phase 0: Account detection ─────────────────────────────────────────────
+    accounts = _detect_accounts()
+    selected_account: str | None = None
+    if len(accounts) > 1:
+        selected_account = _handle_multiple_accounts(accounts)
+    elif len(accounts) == 1:
+        con.print(f"[dim]Apple Notes account: {accounts[0]}[/dim]\n")
+    else:
+        con.print(
+            "[dim]Account detection skipped — grant Automation permission "
+            "(System Settings → Privacy & Security → Automation) before running "
+            "notes export if you haven't already.[/dim]\n"
+        )
+
     # ── Phase 1: Corpus analysis ───────────────────────────────────────────────
     corpus: dict | None = None
     if not no_corpus:
@@ -538,6 +615,10 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
     # ── Phase 8: Container folder structure ───────────────────────────────────
     if settings_created:
         _ask_container(dry_run)
+
+    # ── Phase 9: Primary account ───────────────────────────────────────────────
+    if settings_created and selected_account is not None:
+        _write_primary_account_to_settings(selected_account, dry_run)
 
     # ── Next steps ─────────────────────────────────────────────────────────────
     next_steps: list[str] = []

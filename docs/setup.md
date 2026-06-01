@@ -16,17 +16,23 @@ Run `notes setup` again any time you want to switch frameworks or rename folders
 
 ## What it does
 
-1. **Corpus analysis** — if a recent export exists in `data/exports/`, setup analyzes it silently and uses those signals to weight the framework recommendation. If no export exists, setup relies on your answers alone.
+1. **Account detection** — setup queries Apple Notes via AppleScript to list your accounts (e.g. iCloud, Gmail). If a single account is found, it's noted and setup continues. If multiple accounts are found, setup explains the implications and asks which one you want to organise; the selection is written to `settings.local.yaml` as `primary_account` so all subsequent exports and moves stay within that account. If detection fails (Automation permission not yet granted), setup prints a reminder and continues — you can set `primary_account` manually later.
 
-2. **3 questions** — goal, maintenance appetite, working style. Your answers are scored against three framework profiles.
+2. **Corpus analysis** — if a recent export exists in `data/exports/`, setup analyzes it silently and uses those signals to weight the framework recommendation. If no export exists, setup relies on your answers alone.
 
-3. **Recommendation** — setup shows the recommended framework with a rationale, a folder structure preview, and confidence level. You can accept or override.
+3. **3 questions** — goal, maintenance appetite, working style. Your answers are scored against three framework profiles.
 
-4. **Folder naming** — for each category in the chosen framework, setup prompts for a folder name (defaulting to the canonical name). Press Enter to accept.
+4. **Recommendation** — setup shows the recommended framework with a rationale, a folder structure preview, and confidence level. You can accept or override.
 
-5. **Write config files** — `config/taxonomy.local.yaml` is written (existing file is backed up as `.bak`). If `config/settings.local.yaml` doesn't exist, it's copied from the example.
+5. **Folder naming** — for each category in the chosen framework, setup prompts for a folder name (defaulting to the canonical name). Press Enter to accept.
 
-6. **LLM provider selection** — if `config/settings.local.yaml` was just created, setup asks which LLM provider you want to use and writes `llm_provider` to `settings.local.yaml`. For Anthropic, it optionally collects your API key and writes it to `.env` (the key is never echoed to the terminal). This step is skipped if `settings.local.yaml` already existed (re-running setup to change taxonomy only).
+6. **Write config files** — `config/taxonomy.local.yaml` is written (existing file is backed up as `.bak`). If `config/settings.local.yaml` doesn't exist, it's copied from the example.
+
+7. **LLM provider selection** — if `config/settings.local.yaml` was just created, setup asks which LLM provider you want to use and writes `llm_provider` to `settings.local.yaml`. For Anthropic, it optionally collects your API key and writes it to `.env` (the key is never echoed to the terminal). This step is skipped if `settings.local.yaml` already existed (re-running setup to change taxonomy only).
+
+8. **Container folder structure** — asks whether to nest all taxonomy folders inside a single container folder (e.g. `Library/`) or place them at the account root. Writes `toplevel_folder.enabled` and `toplevel_folder.name` to `settings.local.yaml`. Skipped on re-runs.
+
+9. **Primary account** — if multiple accounts were detected in step 1 and `settings.local.yaml` was just created, writes the selected account as `primary_account` in `settings.local.yaml`.
 
 ---
 

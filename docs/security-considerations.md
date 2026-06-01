@@ -9,7 +9,7 @@ how data flows through the pipeline and choose the workflow that matches your si
 
 | Step | What happens | Data leaves the machine? |
 |------|-------------|--------------------------|
-| `notes setup` | Interactive wizard that collects folder names and optionally an LLM provider API key. The API key is written to `.env` (local only, gitignored); input is not echoed to the terminal. | No |
+| `notes setup` | Interactive wizard. Queries Apple Notes account names via AppleScript (no note content read). Collects folder names and optionally an LLM provider API key written to `.env` (gitignored, not echoed). | No |
 | `notes export` / `notes backup` | AppleScript extracts plaintext from Notes app → local JSON in `data/exports/` or `data/backups/` | No |
 | `notes discover` / `notes classify` (cloud) | Note title + body excerpt sent to Anthropic API per batch | Yes — see below |
 | `notes discover` / `notes classify` (local) | Same content sent to Ollama process on `localhost` | No |
