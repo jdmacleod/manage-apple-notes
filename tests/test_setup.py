@@ -484,6 +484,22 @@ class TestRunSetup:
         # Should not raise — corpus analysis runs and summary is printed
         run_setup(dry_run=False, no_corpus=False)
 
+    def test_no_export_found_continues_without_corpus(
+        self, mocker: MagicMock, tmp_path: Path
+    ) -> None:
+        # no_corpus=False but export not found → prints notice, continues with questions only
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", side_effect=[2, 1, 2])
+        mocker.patch("typer.confirm", return_value=True)
+        mocker.patch(
+            "scripts.setup.run_setup._collect_folder_names",
+            return_value={"inbox": "Inbox", "projects": "P", "areas": "A",
+                          "resources": "R", "archive": "Arc"},
+        )
+        mocker.patch("scripts.setup.run_setup._write_taxonomy")
+        mocker.patch("scripts.setup.run_setup._ensure_settings")
+        run_setup(dry_run=False, no_corpus=False)  # no export → else branch at line 262
+
     def test_no_corpus_flag_skips_export(self, mocker: MagicMock, tmp_path: Path) -> None:
         find_mock = mocker.patch(
             "scripts.setup.run_setup._find_export_optional", return_value=None

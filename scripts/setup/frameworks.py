@@ -32,11 +32,6 @@ FRAMEWORKS: dict[str, dict] = {
             "spread across {folder_count} folders. Its four buckets are easy to apply "
             "consistently, and {maintenance_note}."
         ),
-        "next_steps": [
-            "uv run notes export    — pull notes from Apple Notes",
-            "uv run notes classify  — AI classification → proposal",
-            "uv run notes move      — apply the approved proposal",
-        ],
     },
     "GTD": {
         "name": "GTD",
@@ -82,11 +77,6 @@ FRAMEWORKS: dict[str, dict] = {
             "Your notes show {task_signal} action-oriented content, "
             "and the weekly review habit keeps commitments from slipping."
         ),
-        "next_steps": [
-            "uv run notes export    — pull notes from Apple Notes",
-            "uv run notes classify  — AI classification → proposal",
-            "uv run notes move      — apply the approved proposal",
-        ],
         # Non-standard category keys need explicit metadata in settings.local.yaml
         "extra_categories": {
             "next_actions": {
@@ -156,11 +146,6 @@ FRAMEWORKS: dict[str, dict] = {
             "{cross_ref_note}"
             "The extra folder structure pays off when ideas compound across months and years."
         ),
-        "next_steps": [
-            "uv run notes export    — pull notes from Apple Notes",
-            "uv run notes classify  — AI classification → proposal",
-            "uv run notes move      — apply the approved proposal",
-        ],
     },
     "EXISTING": {
         "name": "Existing Organization",

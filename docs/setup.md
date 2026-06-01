@@ -68,7 +68,8 @@ See [GUIDE.md](../GUIDE.md) for provider-specific setup (API keys, Ollama instal
 Then run the pipeline:
 
 ```bash
-uv run notes export    # pull notes from Apple Notes
+uv run notes export    # pull notes from Apple Notes (skip if setup already analyzed an export)
+uv run notes discover  # map thematic clusters → data/theme-maps/
 uv run notes classify  # AI classification → proposal
 uv run notes move      # apply the approved proposal
 ```

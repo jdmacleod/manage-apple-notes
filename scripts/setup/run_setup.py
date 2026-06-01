@@ -375,23 +375,22 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
         )
 
     # ── Next steps ─────────────────────────────────────────────────────────────
-    next_steps: list[str]
+    next_steps: list[str] = [
+        "Set your LLM provider in config/settings.local.yaml  (see GUIDE.md)",
+    ]
+    if corpus is None:
+        next_steps.append("uv run notes export    — pull notes from Apple Notes")
+    next_steps += [
+        "uv run notes discover  — map thematic clusters → data/theme-maps/",
+        "uv run notes classify  — AI classification → proposal",
+        "uv run notes move      — apply the approved proposal",
+    ]
     if winner == "EXISTING":
         suggestions = FRAMEWORKS["EXISTING"]["improvement_suggestions"]
-        next_steps = [
-            "Set your LLM provider in config/settings.local.yaml  (see GUIDE.md)",
-            "uv run notes export    — pull notes from Apple Notes",
-            "uv run notes classify  — AI classification → proposal",
-            "uv run notes move      — apply the approved proposal",
+        next_steps += [
             "",
             "Lightweight improvements to consider:",
             *[f"  • {s}" for s in suggestions],
-        ]
-    else:
-        fw = get_framework(winner)
-        next_steps = [
-            "Set your LLM provider in config/settings.local.yaml  (see GUIDE.md)",
-            *fw["next_steps"],
         ]
 
     steps_text = "\n".join(next_steps)
