@@ -139,6 +139,23 @@ thresholds:
 #   exclude_from_discover — skip notes in this folder during `notes discover`
 #   catchall: true        — route notes the LLM cannot confidently classify here
 #
+# Example for a PARA taxonomy (see also config/taxonomy.para.yaml):
+#   inbox:
+#     description: "capture — unprocessed notes to be filed"
+#     transit: true
+#     stale_days: 7
+#   projects:
+#     description: "active projects with a defined outcome"
+#     active_days: 90
+#   areas:
+#     description: "ongoing responsibilities without an end date"
+#   resources:
+#     description: "reference material on topics of interest"
+#   archive:
+#     description: "inactive, completed, or outdated items"
+#     exclude_from_classify: true
+#     exclude_from_discover: true
+#
 # Example for a GTD taxonomy:
 #   capture:
 #     description: "unprocessed inputs"
