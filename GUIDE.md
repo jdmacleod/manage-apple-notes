@@ -159,5 +159,5 @@ Run `cdk destroy` to decommission all infrastructure. See [docs/aws-infrastructu
 - `data/` (exports, proposals, reports) — entirely gitignored
 - A pre-commit hook blocks accidental commits of private files (`git config core.hooksPath .git-hooks`)
 
-See [`config/taxonomy.example.yaml`](config/taxonomy.example.yaml) (Forever Notes / Zettelkasten), [`config/taxonomy.para.yaml`](config/taxonomy.para.yaml) (PARA method), and [`config/settings.example.yaml`](config/settings.example.yaml) for the committed templates.
+See [`config/taxonomy.zettelkasten.yaml`](config/taxonomy.zettelkasten.yaml) (Zettelkasten / Forever Notes), [`config/taxonomy.para.yaml`](config/taxonomy.para.yaml) (PARA), [`config/taxonomy.gtd.yaml`](config/taxonomy.gtd.yaml) (GTD), and [`config/settings.example.yaml`](config/settings.example.yaml) for the committed templates.
 

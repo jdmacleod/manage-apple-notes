@@ -12,7 +12,7 @@ layer.
 ## Default Taxonomy
 
 The Forever Notes framework uses a Zettelkasten-influenced taxonomy as its default starting point.
-This project ships with a template (`config/taxonomy.example.yaml`) based on that structure:
+This project ships with a template (`config/taxonomy.zettelkasten.yaml`) based on that structure:
 
 | Category | Purpose |
 |----------|---------|
@@ -26,14 +26,14 @@ This project ships with a template (`config/taxonomy.example.yaml`) based on tha
 | **Archive** | Inactive, completed, or outdated notes |
 | **Review** | Needs human triage; use when classification is unclear — keep flat |
 
-This is a starting framework. Copy `taxonomy.example.yaml` to `taxonomy.local.yaml`, rename each
+This is a starting framework. Copy `taxonomy.zettelkasten.yaml` to `taxonomy.local.yaml`, rename each
 folder to match your actual Apple Notes folders, add subfolders after a discovery pass, and the
 system will honor exactly what you define. Category order in the file determines the order
 categories appear in your ✱ Home note.
 
-Users who prefer the PARA method (Projects, Areas, Resources, Archive) can start from
-`config/taxonomy.para.yaml` instead. See [`docs/para-method.md`](para-method.md) for PARA
-guidance and both minimalist and expanded designs.
+Users who prefer PARA can start from `config/taxonomy.para.yaml`; GTD users can start from
+`config/taxonomy.gtd.yaml`. See [`docs/para-method.md`](para-method.md) for PARA guidance and
+both minimalist and expanded designs. Or run `uv run notes setup` to choose interactively.
 
 ---
 

@@ -103,7 +103,7 @@ categories:
 
 If you prefer to edit config files directly rather than using the wizard:
 
-- **`config/taxonomy.local.yaml`** — map category keys to Apple Notes folder names. See `config/taxonomy.example.yaml` (Zettelkasten), `config/taxonomy.para.yaml` (PARA), or `config/taxonomy.gtd.yaml` (GTD) as templates.
+- **`config/taxonomy.local.yaml`** — map category keys to Apple Notes folder names. See `config/taxonomy.zettelkasten.yaml` (Zettelkasten), `config/taxonomy.para.yaml` (PARA), or `config/taxonomy.gtd.yaml` (GTD) as templates.
 - **`config/settings.local.yaml`** — provider, model, batch size, thresholds. See `config/settings.example.yaml`.
 
 Category keys defined in `taxonomy.local.yaml` automatically inherit built-in defaults from `scripts/config.py`. Override per-category metadata (descriptions, flags) in the `categories:` block of `settings.local.yaml`.

@@ -24,7 +24,8 @@ git config core.hooksPath .git-hooks
 uv sync
 
 # Copy example config files — fill in your personal values (these are gitignored)
-cp config/taxonomy.example.yaml config/taxonomy.local.yaml
+# Choose the template for your framework, or run: uv run notes setup
+cp config/taxonomy.zettelkasten.yaml config/taxonomy.local.yaml
 cp config/settings.example.yaml config/settings.local.yaml
 cp .env.example .env
 ```

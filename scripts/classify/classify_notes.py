@@ -255,7 +255,8 @@ def run_classify(export_file: str | None, dry_run: bool, json_output: bool = Fal
             "[yellow]Warning:[/yellow] config/taxonomy.local.yaml not found — "
             "folder names are example placeholders.\n"
             "  Proposals will reference folders that do not exist in Apple Notes.\n"
-            "  cp config/taxonomy.example.yaml config/taxonomy.local.yaml"
+            "  Run 'uv run notes setup' to configure your taxonomy, or copy a template:\n"
+            "  taxonomy.zettelkasten.yaml / taxonomy.para.yaml / taxonomy.gtd.yaml"
         )
     system_prompt_template = load_prompt_template()
     system_prompt = inject_taxonomy(system_prompt_template, taxonomy, settings)

@@ -279,7 +279,7 @@ primary account.
 ### What Claude Will Generate
 
 Claude will produce a `taxonomy.local.yaml` following the schema in
-`config/taxonomy.example.yaml`, with:
+`config/taxonomy.zettelkasten.yaml`, with:
 
 - Top-level category folder names filled in
 - Subfolders populated based on your inputs
@@ -321,7 +321,9 @@ of your taxonomy file.
 - [The PARA Method — Tiago Forte](https://fortelabs.com/blog/para/)
 - [The PARA Method book](https://www.buildingasecondbrain.com/para)
 - [Forever Notes framework](https://www.myforevernotes.com/docs/home)
-- [config/taxonomy.example.yaml](../config/taxonomy.example.yaml) — annotated taxonomy template for this project
+- [config/taxonomy.zettelkasten.yaml](../config/taxonomy.zettelkasten.yaml) — Zettelkasten / Forever Notes taxonomy template
+- [config/taxonomy.para.yaml](../config/taxonomy.para.yaml) — PARA taxonomy template
+- [config/taxonomy.gtd.yaml](../config/taxonomy.gtd.yaml) — GTD taxonomy template
 - [PLAN.md](../PLAN.md) — full implementation plan including classification pipeline and
   Forever Notes strict mode
 

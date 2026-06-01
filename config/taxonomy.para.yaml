@@ -25,7 +25,7 @@
 # The simple string list form is valid for loose mode and as a starting point.
 #
 # For the Zettelkasten-influenced alternative (Inbox, Fleeting, Literature,
-# Permanent, Projects, Areas, Resources, Archive, Review), see taxonomy.example.yaml.
+# Permanent, Projects, Areas, Resources, Archive, Review), see taxonomy.zettelkasten.yaml.
 
 # ── MINIMALIST PARA ──────────────────────────────────────────────────────────
 # Five top-level folders. Projects and Resources are flat; navigate by search.

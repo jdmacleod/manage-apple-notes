@@ -1,0 +1,78 @@
+# Zettelkasten / Forever Notes folder taxonomy — template.
+# Copy to taxonomy.local.yaml and fill in your actual folder names and subfolders.
+#
+# This template follows the Zettelkasten slip-box method as adapted for Apple Notes,
+# with an optional Forever Notes (Hub/Home) layer when forever_notes_mode is "strict".
+# Nine categories: Inbox → Fleeting → Literature → Permanent → Projects → Areas →
+#                  Resources → Archive → Review
+#
+# Subfolders are discovered during the theme discovery pass (notes discover).
+# Add them to taxonomy.local.yaml before running notes classify.
+# Categories without a subfolders key remain flat.
+#
+# NESTING: Apple Notes supports up to 5 folder levels. Subfolders can nest
+# recursively using the dict form with a nested "subfolders" key:
+#
+#   resources:
+#     folder: "Resources"
+#     subfolders:
+#       - "Cooking"                    # simple string leaf — one level deep
+#       - name: "Programming"          # dict with nested subfolders — two levels deep
+#         subfolders:
+#           - "Python"
+#           - name: "Systems"
+#             subfolders:
+#               - "Networking"         # three levels deep (Resources/Systems/Networking)
+#
+# The folder_nesting and thresholds.max_folder_depth settings control how deep
+# the classifier and discover pass will suggest nesting (see settings.example.yaml).
+#
+# STRICT MODE: When forever_notes_mode is "strict", each subfolder entry may
+# optionally use the dict form to override hub_title and hub_tag. If omitted,
+# hub_title is auto-derived as "✱ [SubfolderName]" and hub_tag as "#[lowercasename]".
+# The simple string list form is still valid and preferred for loose mode.
+#
+# For the PARA taxonomy alternative, see config/taxonomy.para.yaml.
+# For the GTD taxonomy alternative, see config/taxonomy.gtd.yaml.
+# For guidance on the PARA mapping, see docs/para-method.md.
+# For guidance on strict mode Hub/Home notes, see docs/forever-notes-framework.md.
+
+taxonomy:
+  inbox:
+    folder: "[YOUR_INBOX_FOLDER]"          # keep flat
+
+  fleeting:
+    folder: "[YOUR_FLEETING_FOLDER]"       # keep flat
+
+  literature:
+    folder: "[YOUR_LITERATURE_FOLDER]"
+    subfolders: []                         # e.g. ["Health", "Technology", "History"]
+    # Strict mode with hub overrides (optional — only needed if auto-derived names are wrong):
+    # subfolders:
+    #   - name: "Health"
+    #     hub_title: "✱ Health"            # defaults to "✱ Health" if omitted
+    #     hub_tag: "#health"               # defaults to "#health" if omitted
+    #   - name: "Technology"               # hub_title/hub_tag auto-derived
+
+  permanent:
+    folder: "[YOUR_PERMANENT_FOLDER]"
+    subfolders: []                         # e.g. ["Health", "Writing", "Philosophy"]
+
+  projects:
+    folder: "[YOUR_PROJECTS_FOLDER]"
+    subfolders: []                         # one subfolder per active project
+
+  areas:
+    folder: "[YOUR_AREAS_FOLDER]"
+    subfolders: []                         # one subfolder per area of life/work
+
+  resources:
+    folder: "[YOUR_RESOURCES_FOLDER]"
+    subfolders: []                         # e.g. ["Recipes", "Coding", "Finance"]
+
+  archive:
+    folder: "[YOUR_ARCHIVE_FOLDER]"
+    subfolders: []                         # mirror of old structure where useful
+
+  review:
+    folder: "[YOUR_REVIEW_FOLDER]"         # keep flat

@@ -127,7 +127,8 @@ def run_audit(
         con.print(
             "[yellow]Warning:[/yellow] config/taxonomy.local.yaml not found — "
             "audit results will not reflect your actual Apple Notes folder structure.\n"
-            "  cp config/taxonomy.example.yaml config/taxonomy.local.yaml"
+            "  Run 'uv run notes setup' to configure your taxonomy, or copy a template:\n"
+            "  taxonomy.zettelkasten.yaml / taxonomy.para.yaml / taxonomy.gtd.yaml"
         )
     fn = taxonomy.get("taxonomy", {})
     cat_meta = get_category_meta(settings)

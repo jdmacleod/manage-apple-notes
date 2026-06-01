@@ -379,7 +379,8 @@ def run_sync_hubs(
         _con.print(
             "[yellow]Warning:[/yellow] config/taxonomy.local.yaml not found — "
             "hub notes cannot be generated without real folder names.\n"
-            "  cp config/taxonomy.example.yaml config/taxonomy.local.yaml"
+            "  Run 'uv run notes setup' to configure your taxonomy, or copy a template:\n"
+            "  taxonomy.zettelkasten.yaml / taxonomy.para.yaml / taxonomy.gtd.yaml"
         )
 
     if export_file:

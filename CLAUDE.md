@@ -12,7 +12,7 @@ This is a **public open-source repo**. Personal note content, folder names, and 
 
 - `config/*.local.*` — gitignored; contains your actual folder names and paths
 - `data/` — entirely gitignored; contains note exports, proposals, and reports
-- Always use `config/taxonomy.example.yaml` and `config/settings.example.yaml` as the committed templates
+- Always use `config/taxonomy.zettelkasten.yaml`, `config/taxonomy.para.yaml`, `config/taxonomy.gtd.yaml`, and `config/settings.example.yaml` as the committed templates
 
 A pre-commit hook at `.git-hooks/pre-commit` blocks accidental commits of `data/`, `*.local.*` config files, and large JSON files. Activate it with:
 
@@ -23,8 +23,13 @@ git config core.hooksPath .git-hooks
 ## Setup
 
 ```bash
-# Copy and fill in personal config (gitignored)
-cp config/taxonomy.example.yaml config/taxonomy.local.yaml
+# Run the interactive setup wizard (recommended)
+uv run notes setup
+
+# Or copy the template for your chosen framework (gitignored)
+# cp config/taxonomy.zettelkasten.yaml config/taxonomy.local.yaml
+# cp config/taxonomy.para.yaml config/taxonomy.local.yaml
+# cp config/taxonomy.gtd.yaml config/taxonomy.local.yaml
 cp config/settings.example.yaml config/settings.local.yaml
 
 # Set API key / Ollama URL (gitignored)
@@ -100,7 +105,10 @@ Apple Notes → [export-notes.applescript] → data/exports/notes-YYYY-MM-DD.jso
 
 | File | Committed | Purpose |
 |------|-----------|---------|
-| `config/taxonomy.example.yaml` | Yes | Generic folder template |
+| `config/taxonomy.zettelkasten.yaml` | Yes | Zettelkasten / Forever Notes taxonomy template |
+| `config/taxonomy.para.yaml` | Yes | PARA method taxonomy template |
+| `config/taxonomy.gtd.yaml` | Yes | GTD taxonomy template |
+| `config/taxonomy.example.yaml` | Yes | System fallback (used by load_taxonomy() when no local file exists) |
 | `config/settings.example.yaml` | Yes | Provider, model, batch size, paths |
 | `.env.example` | Yes | Environment variable template |
 | `config/taxonomy.local.yaml` | **No** | Your actual folder names |

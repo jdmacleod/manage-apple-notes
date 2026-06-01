@@ -11,7 +11,7 @@
 # snippet to add when GTD is chosen.
 #
 # For the PARA taxonomy alternative, see config/taxonomy.para.yaml.
-# For the Zettelkasten / Forever Notes taxonomy, see config/taxonomy.example.yaml.
+# For the Zettelkasten / Forever Notes taxonomy, see config/taxonomy.zettelkasten.yaml.
 
 taxonomy:
   inbox:
