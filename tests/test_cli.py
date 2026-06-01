@@ -131,3 +131,9 @@ class TestCliCommands:
         mock.assert_called_once_with(
             backup_file=None, missing_file=None, dry_run=True, json_output=False
         )
+
+    def test_setup_invokes_run_setup(self, mocker: MagicMock) -> None:
+        mock = mocker.patch("scripts.cli.run_setup")
+        result = runner.invoke(app, ["setup", "--dry-run", "--no-corpus"])
+        assert result.exit_code == 0
+        mock.assert_called_once_with(dry_run=True, no_corpus=True)
