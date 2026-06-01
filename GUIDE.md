@@ -19,13 +19,13 @@ cd manage-apple-notes
 git config core.hooksPath .git-hooks   # blocks accidental data commits
 uv sync
 
-# Copy and customise personal config (gitignored — never committed)
-cp config/taxonomy.example.yaml config/taxonomy.local.yaml
-cp config/settings.example.yaml config/settings.local.yaml
-# Edit both files with your actual Apple Notes folder names and preferred settings.
+# Interactive wizard — pick a framework, name your folders (~2 min)
+uv run notes setup
 ```
 
-Then follow the provider-specific steps below.
+`notes setup` writes `config/taxonomy.local.yaml` for you. See [docs/setup.md](docs/setup.md) for the full wizard walkthrough, framework comparison, and manual editing reference.
+
+Then follow the provider-specific steps below to configure your LLM provider in `config/settings.local.yaml`.
 
 ---
 

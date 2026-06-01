@@ -19,11 +19,8 @@ cd manage-apple-notes
 git config core.hooksPath .git-hooks   # blocks accidental data commits
 uv sync
 
-# 2. Copy config (these files are gitignored — never committed)
-cp config/taxonomy.example.yaml config/taxonomy.local.yaml
-cp config/settings.example.yaml config/settings.local.yaml
-# Edit taxonomy.local.yaml — replace placeholder folder names with your
-# actual Apple Notes folder names.
+# 2. Pick a framework and name your folders (takes ~2 minutes)
+uv run notes setup
 
 # 3. Build the on-device inference bridge (requires Xcode 26)
 make -C swift/apple-llm build
@@ -31,13 +28,15 @@ make -C swift/apple-llm build
 # 4. Grant Automation permission
 # System Settings → Privacy & Security → Automation → enable Notes for your terminal app.
 
-# 5. Run
+# 5. Run the pipeline
 uv run notes export
 uv run notes classify
 # Review data/proposals/proposal-YYYY-MM-DD.json, then:
 uv run notes move --dry-run
 uv run notes move
 ```
+
+`notes setup` asks 3 questions and writes `config/taxonomy.local.yaml` for you. It picks from PARA, GTD, or Zettelkasten based on your answers and (optionally) your existing note library.
 
 Not on Apple Silicon or macOS 26+? See [GUIDE.md](GUIDE.md) for Anthropic API, Ollama, and AWS-Ollama provider options.
 
@@ -57,6 +56,9 @@ Benchmarked on a 330-note library (2021 M1 MacBook Pro). Anthropic and AWS-Ollam
 See [docs/runbooks/main-workflow.md](docs/runbooks/main-workflow.md) for the full walkthrough.
 
 ```bash
+# First-time setup
+uv run notes setup               # interactive wizard — pick framework, name folders
+
 # Initial library setup
 uv run notes export              # export from Apple Notes
 uv run notes backup              # safety backup → data/backups/
@@ -92,6 +94,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code quality requi
 ## Documentation
 
 - [GUIDE.md](GUIDE.md) — full setup for all providers, AWS CDK, Apple Intelligence build steps, privacy details
+- [docs/setup.md](docs/setup.md) — framework comparison, corpus signals, manual config editing
 - [docs/runbooks/main-workflow.md](docs/runbooks/main-workflow.md) — step-by-step workflow
 - [docs/](docs/) — technical notes, security considerations, runbooks
 

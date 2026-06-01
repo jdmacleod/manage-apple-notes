@@ -1,0 +1,36 @@
+# GTD (Getting Things Done) folder taxonomy — template.
+# Copy to taxonomy.local.yaml and fill in your actual Apple Notes folder names.
+#
+# GTD organises by actionability: every item is either something to act on,
+# something you're waiting on, a future possibility, or reference material.
+# See docs/setup.md for guidance on GTD categories and settings.
+#
+# The non-standard keys below (next_actions, waiting_for, someday_maybe, reference)
+# need matching entries in the `categories:` block of settings.local.yaml so the
+# classifier and audit use the correct descriptions. `notes setup` prints the exact
+# snippet to add when GTD is chosen.
+#
+# For the PARA taxonomy alternative, see config/taxonomy.para.yaml.
+# For the Zettelkasten / Forever Notes taxonomy, see config/taxonomy.example.yaml.
+
+taxonomy:
+  inbox:
+    folder: "[YOUR_INBOX_FOLDER]"         # raw captures — process to empty at least weekly
+
+  next_actions:
+    folder: "[YOUR_NEXT_ACTIONS_FOLDER]"  # concrete single tasks to do ASAP
+
+  waiting_for:
+    folder: "[YOUR_WAITING_FOR_FOLDER]"   # items delegated or blocked on someone else
+
+  projects:
+    folder: "[YOUR_PROJECTS_FOLDER]"      # multi-step outcomes with a defined end
+
+  someday_maybe:
+    folder: "[YOUR_SOMEDAY_MAYBE_FOLDER]" # ideas and projects to revisit someday
+
+  reference:
+    folder: "[YOUR_REFERENCE_FOLDER]"     # non-actionable material to keep
+
+  archive:
+    folder: "[YOUR_ARCHIVE_FOLDER]"       # completed or inactive items

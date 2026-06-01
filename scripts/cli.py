@@ -16,6 +16,7 @@ from scripts.maintenance.audit import run_audit
 from scripts.maintenance.process_inbox import run_inbox
 from scripts.maintenance.repair_restored_notes import run_repair_restored
 from scripts.restore.run_restore import run_restore
+from scripts.setup.run_setup import run_setup
 
 app = typer.Typer(
     help="Organize Apple Notes using AI classification into a user-defined folder taxonomy."
@@ -23,6 +24,21 @@ app = typer.Typer(
 
 
 _JSON_HELP = "Output result as JSON to stdout (progress goes to stderr)."
+
+
+@app.command()
+def setup(
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be written without touching files."
+    ),
+    no_corpus: bool = typer.Option(
+        False,
+        "--no-corpus",
+        help="Skip corpus analysis even if an export file is available.",
+    ),
+) -> None:
+    """Interactive wizard: pick a framework, name your folders, write config files."""
+    run_setup(dry_run=dry_run, no_corpus=no_corpus)
 
 
 @app.command()
