@@ -18,7 +18,9 @@ from scripts.setup.run_setup import (
     _collect_existing_folders,
     _collect_folder_names,
     _detect_accounts,
+    _detect_container,
     _ensure_settings,
+    _fetch_subfolders,
     _fetch_top_level_folders,
     _find_export_optional,
     _gtd_categories_snippet,
@@ -468,6 +470,9 @@ class TestRunSetup:
         """Prevent live AppleScript execution in all TestRunSetup tests."""
         mocker.patch("scripts.setup.run_setup._detect_accounts", return_value=["iCloud"])
         mocker.patch("scripts.setup.run_setup._fetch_top_level_folders", return_value=[])
+        # _detect_container is a no-op when top_level_folders is [] (no questionary call),
+        # but stub it anyway so tests are insulated from any future change in that path.
+        mocker.patch("scripts.setup.run_setup._detect_container", return_value=(None, []))
 
     def _para_mocks(self, mocker: MagicMock, tmp_path: Path) -> None:
         """Set up mocks for a PARA path through run_setup."""
@@ -706,6 +711,85 @@ class TestRunSetup:
         container_mock = mocker.patch("scripts.setup.run_setup._ask_container")
         run_setup(dry_run=False, no_corpus=True)
         container_mock.assert_called_once()
+
+    def test_container_detected_writes_setting_not_ask(
+        self, mocker: MagicMock, tmp_path: Path
+    ) -> None:
+        """Container confirmed in Phase 0.5 → _write_toplevel_folder_to_settings, no question."""
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
+        mocker.patch(
+            "scripts.setup.run_setup._detect_container",
+            return_value=("Library", ["Inbox", "Projects"]),
+        )
+        mocker.patch("scripts.setup.run_setup._fetch_top_level_folders", return_value=["Library"])
+        mocker.patch("scripts.setup.run_setup._ask_numbered", side_effect=[2, 1, 2])
+        mocker.patch("typer.confirm", return_value=True)
+        mocker.patch(
+            "scripts.setup.run_setup._collect_folder_names",
+            return_value={
+                "inbox": "Inbox",
+                "projects": "P",
+                "areas": "A",
+                "resources": "R",
+                "archive": "Arc",
+            },
+        )
+        mocker.patch("scripts.setup.run_setup._write_taxonomy")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
+        mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
+        ask_mock = mocker.patch("scripts.setup.run_setup._ask_container")
+        write_mock = mocker.patch("scripts.setup.run_setup._write_toplevel_folder_to_settings")
+        run_setup(dry_run=False, no_corpus=True)
+        ask_mock.assert_not_called()
+        write_mock.assert_called_once_with(enabled=True, name="Library", dry_run=False)
+
+    def test_container_opted_out_no_ask_container(self, mocker: MagicMock) -> None:
+        """User saw container question and said no → _ask_container is skipped."""
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
+        mocker.patch(
+            "scripts.setup.run_setup._detect_container",
+            return_value=(None, ["Inbox", "Projects"]),
+        )
+        mocker.patch(
+            "scripts.setup.run_setup._fetch_top_level_folders",
+            return_value=["Inbox", "Projects"],
+        )
+        mocker.patch("scripts.setup.run_setup._ask_numbered", side_effect=[2, 1, 2])
+        mocker.patch("typer.confirm", return_value=True)
+        mocker.patch(
+            "scripts.setup.run_setup._collect_folder_names",
+            return_value={
+                "inbox": "Inbox",
+                "projects": "P",
+                "areas": "A",
+                "resources": "R",
+                "archive": "Arc",
+            },
+        )
+        mocker.patch("scripts.setup.run_setup._write_taxonomy")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
+        mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
+        ask_mock = mocker.patch("scripts.setup.run_setup._ask_container")
+        run_setup(dry_run=False, no_corpus=True)
+        ask_mock.assert_not_called()
+
+    def test_existing_path_skips_container_phase(self, mocker: MagicMock) -> None:
+        """EXISTING path: Phase 8 is skipped entirely even when settings_created=True."""
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=4)
+        mocker.patch("typer.confirm", return_value=True)
+        mocker.patch(
+            "scripts.setup.run_setup._collect_existing_folders",
+            return_value={"inbox": "Library/Inbox"},
+        )
+        mocker.patch("scripts.setup.run_setup._write_taxonomy")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
+        mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
+        ask_mock = mocker.patch("scripts.setup.run_setup._ask_container")
+        write_mock = mocker.patch("scripts.setup.run_setup._write_toplevel_folder_to_settings")
+        run_setup(dry_run=False, no_corpus=True)
+        ask_mock.assert_not_called()
+        write_mock.assert_not_called()
 
 
 # ── run_setup.py — provider selection ─────────────────────────────────────────
@@ -1085,6 +1169,7 @@ class TestRunSetupAccountIntegration:
     def _base_mocks(self, mocker: MagicMock) -> None:
         mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
         mocker.patch("scripts.setup.run_setup._fetch_top_level_folders", return_value=[])
+        mocker.patch("scripts.setup.run_setup._detect_container", return_value=(None, []))
         mocker.patch("scripts.setup.run_setup._ask_numbered", side_effect=[2, 1, 2])
         mocker.patch("typer.confirm", return_value=True)
         mocker.patch(
@@ -1130,6 +1215,7 @@ class TestRunSetupAccountIntegration:
         write_mock = mocker.patch("scripts.setup.run_setup._write_primary_account_to_settings")
         mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
         mocker.patch("scripts.setup.run_setup._fetch_top_level_folders", return_value=[])
+        mocker.patch("scripts.setup.run_setup._detect_container", return_value=(None, []))
         mocker.patch("scripts.setup.run_setup._ask_numbered", side_effect=[2, 1, 2])
         mocker.patch("typer.confirm", return_value=True)
         mocker.patch(
@@ -1198,6 +1284,101 @@ class TestFetchTopLevelFolders:
             "scripts.setup.run_setup.subprocess.run", side_effect=OSError("permission denied")
         )
         assert _fetch_top_level_folders("iCloud") == []
+
+
+# ── _fetch_subfolders ─────────────────────────────────────────────────────────
+
+
+class TestFetchSubfolders:
+    def _mock_script_exists(self, mocker: MagicMock) -> None:
+        mocker.patch(
+            "scripts.setup.run_setup._LIST_SUBFOLDERS_SCRIPT",
+            new=MagicMock(exists=lambda: True),
+        )
+
+    def test_returns_sorted_subfolder_names(self, mocker: MagicMock) -> None:
+        self._mock_script_exists(mocker)
+        mock_run = mocker.patch("scripts.setup.run_setup.subprocess.run")
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = "Projects\nInbox\nArchive\n"
+        result = _fetch_subfolders("Library", "iCloud")
+        assert result == ["Archive", "Inbox", "Projects"]
+
+    def test_returns_empty_on_nonzero_returncode(self, mocker: MagicMock) -> None:
+        self._mock_script_exists(mocker)
+        mock_run = mocker.patch("scripts.setup.run_setup.subprocess.run")
+        mock_run.return_value.returncode = 1
+        mock_run.return_value.stdout = ""
+        assert _fetch_subfolders("Library", None) == []
+
+    def test_returns_empty_when_script_missing(self, mocker: MagicMock) -> None:
+        mocker.patch(
+            "scripts.setup.run_setup._LIST_SUBFOLDERS_SCRIPT",
+            new=MagicMock(exists=lambda: False),
+        )
+        assert _fetch_subfolders("Library", "iCloud") == []
+
+    def test_returns_empty_on_exception(self, mocker: MagicMock) -> None:
+        self._mock_script_exists(mocker)
+        mocker.patch(
+            "scripts.setup.run_setup.subprocess.run", side_effect=OSError("permission denied")
+        )
+        assert _fetch_subfolders("Library", "iCloud") == []
+
+    def test_writes_container_filter_file(self, mocker: MagicMock, tmp_path: Path) -> None:
+        self._mock_script_exists(mocker)
+        container_file = tmp_path / "notes_setup_container.tmp"
+        mocker.patch("scripts.setup.run_setup._SETUP_CONTAINER_FILE", container_file)
+        mocker.patch(
+            "scripts.setup.run_setup._SETUP_ACCOUNT_FILE", tmp_path / "notes_setup_account.tmp"
+        )
+        mock_run = mocker.patch("scripts.setup.run_setup.subprocess.run")
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = "Inbox\n"
+        _fetch_subfolders("Library", "iCloud")
+        mock_run.assert_called_once()
+
+
+# ── _detect_container ─────────────────────────────────────────────────────────
+
+
+class TestDetectContainer:
+    def test_returns_none_when_no_folders(self) -> None:
+        container, folders = _detect_container([], None)
+        assert container is None
+        assert folders == []
+
+    def test_no_container_selected_returns_top_level(self, mocker: MagicMock) -> None:
+        mock_sel = mocker.patch("scripts.setup.run_setup.questionary.select")
+        mock_sel.return_value.ask.return_value = "No container — folders are at the account root"
+        container, folders = _detect_container(["Inbox", "Projects"], None)
+        assert container is None
+        assert folders == ["Inbox", "Projects"]
+
+    def test_container_selected_returns_subfolders(self, mocker: MagicMock) -> None:
+        mock_sel = mocker.patch("scripts.setup.run_setup.questionary.select")
+        mock_sel.return_value.ask.return_value = "Library"
+        mocker.patch(
+            "scripts.setup.run_setup._fetch_subfolders",
+            return_value=["Archive", "Inbox", "Projects"],
+        )
+        container, folders = _detect_container(["Library"], "iCloud")
+        assert container == "Library"
+        assert folders == ["Archive", "Inbox", "Projects"]
+
+    def test_container_with_empty_subfolders_falls_back(self, mocker: MagicMock) -> None:
+        mock_sel = mocker.patch("scripts.setup.run_setup.questionary.select")
+        mock_sel.return_value.ask.return_value = "Library"
+        mocker.patch("scripts.setup.run_setup._fetch_subfolders", return_value=[])
+        container, folders = _detect_container(["Library", "Archive"], "iCloud")
+        assert container is None
+        assert folders == ["Library", "Archive"]
+
+    def test_abort_on_ctrl_c(self, mocker: MagicMock) -> None:
+        mock_sel = mocker.patch("scripts.setup.run_setup.questionary.select")
+        mock_sel.return_value.ask.return_value = None
+        with pytest.raises(typer.Abort):
+            _detect_container(["Library"], None)
 
 
 # ── _collect_folder_names (questionary path) ──────────────────────────────────
@@ -1278,3 +1459,17 @@ class TestCollectExistingFoldersQuestionary:
         mock_sel.return_value.ask.return_value = None
         with pytest.raises(typer.Abort):
             _collect_existing_folders(existing_folders=["Inbox"])
+
+    def test_container_prefix_prepended_to_stored_value(self, mocker: MagicMock) -> None:
+        mock_sel = mocker.patch("scripts.setup.run_setup.questionary.select")
+        mock_sel.return_value.ask.return_value = "Inbox"
+        result = _collect_existing_folders(
+            existing_folders=["Inbox", "Projects"], container="Library"
+        )
+        assert result["inbox"] == "Library/Inbox"
+
+    def test_no_container_stores_bare_name(self, mocker: MagicMock) -> None:
+        mock_sel = mocker.patch("scripts.setup.run_setup.questionary.select")
+        mock_sel.return_value.ask.return_value = "Inbox"
+        result = _collect_existing_folders(existing_folders=["Inbox", "Projects"])
+        assert result["inbox"] == "Inbox"

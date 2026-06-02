@@ -171,18 +171,24 @@ def _collect_folder_names(framework_key: str, existing_folders: list[str]) -> di
     return folder_map
 
 
-def _collect_existing_folders(existing_folders: list[str]) -> dict[str, str]:
+def _collect_existing_folders(
+    existing_folders: list[str], container: str | None = None
+) -> dict[str, str]:
     """For the Existing path: map user's current folders to category keys.
 
     When existing_folders is non-empty, uses questionary.select() so the user
     can pick directly from their Apple Notes folders. Falls back to typer.prompt()
     when no folder list is available.
+
+    When container is provided, the picker shows leaf names but the stored value
+    is the full path (e.g. "Library/Inbox") so the taxonomy is immediately usable.
     """
     mapping_prompts = FRAMEWORKS["EXISTING"]["mapping_prompts"]
     if existing_folders:
+        location = f"inside '{container}'" if container else "at the account root"
         con.print(
-            "\n[bold]Map your existing folders to each role.[/bold]  "
-            "Select your Apple Notes folder for each role.\n"
+            f"\n[bold]Map your existing folders to each role.[/bold]  "
+            f"Select your Apple Notes folder ({location}) for each role.\n"
         )
     else:
         con.print(
@@ -200,7 +206,7 @@ def _collect_existing_folders(existing_folders: list[str]) -> dict[str, str]:
             if answer is None:
                 raise typer.Abort()
             if answer != _skip:
-                folder_map[key] = answer
+                folder_map[key] = f"{container}/{answer}" if container else answer
         else:
             name = typer.prompt(f"  {prompt}", default="").strip()
             if name:
@@ -256,7 +262,9 @@ def _gtd_categories_snippet() -> str:
 
 _LIST_ACCOUNTS_SCRIPT = CONFIG_DIR.parent / "scripts" / "export" / "list-accounts.applescript"
 _LIST_FOLDERS_SCRIPT = CONFIG_DIR.parent / "scripts" / "export" / "list-folders.applescript"
+_LIST_SUBFOLDERS_SCRIPT = CONFIG_DIR.parent / "scripts" / "export" / "list-subfolders.applescript"
 _SETUP_ACCOUNT_FILE = Path("/tmp/notes_setup_account.tmp")
+_SETUP_CONTAINER_FILE = Path("/tmp/notes_setup_container.tmp")
 
 
 def _detect_accounts() -> list[str]:
@@ -303,6 +311,81 @@ def _fetch_top_level_folders(account: str | None) -> list[str]:
     except Exception:
         _SETUP_ACCOUNT_FILE.unlink(missing_ok=True)
         return []
+
+
+def _fetch_subfolders(container: str, account: str | None) -> list[str]:
+    """Return subfolder names inside a container folder via AppleScript, or [] on failure."""
+    if not _LIST_SUBFOLDERS_SCRIPT.exists():
+        return []
+    try:
+        _SETUP_CONTAINER_FILE.write_text(container)
+        if account:
+            _SETUP_ACCOUNT_FILE.write_text(account)
+        else:
+            _SETUP_ACCOUNT_FILE.unlink(missing_ok=True)
+        result = subprocess.run(
+            ["osascript", str(_LIST_SUBFOLDERS_SCRIPT)],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        _SETUP_CONTAINER_FILE.unlink(missing_ok=True)
+        _SETUP_ACCOUNT_FILE.unlink(missing_ok=True)
+        if result.returncode != 0:
+            return []
+        return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
+    except Exception:
+        _SETUP_CONTAINER_FILE.unlink(missing_ok=True)
+        _SETUP_ACCOUNT_FILE.unlink(missing_ok=True)
+        return []
+
+
+def _detect_container(
+    top_level_folders: list[str], account: str | None
+) -> tuple[str | None, list[str]]:
+    """Ask whether taxonomy folders are nested inside a container folder.
+
+    Called only when top_level_folders is non-empty. Returns (container_name, folder_list):
+    - container_name is None if the user opted out, or the chosen container folder name
+    - folder_list is the subfolders of the container (leaf names), or top_level_folders unchanged
+
+    For new-framework paths the leaf names go straight into the taxonomy and the container
+    is written to settings.  For the EXISTING path the caller prepends the container name
+    to produce full paths (e.g. Library/Inbox) before writing the taxonomy.
+    """
+    if not top_level_folders:
+        return None, top_level_folders
+
+    _NO_CONTAINER = "No container — folders are at the account root"
+
+    con.print("\n[bold]Container folder[/bold]")
+    con.print(
+        "  Some people nest all taxonomy folders inside a single container\n"
+        "  (e.g. Library/Inbox, Library/Projects) to keep the sidebar tidy.\n"
+        "  Others keep them at the account root.\n"
+    )
+    answer = questionary.select(
+        "  Do your taxonomy folders live inside a container?",
+        choices=top_level_folders + [_NO_CONTAINER],
+    ).ask()
+
+    if answer is None:
+        raise typer.Abort()
+
+    if answer == _NO_CONTAINER:
+        return None, top_level_folders
+
+    container = answer
+    subfolders = _fetch_subfolders(container, account)
+    if not subfolders:
+        con.print(
+            f"\n  [dim]No subfolders found inside '{container}' — "
+            "using top-level folders instead.[/dim]"
+        )
+        return None, top_level_folders
+
+    con.print(f"  [dim]Found {len(subfolders)} subfolder(s) inside '{container}'[/dim]")
+    return container, subfolders
 
 
 def _handle_multiple_accounts(accounts: list[str]) -> str:
@@ -557,10 +640,12 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
             "notes export if you haven't already.[/dim]\n"
         )
 
-    # Fetch top-level folder names for the picker in Phase 5.
-    # Best-effort: empty list falls back to plain text prompts.
+    # Fetch top-level folder names, then ask whether they live inside a container.
+    # Best-effort throughout: empty lists fall back to plain text prompts.
     _primary = selected_account or (accounts[0] if accounts else None)
-    existing_folders = _fetch_top_level_folders(_primary)
+    raw_top_level = _fetch_top_level_folders(_primary)
+    container, existing_folders = _detect_container(raw_top_level, _primary)
+    container_question_shown = len(raw_top_level) > 0
 
     # ── Phase 1: Corpus analysis ───────────────────────────────────────────────
     corpus: dict | None = None
@@ -660,7 +745,7 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
 
     # ── Phase 5: Collect folder names ─────────────────────────────────────────
     if winner == "EXISTING":
-        folder_map = _collect_existing_folders(existing_folders)
+        folder_map = _collect_existing_folders(existing_folders, container)
         taxonomy_yaml = _build_existing_taxonomy_yaml(folder_map)
     else:
         folder_map = _collect_folder_names(winner, existing_folders)
@@ -693,8 +778,15 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
         provider_configured = _select_provider(dry_run)
 
     # ── Phase 8: Container folder structure ───────────────────────────────────
-    if settings_created:
-        _ask_container(dry_run)
+    # EXISTING path: taxonomy has full paths already — skip container setting entirely.
+    # New framework + container confirmed in Phase 0.5: write directly, no question needed.
+    # New framework + user explicitly opted out: leave default (enabled: false) in place.
+    # New framework + no folders detected: ask the classic question.
+    if settings_created and winner != "EXISTING":
+        if container is not None:
+            _write_toplevel_folder_to_settings(enabled=True, name=container, dry_run=dry_run)
+        elif not container_question_shown:
+            _ask_container(dry_run)
 
     # ── Phase 9: Primary account ───────────────────────────────────────────────
     if settings_created and selected_account is not None:
