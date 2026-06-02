@@ -10,6 +10,7 @@ import pytest
 
 from scripts.classify.classify_notes import (
     _build_folder_path,
+    _sanitize_notes_for_locale,
     _subfolder_str,
     _subfolders,
     classify_batch,
@@ -405,25 +406,85 @@ class TestClassifyBatchResilient:
         result = classify_batch_resilient(mock_llm_provider, notes, "prompt", {})
         assert result == []
 
-    def test_locale_error_single_note_skipped(self, mock_llm_provider: MagicMock) -> None:
+    def test_locale_error_all_cjk_skips_retry_returns_empty(
+        self, mock_llm_provider: MagicMock
+    ) -> None:
+        # All content is CJK → sanitized title and body are "" → no retry
         notes = [{"id": "1", "title": "日本語タイトル", "body": "本文", "folder": "Inbox"}]
         mock_llm_provider.classify_messages.side_effect = RuntimeError("apple_unsupported_locale")
         result = classify_batch_resilient(mock_llm_provider, notes, "prompt", {})
         assert result == []
         mock_llm_provider.classify_messages.assert_called_once()
 
-    def test_locale_error_batch_skipped_without_splitting(
+    def test_locale_error_retries_with_sanitized_content(
         self, mock_llm_provider: MagicMock
     ) -> None:
+        # Mixed batch: first call fails; retry with sanitized content succeeds.
+        call_count = 0
+
+        def side_effect(system: str, user: str, **kwargs: object) -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("apple_unsupported_locale")
+            return json.dumps([{"id": "1", "proposed_folder": "Resources", "confidence": "high"}])
+
+        mock_llm_provider.classify_messages.side_effect = side_effect
+        notes = [{"id": "1", "title": "Tech note 日本語", "body": "Hello world", "folder": "Inbox"}]
+        result = classify_batch_resilient(mock_llm_provider, notes, "prompt", {})
+        assert result == [{"id": "1", "proposed_folder": "Resources", "confidence": "high"}]
+        assert call_count == 2
+
+    def test_locale_error_retry_also_fails_returns_empty(
+        self, mock_llm_provider: MagicMock
+    ) -> None:
+        # Mixed batch: both original and sanitized retry fail; batch is skipped.
+        mock_llm_provider.classify_messages.side_effect = RuntimeError("apple_unsupported_locale")
         notes = [
             {"id": "1", "title": "A", "body": "B", "folder": "Inbox"},
             {"id": "2", "title": "日本語", "body": "本文", "folder": "Inbox"},
         ]
-        mock_llm_provider.classify_messages.side_effect = RuntimeError("apple_unsupported_locale")
         result = classify_batch_resilient(mock_llm_provider, notes, "prompt", {})
         assert result == []
-        # Must NOT split — only one call, not recursive halving
-        assert mock_llm_provider.classify_messages.call_count == 1
+        # Original call + one sanitized retry — no recursive splitting
+        assert mock_llm_provider.classify_messages.call_count == 2
+
+
+class TestSanitizeNotesForLocale:
+    def test_strips_cjk_from_title_and_body(self) -> None:
+        notes = [{"id": "1", "title": "Note 日本語", "body": "Content 中文", "folder": "Inbox"}]
+        result = _sanitize_notes_for_locale(notes)
+        assert result[0]["title"] == "Note"
+        assert result[0]["body"] == "Content"
+        assert result[0]["folder"] == "Inbox"
+        assert result[0]["id"] == "1"
+
+    def test_preserves_ascii_fields_unchanged(self) -> None:
+        note = {
+            "id": "1",
+            "title": "Hello",
+            "body": "World",
+            "folder": "Resources",
+            "folder_path": "Resources",
+        }
+        result = _sanitize_notes_for_locale([note])
+        assert result[0]["title"] == "Hello"
+        assert result[0]["body"] == "World"
+        assert result[0]["folder"] == "Resources"
+        assert result[0]["folder_path"] == "Resources"
+
+    def test_handles_missing_fields_gracefully(self) -> None:
+        result = _sanitize_notes_for_locale([{"id": "1"}])
+        assert result[0]["title"] == ""
+        assert result[0]["body"] == ""
+        assert result[0]["folder"] == ""
+        assert result[0]["folder_path"] == ""
+
+    def test_preserves_non_text_fields(self) -> None:
+        note = {"id": "abc-123", "title": "Note", "body": "body", "folder": "Inbox", "extra": 42}
+        result = _sanitize_notes_for_locale([note])
+        assert result[0]["id"] == "abc-123"
+        assert result[0]["extra"] == 42
 
 
 class TestRunClassify:

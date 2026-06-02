@@ -34,7 +34,12 @@ from scripts.folder_utils import (
     path_depth,
 )
 from scripts.json_output import emit_result
-from scripts.json_utils import extract_json_array, is_context_overflow, is_locale_error
+from scripts.json_utils import (
+    extract_json_array,
+    is_context_overflow,
+    is_locale_error,
+    strip_unsupported_chars,
+)
 from scripts.providers import LLMProvider, get_max_tokens, get_provider
 from scripts.run_logger import RunLogger, estimate_duration, logs_dir_path
 
@@ -172,6 +177,20 @@ def inject_taxonomy(
     )
 
 
+def _sanitize_notes_for_locale(notes_batch: list[dict]) -> list[dict]:
+    """Strip unsupported characters from text fields so Apple Intelligence can process the batch."""
+    return [
+        {
+            **note,
+            "title": strip_unsupported_chars(note.get("title") or ""),
+            "body": strip_unsupported_chars(note.get("body") or ""),
+            "folder": strip_unsupported_chars(note.get("folder") or ""),
+            "folder_path": strip_unsupported_chars(note.get("folder_path") or ""),
+        }
+        for note in notes_batch
+    ]
+
+
 def classify_batch(
     provider: LLMProvider,
     notes_batch: list[dict],
@@ -212,10 +231,21 @@ def classify_batch_resilient(
     try:
         return classify_batch(provider, notes_batch, system_prompt, settings)
     except Exception as exc:
-        # Locale errors: splitting won't help (the bad character is in a specific note).
-        # Skip the whole batch if > 1 so we don't waste N recursive calls; at size 1
-        # we already have the individual note — skip it with a clear message.
         if is_locale_error(exc):
+            sanitized = _sanitize_notes_for_locale(notes_batch)
+            has_content = any(
+                (note.get("title") or "").strip() or (note.get("body") or "").strip()
+                for note in sanitized
+            )
+            if has_content:
+                _con.print(
+                    f"[yellow]Locale error — retrying {len(notes_batch)}-note batch"
+                    " with unsupported characters stripped[/yellow]"
+                )
+                try:
+                    return classify_batch(provider, sanitized, system_prompt, settings)
+                except Exception:
+                    pass
             if len(notes_batch) == 1:
                 _con.print(
                     f"[yellow]Warning:[/yellow] skipping note '{notes_batch[0].get('title', '')}'"
