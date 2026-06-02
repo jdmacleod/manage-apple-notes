@@ -13,6 +13,7 @@ import yaml
 from scripts.setup.frameworks import FRAMEWORKS, framework_choices, get_framework
 from scripts.setup.run_setup import (
     _ask_container,
+    _ask_numbered,
     _build_existing_taxonomy_yaml,
     _build_taxonomy_yaml,
     _collect_existing_folders,
@@ -459,6 +460,31 @@ class TestFindExportOptional:
         export.write_text("[]")
         mocker.patch("scripts.setup.run_setup.find_latest_export", return_value=export)
         assert _find_export_optional() == export
+
+
+# ── run_setup.py — _ask_numbered ──────────────────────────────────────────────
+
+
+class TestAskNumbered:
+    def test_valid_choice_returned(self, mocker: MagicMock) -> None:
+        mocker.patch("typer.prompt", return_value="2")
+        assert _ask_numbered("Pick one", ["A", "B", "C"]) == 2
+
+    def test_loops_on_invalid_then_accepts(self, mocker: MagicMock) -> None:
+        mocker.patch("typer.prompt", side_effect=["0", "99", "x", "1"])
+        assert _ask_numbered("Pick one", ["A", "B"]) == 1
+
+    def test_default_accepted_on_empty_enter(self, mocker: MagicMock) -> None:
+        mocker.patch("typer.prompt", return_value="")
+        assert _ask_numbered("Pick one", ["A", "B", "C"], default=1) == 1
+
+    def test_default_not_used_when_number_typed(self, mocker: MagicMock) -> None:
+        mocker.patch("typer.prompt", return_value="3")
+        assert _ask_numbered("Pick one", ["A", "B", "C"], default=1) == 3
+
+    def test_no_default_empty_enter_loops(self, mocker: MagicMock) -> None:
+        mocker.patch("typer.prompt", side_effect=["", "2"])
+        assert _ask_numbered("Pick one", ["A", "B"]) == 2
 
 
 # ── run_setup.py — orchestrator (mocked interactions) ─────────────────────────
@@ -942,6 +968,15 @@ class TestSelectProvider:
         assert result is True
         assert (config_dir / "settings.local.yaml").read_text() == original
         assert not (tmp_path / ".env").exists()
+
+    def test_apple_is_default_on_empty_enter(self, mocker: MagicMock, tmp_path: Path) -> None:
+        config_dir = self._setup_config(tmp_path)
+        # Simulate user pressing Enter (empty input) → default=1 → Apple
+        mocker.patch("typer.prompt", return_value="")
+        with patch("scripts.setup.run_setup.CONFIG_DIR", config_dir):
+            result = _select_provider(dry_run=False)
+        assert result is True
+        assert 'llm_provider: "apple"' in (config_dir / "settings.local.yaml").read_text()
 
 
 # ── run_setup.py — container question ─────────────────────────────────────────

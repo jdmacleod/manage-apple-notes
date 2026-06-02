@@ -116,13 +116,20 @@ def _display_corpus_summary(corpus: dict) -> None:
 # ── Dialogue helpers ───────────────────────────────────────────────────────────
 
 
-def _ask_numbered(question: str, options: list[str]) -> int:
-    """Print numbered options and return 1-based selection (loops until valid)."""
+def _ask_numbered(question: str, options: list[str], default: int | None = None) -> int:
+    """Print numbered options and return 1-based selection (loops until valid).
+
+    If default is provided, pressing Enter without typing accepts that choice.
+    """
     con.print(f"\n[bold]{question}[/bold]")
     for i, opt in enumerate(options, 1):
-        con.print(f"  {i}) {opt}")
+        marker = " [dim](default)[/dim]" if i == default else ""
+        con.print(f"  {i}) {opt}{marker}")
+    prompt_text = f"\nYour choice [{default}]" if default is not None else "\nYour choice"
     while True:
-        raw = typer.prompt("\nYour choice")
+        raw = typer.prompt(prompt_text, default="")
+        if raw.strip() == "" and default is not None:
+            return default
         try:
             val = int(raw.strip())
             if 1 <= val <= len(options):
@@ -533,6 +540,7 @@ def _select_provider(dry_run: bool) -> bool:
             "AWS-Ollama — cloud GPU via SSH tunnel, self-hosted",
             "Skip — I'll configure this manually in config/settings.local.yaml",
         ],
+        default=1,
     )
 
     if choice == 1:
