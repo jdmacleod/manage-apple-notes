@@ -46,6 +46,8 @@ class AwsLlmStack(cdk.Stack):
 
         instance_type = aws_config.get("instance_type", "g5.xlarge")
         key_pair_name: str = aws_config["key_pair_name"]
+        # update for new AWS keyPair replacing keyName
+        keyPair = ec2.KeyPair.from_key_pair_name(self, "KeyPair", key_pair_name)
         ssh_key_path: str = os.path.expanduser(
             os.environ.get("AWS_SSH_KEY_PATH") or aws_config.get("ssh_key_path", "~/.ssh/id_rsa")
         )
@@ -135,7 +137,7 @@ class AwsLlmStack(cdk.Stack):
             vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
             security_group=sg,
             role=role,
-            key_name=key_pair_name,
+            key_pair=keyPair,
             user_data=user_data,
             propagate_tags_to_volume_on_creation=True,
             block_devices=[

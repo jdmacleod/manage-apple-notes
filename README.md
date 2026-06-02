@@ -45,14 +45,14 @@ Not on Apple Silicon or macOS 26+? See [GUIDE.md](GUIDE.md) for Anthropic API, O
 
 ## Provider comparison
 
-Benchmarked on a 390-note library (2024 M4 MacBook Pro). Anthropic and AWS-Ollama not yet timed.
+Benchmarked on a 390-note library (2024 M4 MacBook Pro). Anthropic not yet timed.
 
 | Provider | Note content leaves device | Setup | Discover | Classify | Cost |
 |---|---|---|---|---|---|
 | **Apple Intelligence** *(default)* | Never | Medium | 12 min | 60 min | $0 |
 | Anthropic API | Yes — Anthropic's servers | Low | — | — | TBD |
 | Ollama (local, gemma-4-E4B) | Never | Medium | 15 min | 60 min | $0 |
-| AWS-Ollama | Never (your EC2, SSH tunnel) | High | — | — | TBD |
+| AWS-Ollama (g5.xlarge, gpt-oss:20b) | Never (your EC2, SSH tunnel) | High | 11 min | 20 min | $1 |
 
 ## Commands
 
@@ -60,10 +60,10 @@ See [docs/runbooks/main-workflow.md](docs/runbooks/main-workflow.md) for the ful
 
 ```bash
 # First-time setup
+uv run notes export              # export from Apple Notes
 uv run notes setup               # interactive wizard — pick framework, name folders
 
 # Initial library setup
-uv run notes export              # export from Apple Notes
 uv run notes backup              # safety backup → data/backups/
 uv run notes discover            # map thematic clusters → data/theme-maps/
 uv run notes draft               # generate taxonomy draft → data/taxonomy-drafts/
@@ -75,6 +75,7 @@ uv run notes move                # apply approved proposal
 uv run notes dedup               # detect duplicates → data/dedup-proposals/
 # → HUMAN: review dedup proposal
 uv run notes purge --execute     # delete confirmed duplicates
+uv run notes sync-hubs           # update ✱ Home and Hub notes (strict mode only)
 
 # Ongoing
 uv run notes triage              # triage Inbox → data/proposals/
@@ -82,7 +83,7 @@ uv run notes audit               # quality report (stale, stub, duplicate)
 uv run notes sync-hubs           # update ✱ Home and Hub notes (strict mode only)
 
 # Recovery
-uv run notes restore             # recreate notes lost during a move
+uv run notes restore             # recreate notes lost during a move (Note: can only recreate text notes!)
 ```
 
 Most commands accept `--dry-run`. `purge` is dry-run by default; pass `--execute` to apply.

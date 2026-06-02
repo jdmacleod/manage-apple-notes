@@ -147,7 +147,7 @@ Outputs:
 
 2. Set `OLLAMA_BASE_URL` in your `.env`:
 
-   ```
+   ```bash
    OLLAMA_BASE_URL=http://localhost:11434
    ```
 
@@ -173,6 +173,14 @@ ssh -i ~/.ssh/my-ollama-key.pem ec2-user@54.210.100.42 tail -f /var/log/ollama-p
 ```
 
 Allow 15–30 minutes for `gpt-oss:20b` (~12 GB) on first launch. The instance is connectable via SSH immediately; model pull runs in the background.
+
+## Inspecting Ollama on AWS
+
+Use the Systems Manager to connect to the EC2 instance. Ollama is running as a service, and the log output can be viewed with `journalctl`.
+
+```bash
+sudo journalctl -u ollama --no-pager --follow
+```
 
 ## Model Persistence (Optional S3 Cache)
 

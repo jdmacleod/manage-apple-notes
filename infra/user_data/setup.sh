@@ -13,6 +13,9 @@ PERSISTENT_BUCKET="__PERSISTENT_BUCKET__"
 echo "Installing Ollama..."
 curl -fsSL https://ollama.com/install.sh | sh
 
+# Set HOME environment variable for Ollama to ensure it can find the model cache directory
+export HOME=/root
+
 echo "Setting up Ollama service..."
 systemctl enable ollama
 systemctl start ollama
