@@ -612,29 +612,67 @@ Purely structural content (URLs, code snippets, numbers) generally does not trig
 This is a content-language filter, not a device-locale check. A Mac set to English US can
 still hit this error if a note contains enough non-English text.
 
-#### Retry with ASCII-stripped content
+#### What the locale filter actually checks
 
-`apple-llm` automatically retries once on `unsupportedLanguageOrLocale` by stripping all
-non-ASCII characters from the note body and re-submitting. This handles the common case of
-an otherwise English note with a pasted foreign-language paragraph or a recipe title:
+The filter has two distinct triggers:
 
-1. First attempt: full note content → `unsupportedLanguageOrLocale`
-2. Strip non-ASCII characters; collapse whitespace
-3. If ≥ 5 ASCII words remain: retry with stripped content
-4. If retry succeeds: result is returned normally (exit 0)
-5. If stripped content is too short or retry also fails: exit 4
+**Character encoding** — rejects any non-printable or non-ASCII character:
+- Latin-1 accented letters (`é`, `ü`, `ñ`) — common in names and loanwords
+- Curly quotes and em dash — inserted by Apple autocorrect into virtually every note
+- Non-printable ASCII control chars (U+0001–U+001F, U+007F) — from pasted terminal output
 
-Notes that are *entirely* in an unsupported language will still produce exit 4 after the
-retry, and the pipeline logs `apple_unsupported_locale` and skips them. Those notes are
-left in their current folder and do not appear in the proposal.
+Standard ASCII punctuation (`.`, `,`, `!`, `?`, `-`, `(`, `)`, `[`, `]`) is **not** a problem.
+
+**Language detection** — even with all characters stripped to ASCII, the model runs a
+language classifier on the user content. Triggers that look non-English to the classifier:
+- `x-coredata://UUID/ICNote/pN` Apple Notes IDs sent as part of the batch
+- Batches where many notes have empty content after CJK stripping (the classifier sees
+  mostly JSON structure and empty fields, which are ambiguous)
+- Dense technical content (URLs, code, hex strings)
+
+The batch user payload now excludes the `id` field entirely (the discover action never
+references note IDs in its output) and prepends `"Notes sample:\n\n"` so the language
+classifier sees English prose at the start of the content.
+
+**Two-level retry:** `apple-llm` (Swift) retries automatically, and the Python pipeline
+retries if the Swift-level retry also fails. Both strip to printable ASCII + standard
+whitespace (tab, newline, CR). Non-printable control chars (U+0001–U+001F excluding
+whitespace, and U+007F) are also removed.
+
+Swift-level (`apple-llm`):
+1. First attempt: full content → `unsupportedLanguageOrLocale`
+2. Strip non-ASCII from **both** system prompt and user content; collapse whitespace
+3. If ≥ 5 ASCII words remain in user content: retry
+4. Retry succeeds → exit 0; fails or too short → exit 4
+
+Python-level (`discover` action, on receiving exit 4):
+
+**Pre-sanitization (Apple provider only):** Before the first API call, both the batch
+payload and system prompt are stripped to ASCII. This prevents the fail/retry cycle for
+character-encoding issues (accented letters, autocorrect curly quotes) on every batch.
+
+**Batch retry and split strategy (for batches > 1 note):**
+1. On locale error: sanitize batch + system prompt to ASCII; retry the full batch.
+2. If sanitized retry also fails with locale error: the aggregate language of the batch
+   is triggering the detector even on ASCII-only content (common when CJK/Arabic notes
+   dominate a batch). Split the batch in half and process each independently.
+3. Recurse until each note is processed individually or succeeds in a sub-batch.
+4. Notes that fail at batch size 1 are logged by title and skipped.
+
+This mirrors the context-overflow split strategy and ensures that English notes in a
+mixed-language batch are not discarded because non-English notes tipped the detector.
+
+**Single-note path (batch == 1):**
+1. Sanitize and retry once.
+2. If still locale error: skip with a per-note warning showing the note title.
 
 #### Residual limitations
 
 - Notes composed entirely in an unsupported language cannot be classified by the Apple
   provider. Switch to Anthropic or Ollama for multilingual libraries.
-- Heavy use of code blocks (inline code, shell commands) can still trigger the filter even
-  after ASCII stripping because the model infers the "language" from the stripped content
-  pattern. There is no workaround for this case.
+- The language detector can be triggered by ASCII content whose pattern looks non-English
+  (romanized text, dense code snippets). These notes are isolated to batch size 1 and
+  skipped individually rather than causing whole-batch failures.
 - Response truncation: the 4096-token total context window means long notes can produce
   truncated JSON responses (the `reason` field gets cut off). The pipeline skips truncated
   responses. Keeping note exports short (`max_body_chars: 500–1000` in settings) reduces

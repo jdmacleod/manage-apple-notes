@@ -5,9 +5,6 @@ from __future__ import annotations
 import json
 import re
 
-# Common Unicode punctuation used in English prose that Apple Intelligence can handle.
-_LOCALE_SAFE_EXTRA: frozenset[str] = frozenset("‘’“”–—…")
-
 
 def extract_json_array(text: str) -> list:
     """Extract a JSON array from an LLM response that may include prose or fences."""
@@ -66,16 +63,24 @@ def is_locale_error(exc: Exception) -> bool:
 def strip_unsupported_chars(text: str) -> str:
     """Replace characters Apple Intelligence cannot process with spaces.
 
-    Keeps ASCII (U+0000–U+007F), Latin-1 Supplement (U+0080–U+00FF), Latin Extended-A/B
-    (U+0100–U+024F), and common English prose punctuation (curly quotes, em/en dash,
-    ellipsis). CJK, Arabic, Hebrew, Devanagari, and other non-Latin scripts are replaced
-    with a space; consecutive spaces are collapsed.
+    Keeps printable ASCII (U+0020-U+007E) and standard line-break whitespace
+    (tab U+0009, newline U+000A, carriage-return U+000D). Everything else --
+    non-printable control chars (U+0001-U+0008, U+000B-U+000C, U+000E-U+001F,
+    U+007F) and all non-ASCII (U+0080 and above) -- is replaced with a space;
+    consecutive spaces are then collapsed.
+
+    This matches the Swift bridge's stripToASCII() threshold. Apple
+    Intelligence's locale filter rejects any non-ASCII character, including the
+    curly-quote and em-dash characters that Apple's own autocorrect inserts into
+    normal English notes -- retaining Latin-1 or higher was causing the retry to
+    fail with a second locale error.
     """
     if not text:
         return text
     chars = []
     for ch in text:
-        if ord(ch) <= 0x024F or ch in _LOCALE_SAFE_EXTRA:
+        cp = ord(ch)
+        if (0x20 <= cp <= 0x7E) or ch in "\t\n\r":
             chars.append(ch)
         else:
             chars.append(" ")

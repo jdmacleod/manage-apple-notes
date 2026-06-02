@@ -76,9 +76,12 @@ def discover(
         False, "--dry-run", help="Preview batches and estimated cost without calling the API."
     ),
     json_output: bool = typer.Option(False, "--json", help=_JSON_HELP),
+    debug: bool = typer.Option(
+        False, "--debug", help="Print per-batch diagnostics: non-ASCII char counts, retry errors."
+    ),
 ) -> None:
     """Discover thematic clusters in the library for subfolder planning."""
-    run_discover(export_file=export_file, dry_run=dry_run, json_output=json_output)
+    run_discover(export_file=export_file, dry_run=dry_run, json_output=json_output, debug=debug)
 
 
 @app.command()

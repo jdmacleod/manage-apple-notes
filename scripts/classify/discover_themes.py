@@ -204,24 +204,99 @@ def _sanitize_batch_for_locale(batch: list[dict]) -> list[dict]:
     ]
 
 
+def _build_discover_payload(batch: list[dict]) -> str:
+    """Serialise a discover batch as user content for the LLM.
+
+    The 'id' field (x-coredata://UUID/ICNote/pN) is excluded: the discover
+    action never references note IDs in its output, and the x-coredata URL
+    format adds opaque non-English tokens that confuse Apple Intelligence's
+    language detector.
+
+    A plain-English preamble is prepended so the language detector sees English
+    prose at the start of the user content rather than a bare JSON array.  The
+    preamble also matches the 'Notes sample:' marker in the discover prompt
+    template, which was designed to precede the batch.
+    """
+    items = [{k: v for k, v in item.items() if k != "id"} for item in batch]
+    return "Notes sample:\n\n" + json.dumps(items, indent=2, ensure_ascii=False)
+
+
+def _non_ascii_count(text: str) -> int:
+    """Return the number of non-ASCII (> U+007F) characters in text."""
+    return sum(1 for ch in text if ord(ch) >= 0x80)
+
+
+def _non_ascii_sample(text: str, n: int = 6) -> str:
+    """Return up to n unique non-ASCII characters found in text, for debug display."""
+    seen: list[str] = []
+    for ch in text:
+        if ord(ch) >= 0x80 and ch not in seen:
+            seen.append(ch)
+        if len(seen) >= n:
+            break
+    return "".join(seen)
+
+
 def _discover_batch(
     provider: LLMProvider,
     system_prompt: str,
     batch: list,
     con: Console | None = None,
     max_tokens: int = 4096,
+    debug: bool = False,
 ) -> list:
-    """Send one batch to the LLM; on context overflow, split recursively and merge."""
+    """Send one batch to the LLM; on context overflow or locale error, split recursively."""
     _con = con or console
+
+    # For Apple Intelligence, strip non-ASCII content before the first call.
+    # The locale filter triggers on any non-ASCII character; stripping proactively avoids
+    # the fail/retry cycle for every batch containing accented letters, curly quotes, or
+    # other characters that Apple autocorrect inserts into ordinary English notes.
+    if provider.name == "apple":
+        if debug:
+            raw_payload = _build_discover_payload(batch)
+            orig_batch_non_ascii = _non_ascii_count(raw_payload)
+            orig_prompt_non_ascii = _non_ascii_count(system_prompt)
+            if orig_batch_non_ascii or orig_prompt_non_ascii:
+                _con.print(
+                    f"[dim][debug] apple pre-sanitize: "
+                    f"batch non-ASCII={orig_batch_non_ascii}, "
+                    f"prompt non-ASCII={orig_prompt_non_ascii}[/dim]"
+                )
+        batch = _sanitize_batch_for_locale(batch)
+        system_prompt = strip_unsupported_chars(system_prompt)
+
+    user_payload = _build_discover_payload(batch)
+
+    if debug:
+        batch_non_ascii = _non_ascii_count(user_payload)
+        prompt_non_ascii = _non_ascii_count(system_prompt)
+        _con.print(
+            f"[dim][debug] batch {len(batch)} notes: "
+            f"payload non-ASCII={batch_non_ascii}, "
+            f"system-prompt non-ASCII={prompt_non_ascii}[/dim]"
+        )
+        if batch_non_ascii:
+            _con.print(
+                f"[dim][debug]   payload sample chars: {_non_ascii_sample(user_payload)!r}[/dim]"
+            )
+        if prompt_non_ascii:
+            _con.print(
+                f"[dim][debug]   prompt sample chars: {_non_ascii_sample(system_prompt)!r}[/dim]"
+            )
+
+    response: str = ""
     try:
         response = provider.classify_messages(
             system_prompt,
-            json.dumps(batch, indent=2, ensure_ascii=False),
+            user_payload,
             max_tokens=max_tokens,
         )
         result = extract_json_object(response)
         return list(result.get("themes") or [])
     except (ValueError, json.JSONDecodeError) as exc:
+        if debug and response:
+            _con.print(f"[dim][debug]   raw response (first 400 chars): {response[:400]!r}[/dim]")
         _con.print(f"[yellow]Warning:[/yellow] batch parse error — {exc}")
         return []
     except Exception as exc:
@@ -231,11 +306,81 @@ def _discover_batch(
                 f"[yellow]Context overflow — splitting batch ({len(batch)} → {mid}+{len(batch) - mid})[/yellow]"
             )
             return _discover_batch(
-                provider, system_prompt, batch[:mid], con=_con, max_tokens=max_tokens
+                provider, system_prompt, batch[:mid], con=_con, max_tokens=max_tokens, debug=debug
             ) + _discover_batch(
-                provider, system_prompt, batch[mid:], con=_con, max_tokens=max_tokens
+                provider, system_prompt, batch[mid:], con=_con, max_tokens=max_tokens, debug=debug
             )
         if is_locale_error(exc):
+            if len(batch) > 1:
+                # Retry the whole batch first (sanitized), which handles the common case
+                # of a few non-ASCII notes in an otherwise English batch.
+                sanitized = _sanitize_batch_for_locale(batch)
+                sanitized_payload = _build_discover_payload(sanitized)
+                sanitized_prompt = strip_unsupported_chars(system_prompt)
+                has_content = any(
+                    (item.get("title") or "").strip() or (item.get("excerpt") or "").strip()
+                    for item in sanitized
+                )
+                if debug:
+                    _con.print(
+                        f"[dim][debug]   locale error on {len(batch)}-note batch; "
+                        f"has_content={has_content}[/dim]"
+                    )
+                if has_content:
+                    _con.print(
+                        f"[yellow]Locale error — retrying {len(batch)}-note batch"
+                        " with unsupported characters stripped[/yellow]"
+                    )
+                    try:
+                        response = provider.classify_messages(
+                            sanitized_prompt,
+                            sanitized_payload,
+                            max_tokens=max_tokens,
+                        )
+                        result = extract_json_object(response)
+                        return list(result.get("themes") or [])
+                    except Exception as retry_exc:
+                        _con.print(
+                            f"[yellow]Warning:[/yellow] locale retry also failed"
+                            f" — {type(retry_exc).__name__}: {retry_exc}"
+                        )
+                        if is_locale_error(retry_exc):
+                            # Sanitized retry still failed: the aggregate language of this
+                            # batch is triggering the locale filter even with ASCII-only
+                            # content.  Split and process each half independently so that
+                            # English-dominant sub-batches can succeed while non-English
+                            # notes are isolated and skipped individually.
+                            mid = len(batch) // 2
+                            _con.print(
+                                f"[yellow]Locale error persists — splitting batch "
+                                f"({len(batch)} → {mid}+{len(batch) - mid})[/yellow]"
+                            )
+                            if debug:
+                                _con.print(
+                                    "[dim][debug]   language detection triggered on ASCII "
+                                    "content; splitting to isolate non-English notes[/dim]"
+                                )
+                            return _discover_batch(
+                                provider,
+                                system_prompt,
+                                batch[:mid],
+                                con=_con,
+                                max_tokens=max_tokens,
+                                debug=debug,
+                            ) + _discover_batch(
+                                provider,
+                                system_prompt,
+                                batch[mid:],
+                                con=_con,
+                                max_tokens=max_tokens,
+                                debug=debug,
+                            )
+                _con.print(
+                    f"[yellow]Warning:[/yellow] skipping discover batch of {len(batch)}"
+                    " — Apple Intelligence locale error (unsupported language)"
+                )
+                return []
+            # Single note: one last sanitized attempt, then give up.
             sanitized = _sanitize_batch_for_locale(batch)
             has_content = any(
                 (item.get("title") or "").strip() or (item.get("excerpt") or "").strip()
@@ -243,29 +388,39 @@ def _discover_batch(
             )
             if has_content:
                 _con.print(
-                    f"[yellow]Locale error — retrying {len(batch)}-note batch"
-                    " with unsupported characters stripped[/yellow]"
+                    "[yellow]Locale error — retrying single note with chars stripped[/yellow]"
                 )
                 try:
                     response = provider.classify_messages(
                         strip_unsupported_chars(system_prompt),
-                        json.dumps(sanitized, indent=2, ensure_ascii=False),
+                        _build_discover_payload(sanitized),
                         max_tokens=max_tokens,
                     )
                     result = extract_json_object(response)
                     return list(result.get("themes") or [])
-                except Exception:
-                    pass
+                except Exception as retry_exc:
+                    _con.print(
+                        f"[yellow]Warning:[/yellow] locale retry also failed"
+                        f" — {type(retry_exc).__name__}: {retry_exc}"
+                    )
+                    if debug and is_locale_error(retry_exc):
+                        _con.print(
+                            "[dim][debug]   note still fails locale filter after stripping "
+                            "— language detection triggered on ASCII content[/dim]"
+                        )
+            note_title = (batch[0].get("title") or "").strip()[:60] if batch else "?"
             _con.print(
-                f"[yellow]Warning:[/yellow] skipping discover batch of {len(batch)}"
-                " — Apple Intelligence locale error (unsupported characters)"
+                f"[yellow]Warning:[/yellow] skipping note '{note_title}'"
+                " — Apple Intelligence locale error (unsupported language)"
             )
             return []
         _con.print(f"[yellow]Warning:[/yellow] skipping discover batch of {len(batch)} — {exc}")
         return []
 
 
-def run_discover(export_file: str | None, dry_run: bool, json_output: bool = False) -> None:
+def run_discover(
+    export_file: str | None, dry_run: bool, json_output: bool = False, debug: bool = False
+) -> None:
     con = Console(stderr=True) if json_output else console
     settings = load_settings()
     taxonomy = load_taxonomy()
@@ -457,7 +612,9 @@ def run_discover(export_file: str | None, dry_run: bool, json_output: bool = Fal
         task = progress.add_task("Discovering themes...", total=len(batches) + 1)
 
         for i, batch in enumerate(batches):
-            themes = _discover_batch(provider, system_prompt, batch, con=con, max_tokens=max_tokens)
+            themes = _discover_batch(
+                provider, system_prompt, batch, con=con, max_tokens=max_tokens, debug=debug
+            )
             if themes:
                 raw_theme_lists.append(themes)
                 logger.event("batch", batch=i + 1, count=len(batch), status="ok")

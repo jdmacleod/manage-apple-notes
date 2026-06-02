@@ -29,10 +29,15 @@ public struct Input: Decodable, Sendable {
 
 // MARK: — Helpers
 
-/// Strip all non-ASCII characters from `text` and collapse whitespace into single spaces.
+/// Strip non-printable and non-ASCII characters from `text` and collapse whitespace
+/// into single spaces.  Keeps printable ASCII (U+0020-U+007E) and standard
+/// whitespace (tab U+0009, newline U+000A, carriage-return U+000D).
 public func stripToASCII(_ text: String) -> String {
     text.unicodeScalars
-        .filter { $0.value < 0x80 }
+        .filter {
+            let v = $0.value
+            return (v >= 0x20 && v <= 0x7E) || v == 0x09 || v == 0x0A || v == 0x0D
+        }
         .map { Character($0) }
         .reduce(into: "") { $0.append($1) }
         .components(separatedBy: .whitespacesAndNewlines)

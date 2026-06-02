@@ -72,10 +72,12 @@ func run() async {
         // Fall through to retry with stripped content.
     }
 
-    // Retry — strip non-ASCII characters from the note body and try again.
+    // Retry — strip non-ASCII from both the system prompt and note body, then try again.
     // Notes that contain pasted foreign-language text (recipes, quotes, etc.) often
     // trigger the locale filter even when the title and most of the content are English.
-    // Stripping preserves the English framing while removing the offending characters.
+    // The system prompt must also be stripped: it contains taxonomy folder names injected
+    // by Python, which may include non-ASCII characters (accented names, CJK paths, etc.).
+    let strippedSystem = stripToASCII(input.system)
     let strippedUser = stripToASCII(input.user)
 
     guard hasEnoughContent(strippedUser) else {
@@ -85,7 +87,7 @@ func run() async {
     }
 
     do {
-        let retrySession = LanguageModelSession { input.system }
+        let retrySession = LanguageModelSession { strippedSystem }
         let retryResponse = try await retrySession.respond(to: strippedUser, options: options)
         print(retryResponse.content)
     } catch {

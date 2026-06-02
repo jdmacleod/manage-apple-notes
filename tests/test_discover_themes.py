@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from scripts.classify.discover_themes import (
+    _build_discover_payload,
     _discover_batch,
     _export_folder_tree,
     _sanitize_batch_for_locale,
@@ -220,7 +221,8 @@ class TestDiscoverBatch:
         def side_effect(system: str, user: str, **kwargs: object) -> str:
             nonlocal call_count
             call_count += 1
-            batch = json.loads(user)
+            # user is "Notes sample:\n\n[...]" — parse only the JSON part
+            batch = json.loads(user.split("\n\n", 1)[-1])
             if call_count == 1 and len(batch) > 1:
                 raise Exception("context_length exceeded")
             return json.dumps({"themes": [{"name": f"Theme{len(batch)}"}]})
@@ -290,6 +292,32 @@ class TestDiscoverBatch:
         assert result == []
         assert mock_llm_provider.classify_messages.call_count == 2
 
+    def test_locale_error_splits_on_persistent_retry_failure(
+        self, mock_llm_provider: MagicMock
+    ) -> None:
+        # Multi-note batch: first call locale error, sanitized retry also locale error.
+        # The batch should be split and each half processed independently so that
+        # individual notes with ASCII content are not silently discarded.
+        call_count = 0
+
+        def side_effect(system: str, user: str, **kwargs: object) -> str:
+            nonlocal call_count
+            call_count += 1
+            # user is "Notes sample:\n\n[...]" — parse only the JSON part
+            batch = json.loads(user.split("\n\n", 1)[-1])
+            if len(batch) > 1:
+                raise RuntimeError("apple_unsupported_locale")
+            return json.dumps({"themes": [{"name": f"Theme{call_count}"}]})
+
+        mock_llm_provider.classify_messages.side_effect = side_effect
+        batch = [
+            {"id": "1", "title": "English note", "excerpt": "Budget review"},
+            {"id": "2", "title": "Another note", "excerpt": "Project work"},
+        ]
+        result = _discover_batch(mock_llm_provider, "system", batch)
+        # Both individual notes succeed after the batch is split
+        assert len(result) == 2
+
     def test_unrecognised_error_returns_empty_not_raises(
         self, mock_llm_provider: MagicMock
     ) -> None:
@@ -339,6 +367,33 @@ class TestSanitizeBatchForLocale:
         result = _sanitize_batch_for_locale(batch)
         assert result[0]["id"] == "abc-123"
         assert result[0]["extra"] == 42
+
+
+class TestBuildDiscoverPayload:
+    def test_excludes_id_field(self) -> None:
+        batch = [{"id": "x-coredata://ABC/p1", "title": "Budget", "excerpt": "Q4", "folder_path": "Work"}]
+        payload = _build_discover_payload(batch)
+        assert "x-coredata" not in payload
+        assert "id" not in payload
+
+    def test_includes_english_preamble(self) -> None:
+        batch = [{"id": "1", "title": "Note", "excerpt": "Text", "folder_path": "Inbox"}]
+        payload = _build_discover_payload(batch)
+        assert payload.startswith("Notes sample:\n\n")
+
+    def test_json_part_is_valid(self) -> None:
+        batch = [{"id": "1", "title": "Note", "excerpt": "Text", "folder_path": "Inbox"}]
+        payload = _build_discover_payload(batch)
+        json_part = payload.split("\n\n", 1)[-1]
+        items = json.loads(json_part)
+        assert items[0]["title"] == "Note"
+        assert "id" not in items[0]
+
+    def test_preserves_title_excerpt_folder_path(self) -> None:
+        batch = [{"id": "x", "title": "Meeting", "excerpt": "Budget", "folder_path": "Work/Finance"}]
+        payload = _build_discover_payload(batch)
+        items = json.loads(payload.split("\n\n", 1)[-1])
+        assert items[0] == {"title": "Meeting", "excerpt": "Budget", "folder_path": "Work/Finance"}
 
 
 class TestRunDiscover:
