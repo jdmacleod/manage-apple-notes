@@ -248,7 +248,7 @@ def _discover_batch(
                 )
                 try:
                     response = provider.classify_messages(
-                        system_prompt,
+                        strip_unsupported_chars(system_prompt),
                         json.dumps(sanitized, indent=2, ensure_ascii=False),
                         max_tokens=max_tokens,
                     )

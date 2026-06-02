@@ -258,6 +258,28 @@ class TestDiscoverBatch:
         assert result == [{"name": "Technology", "estimated_count": 5}]
         assert call_count == 2
 
+    def test_locale_error_retry_sanitizes_system_prompt(self, mock_llm_provider: MagicMock) -> None:
+        # Root cause: system prompt contains non-Latin folder paths from {ESTABLISHED_PATHS}.
+        # The retry must sanitize the system prompt too, not just the batch content.
+        received_prompts: list[str] = []
+
+        def side_effect(system: str, user: str, **kwargs: object) -> str:
+            received_prompts.append(system)
+            if len(received_prompts) == 1:
+                raise RuntimeError("apple_unsupported_locale")
+            return json.dumps({"themes": [{"name": "Work", "estimated_count": 3}]})
+
+        mock_llm_provider.classify_messages.side_effect = side_effect
+        non_latin_prompt = "Categories: Inbox. Existing paths: 仕事/Projects, 日記."
+        batch = [{"id": "1", "title": "Work item", "excerpt": "Budget review"}]
+        result = _discover_batch(mock_llm_provider, non_latin_prompt, batch)
+        assert result == [{"name": "Work", "estimated_count": 3}]
+        # First call used the original (non-Latin) prompt
+        assert "仕事" in received_prompts[0]
+        # Retry used a sanitized prompt — non-Latin chars stripped
+        assert "仕事" not in received_prompts[1]
+        assert "Categories: Inbox" in received_prompts[1]
+
     def test_locale_error_retry_also_fails_returns_empty(
         self, mock_llm_provider: MagicMock
     ) -> None:
