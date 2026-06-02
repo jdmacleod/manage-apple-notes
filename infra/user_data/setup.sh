@@ -10,8 +10,10 @@ MODEL="__MODEL__"
 PERSISTENT_BUCKET="__PERSISTENT_BUCKET__"
 
 # ── Install Ollama ────────────────────────────────────────────────────────────
+echo "Installing Ollama..."
 curl -fsSL https://ollama.com/install.sh | sh
 
+echo "Setting up Ollama service..."
 systemctl enable ollama
 systemctl start ollama
 
@@ -50,6 +52,7 @@ EOF
 fi
 
 # ── Pre-pull the configured model (background; SSH available immediately) ─────
+echo "Ollama pulling the model..."
 nohup ollama pull "$MODEL" >> /var/log/ollama-pull.log 2>&1 &
 
 echo "Bootstrap complete. Model pull running in background — check /var/log/ollama-pull.log"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -39,6 +40,85 @@ def find_latest_theme_map() -> Path:
 def _top_level_folders(folder_paths: list[str]) -> list[str]:
     """Return sorted unique top-level folder names from a list of folder paths."""
     return sorted({p.split("/")[0] for p in folder_paths if p})
+
+
+# Well-known Apple Notes folder names → taxonomy role keys.
+# Used by _derive_role_key to map common folder names without an LLM call.
+_CANONICAL_ROLE_KEYS: dict[str, str] = {
+    "inbox": "inbox",
+    "projects": "projects",
+    "areas": "areas",
+    "areas of responsibility": "areas",
+    "resources": "resources",
+    "archive": "archive",
+    "fleeting": "fleeting",
+    "fleeting notes": "fleeting",
+    "literature": "literature",
+    "literature notes": "literature",
+    "permanent": "permanent",
+    "permanent notes": "permanent",
+    "notes": "permanent",
+    "review": "review",
+    "next actions": "next_actions",
+    "next action": "next_actions",
+    "waiting for": "waiting_for",
+    "someday maybe": "someday_maybe",
+    "someday/maybe": "someday_maybe",
+    "reference": "reference",
+}
+
+
+def _derive_role_key(folder: str, used_keys: set[str]) -> str:
+    """Derive a taxonomy role key for a folder name not already in the taxonomy.
+
+    Tries well-known names first; falls back to a slugified version that avoids
+    collisions with existing role keys.
+    """
+    normalized = folder.lower().strip()
+    candidate = _CANONICAL_ROLE_KEYS.get(normalized)
+    if candidate and candidate not in used_keys:
+        return candidate
+    base = re.sub(r"[^a-z0-9]+", "_", normalized).strip("_") or "folder"
+    candidate = base
+    i = 2
+    while candidate in used_keys:
+        candidate = f"{base}_{i}"
+        i += 1
+    return candidate
+
+
+def _add_missing_top_level_folders(
+    taxonomy: dict, top_level_folders: list[str], con: Console
+) -> dict:
+    """Add top-level folders from the export that are absent from the taxonomy.
+
+    Called after bootstrap or load_taxonomy() so that folders the bootstrap LLM
+    omitted — or folders created in Apple Notes since the taxonomy was last written —
+    always end up in the taxonomy, allowing their subfolders to be merged in below.
+    Returns a deep copy of the taxonomy if any folders were added, otherwise the
+    original object unchanged.
+    """
+    fn = taxonomy.get("taxonomy", {})
+    existing_folder_names = {
+        entry.get("folder", "") for entry in fn.values() if isinstance(entry, dict)
+    }
+    missing = [f for f in top_level_folders if f not in existing_folder_names]
+    if not missing:
+        return taxonomy
+
+    used_keys = set(fn.keys())
+    updated = copy.deepcopy(taxonomy)
+    updated_fn = updated.setdefault("taxonomy", {})
+    for folder in missing:
+        key = _derive_role_key(folder, used_keys)
+        used_keys.add(key)
+        updated_fn[key] = {"folder": folder}
+
+    names = ", ".join(missing)
+    con.print(
+        f"[dim]Auto-added {len(missing)} top-level folder(s) from export not in taxonomy: {names}[/dim]"
+    )
+    return updated
 
 
 def load_bootstrap_prompt() -> str:
@@ -258,6 +338,13 @@ def run_draft(theme_map_file: str | None, dry_run: bool, json_output: bool = Fal
         if source_export_path and Path(source_export_path).exists()
         else None
     )
+    if source_export_path and not export_path:
+        con.print(
+            f"[yellow]Warning:[/yellow] Source export not found: {source_export_path}\n"
+            "  Existing subfolders cannot be promoted from the export.\n"
+            "  Only LLM-suggested paths above the threshold will be added.\n"
+            "  Re-run 'uv run notes export' then 'uv run notes discover' to fix this."
+        )
     if export_path:
         _export_notes: list[dict] = json.loads(export_path.read_text())
         _seen_fps: set[str] = set()
@@ -277,21 +364,25 @@ def run_draft(theme_map_file: str | None, dry_run: bool, json_output: bool = Fal
     # Paths absent from the export (LLM-only proposals) sort after all export paths.
     export_order: dict[str, int] = {p: i for i, p in enumerate(ordered_export_paths)}
 
+    # ── Compute top-level folders for bootstrap and auto-add ─────────────────
+    # Done once here so both the bootstrap block and _add_missing_top_level_folders
+    # can use the same filtered list.
+    if export_folder_tree:
+        _all_top_level = _top_level_folders(list(export_folder_tree))
+        _tl_cfg = settings.get("toplevel_folder", {})
+        if _tl_cfg.get("enabled") and _tl_cfg.get("name"):
+            _all_top_level = [f for f in _all_top_level if f != _tl_cfg["name"]]
+    else:
+        _all_top_level = []
+
     # ── Bootstrap: map actual Apple Notes folders to taxonomy roles ───────────
     # When no taxonomy.local.yaml exists, use an LLM call to infer the taxonomy
     # from the actual folder structure in the export rather than the generic example.
     if not local_taxonomy_exists():
         if export_path:
-            folder_paths = sorted(export_folder_tree)
-            top_level = _top_level_folders(folder_paths)
-
-            tl_cfg = settings.get("toplevel_folder", {})
-            if tl_cfg.get("enabled") and tl_cfg.get("name"):
-                top_level = [f for f in top_level if f != tl_cfg["name"]]
-
             if dry_run:
                 con.print("[bold]Bootstrap:[/bold] No taxonomy.local.yaml found.")
-                con.print(f"  Folders to map: {', '.join(top_level)}")
+                con.print(f"  Folders to map: {', '.join(_all_top_level)}")
                 con.print(
                     "  (No API call in dry-run — bootstrap skipped; using example taxonomy below.)\n"
                 )
@@ -302,7 +393,7 @@ def run_draft(theme_map_file: str | None, dry_run: bool, json_output: bool = Fal
                 con.print(f"[dim]Bootstrap  ·  {provider.name} / {model}[/dim]")
                 with con.status("Bootstrapping taxonomy from folder structure…", spinner="dots"):
                     taxonomy = bootstrap_taxonomy(
-                        top_level, provider, settings, taxonomy=load_taxonomy()
+                        _all_top_level, provider, settings, taxonomy=load_taxonomy()
                     )
                 if not taxonomy.get("taxonomy"):
                     con.print(
@@ -321,8 +412,25 @@ def run_draft(theme_map_file: str | None, dry_run: bool, json_output: bool = Fal
             taxonomy = load_taxonomy()
     else:
         taxonomy = load_taxonomy()
+
+    # ── Auto-add top-level folders missing from the taxonomy ──────────────────
+    # Ensures folders the bootstrap LLM omitted — or folders added to Apple Notes
+    # since the taxonomy was last written — always appear in the taxonomy so their
+    # subfolders can be merged in below.
+    taxonomy = _add_missing_top_level_folders(taxonomy, _all_top_level, con)
+
     themes: list[dict] = theme_map.get("themes", [])
-    established: set[str] = set(theme_map.get("established_paths", []))
+
+    # Compute established paths from the CURRENT taxonomy (not the discover-time
+    # theme map) so that re-runs after a taxonomy reset correctly re-add subfolders
+    # that were in the old taxonomy but are absent from the newly bootstrapped one.
+    established: set[str] = {
+        p
+        for entry in taxonomy.get("taxonomy", {}).values()
+        for p in enumerate_paths(entry)
+        if "/" in p
+    }
+
     threshold: int = theme_map.get("subfolder_threshold", 8)
 
     candidate_paths = [

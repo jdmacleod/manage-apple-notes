@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+import typer
 import yaml
 
 from scripts.setup.frameworks import FRAMEWORKS, framework_choices, get_framework
@@ -14,8 +15,11 @@ from scripts.setup.run_setup import (
     _ask_container,
     _build_existing_taxonomy_yaml,
     _build_taxonomy_yaml,
+    _collect_existing_folders,
+    _collect_folder_names,
     _detect_accounts,
     _ensure_settings,
+    _fetch_top_level_folders,
     _find_export_optional,
     _gtd_categories_snippet,
     _handle_multiple_accounts,
@@ -463,6 +467,7 @@ class TestRunSetup:
     def _stub_accounts(self, mocker: MagicMock) -> None:
         """Prevent live AppleScript execution in all TestRunSetup tests."""
         mocker.patch("scripts.setup.run_setup._detect_accounts", return_value=["iCloud"])
+        mocker.patch("scripts.setup.run_setup._fetch_top_level_folders", return_value=[])
 
     def _para_mocks(self, mocker: MagicMock, tmp_path: Path) -> None:
         """Set up mocks for a PARA path through run_setup."""
@@ -1079,6 +1084,7 @@ class TestRunSetupAccountIntegration:
 
     def _base_mocks(self, mocker: MagicMock) -> None:
         mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
+        mocker.patch("scripts.setup.run_setup._fetch_top_level_folders", return_value=[])
         mocker.patch("scripts.setup.run_setup._ask_numbered", side_effect=[2, 1, 2])
         mocker.patch("typer.confirm", return_value=True)
         mocker.patch(
@@ -1123,6 +1129,7 @@ class TestRunSetupAccountIntegration:
         mocker.patch("scripts.setup.run_setup._handle_multiple_accounts", return_value="Gmail")
         write_mock = mocker.patch("scripts.setup.run_setup._write_primary_account_to_settings")
         mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
+        mocker.patch("scripts.setup.run_setup._fetch_top_level_folders", return_value=[])
         mocker.patch("scripts.setup.run_setup._ask_numbered", side_effect=[2, 1, 2])
         mocker.patch("typer.confirm", return_value=True)
         mocker.patch(
@@ -1140,3 +1147,134 @@ class TestRunSetupAccountIntegration:
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
         run_setup(dry_run=False, no_corpus=True)
         write_mock.assert_not_called()
+
+
+# ── _fetch_top_level_folders ──────────────────────────────────────────────────
+
+
+class TestFetchTopLevelFolders:
+    def _mock_script_exists(self, mocker: MagicMock) -> None:
+        mocker.patch(
+            "scripts.setup.run_setup._LIST_FOLDERS_SCRIPT",
+            new=MagicMock(exists=lambda: True),
+        )
+
+    def test_returns_sorted_folder_names(self, mocker: MagicMock) -> None:
+        self._mock_script_exists(mocker)
+        mock_run = mocker.patch("scripts.setup.run_setup.subprocess.run")
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = "Projects\nInbox\nArchive\n"
+        result = _fetch_top_level_folders("iCloud")
+        assert result == ["Archive", "Inbox", "Projects"]
+
+    def test_writes_account_filter_file(self, mocker: MagicMock, tmp_path: Path) -> None:
+        self._mock_script_exists(mocker)
+        account_file = tmp_path / "notes_setup_account.tmp"
+        mocker.patch("scripts.setup.run_setup._SETUP_ACCOUNT_FILE", account_file)
+        mock_run = mocker.patch("scripts.setup.run_setup.subprocess.run")
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = "Inbox\n"
+        _fetch_top_level_folders("iCloud")
+        # File is cleaned up after the call — just verify subprocess was called
+        mock_run.assert_called_once()
+
+    def test_returns_empty_on_nonzero_returncode(self, mocker: MagicMock) -> None:
+        self._mock_script_exists(mocker)
+        mock_run = mocker.patch("scripts.setup.run_setup.subprocess.run")
+        mock_run.return_value.returncode = 1
+        mock_run.return_value.stdout = ""
+        assert _fetch_top_level_folders(None) == []
+
+    def test_returns_empty_when_script_missing(self, mocker: MagicMock) -> None:
+        mocker.patch(
+            "scripts.setup.run_setup._LIST_FOLDERS_SCRIPT",
+            new=MagicMock(exists=lambda: False),
+        )
+        assert _fetch_top_level_folders("iCloud") == []
+
+    def test_returns_empty_on_exception(self, mocker: MagicMock) -> None:
+        self._mock_script_exists(mocker)
+        mocker.patch(
+            "scripts.setup.run_setup.subprocess.run", side_effect=OSError("permission denied")
+        )
+        assert _fetch_top_level_folders("iCloud") == []
+
+
+# ── _collect_folder_names (questionary path) ──────────────────────────────────
+
+
+class TestCollectFolderNamesQuestionary:
+    def test_uses_autocomplete_when_folders_available(self, mocker: MagicMock) -> None:
+        mock_ac = mocker.patch("scripts.setup.run_setup.questionary.autocomplete")
+        mock_ac.return_value.ask.return_value = "My Inbox"
+        result = _collect_folder_names("PARA", existing_folders=["My Inbox", "Projects"])
+        mock_ac.assert_called()
+        assert result["inbox"] == "My Inbox"
+
+    def test_falls_back_to_typer_when_no_folders(self, mocker: MagicMock) -> None:
+        mock_prompt = mocker.patch("typer.prompt", return_value="Inbox")
+        mock_ac = mocker.patch("scripts.setup.run_setup.questionary.autocomplete")
+        _collect_folder_names("PARA", existing_folders=[])
+        mock_ac.assert_not_called()
+        mock_prompt.assert_called()
+
+    def test_uses_canonical_default_on_empty_answer(self, mocker: MagicMock) -> None:
+        mock_ac = mocker.patch("scripts.setup.run_setup.questionary.autocomplete")
+        mock_ac.return_value.ask.return_value = ""  # user cleared the pre-fill
+        result = _collect_folder_names("PARA", existing_folders=["Inbox"])
+        # canonical default "Inbox" should be used when answer is empty
+        assert result["inbox"] == "Inbox"
+
+    def test_abort_on_ctrl_c(self, mocker: MagicMock) -> None:
+        mock_ac = mocker.patch("scripts.setup.run_setup.questionary.autocomplete")
+        mock_ac.return_value.ask.return_value = None  # questionary returns None on Ctrl+C
+        with pytest.raises(typer.Abort):
+            _collect_folder_names("PARA", existing_folders=["Inbox"])
+
+    def test_all_categories_prompted(self, mocker: MagicMock) -> None:
+        mock_ac = mocker.patch("scripts.setup.run_setup.questionary.autocomplete")
+        mock_ac.return_value.ask.return_value = "X"
+        result = _collect_folder_names("PARA", existing_folders=["Inbox", "Projects"])
+        from scripts.setup.frameworks import get_framework
+
+        assert set(result.keys()) == set(get_framework("PARA")["category_keys"])
+
+
+# ── _collect_existing_folders (questionary path) ──────────────────────────────
+
+
+class TestCollectExistingFoldersQuestionary:
+    def test_uses_select_when_folders_available(self, mocker: MagicMock) -> None:
+        mock_sel = mocker.patch("scripts.setup.run_setup.questionary.select")
+        mock_sel.return_value.ask.return_value = "Capture"
+        result = _collect_existing_folders(existing_folders=["Capture", "Work", "Archive"])
+        mock_sel.assert_called()
+        assert result["inbox"] == "Capture"
+
+    def test_skip_option_excluded_from_map(self, mocker: MagicMock) -> None:
+        mock_sel = mocker.patch("scripts.setup.run_setup.questionary.select")
+        mock_sel.return_value.ask.return_value = "--- skip ---"
+        result = _collect_existing_folders(existing_folders=["Inbox"])
+        assert "inbox" not in result
+
+    def test_falls_back_to_typer_when_no_folders(self, mocker: MagicMock) -> None:
+        mock_prompt = mocker.patch("typer.prompt", return_value="")
+        mock_sel = mocker.patch("scripts.setup.run_setup.questionary.select")
+        _collect_existing_folders(existing_folders=[])
+        mock_sel.assert_not_called()
+        mock_prompt.assert_called()
+
+    def test_skip_appended_to_choices(self, mocker: MagicMock) -> None:
+        mock_sel = mocker.patch("scripts.setup.run_setup.questionary.select")
+        mock_sel.return_value.ask.return_value = "--- skip ---"
+        _collect_existing_folders(existing_folders=["Inbox", "Projects"])
+        # Verify "--- skip ---" was included in choices for at least one call
+        call_kwargs = mock_sel.call_args_list[0]
+        choices = call_kwargs[1].get("choices") or call_kwargs[0][1]
+        assert "--- skip ---" in choices
+
+    def test_abort_on_ctrl_c(self, mocker: MagicMock) -> None:
+        mock_sel = mocker.patch("scripts.setup.run_setup.questionary.select")
+        mock_sel.return_value.ask.return_value = None
+        with pytest.raises(typer.Abort):
+            _collect_existing_folders(existing_folders=["Inbox"])

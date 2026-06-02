@@ -64,7 +64,7 @@ class AwsLlmStack(cdk.Stack):
             self,
             "LlmSg",
             vpc=vpc,
-            description="Ollama LLM instance — SSH only from deployer",
+            description="Ollama LLM instance, SSH only from deployer",
             allow_all_outbound=True,
         )
         sg.add_ingress_rule(
@@ -110,14 +110,14 @@ class AwsLlmStack(cdk.Stack):
                     "ModelBucketName",
                     value=model_bucket.bucket_name,
                     description=(
-                        "S3 bucket storing Ollama models — NOT deleted by cdk destroy. "
+                        "S3 bucket storing Ollama models, NOT deleted by cdk destroy. "
                         "Set aws.s3_model_bucket to this name to reuse on next deploy."
                     ),
                 )
 
-        # ── AMI: AWS Deep Learning AMI (Amazon Linux 2) — NVIDIA drivers included ──
+        # ── AMI: AWS Deep Learning AMI (Amazon Linux 2023) — NVIDIA drivers included ──
         ami = ec2.MachineImage.from_ssm_parameter(
-            "/aws/service/deeplearning/ami/x86_64/base-os/amzn2/latest",
+            "/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-amazon-linux-2023/latest/ami-id",
             os=ec2.OperatingSystemType.LINUX,
         )
 

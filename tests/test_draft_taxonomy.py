@@ -8,8 +8,11 @@ from unittest.mock import MagicMock
 
 import pytest
 import yaml
+from rich.console import Console
 
 from scripts.classify.draft_taxonomy import (
+    _add_missing_top_level_folders,
+    _derive_role_key,
     _insert_subfolder,
     _top_level_folders,
     bootstrap_taxonomy,
@@ -407,6 +410,59 @@ class TestRunDraft:
 
         assert existing.read_text() == "# original\n", "file should be untouched when declined"
 
+    def test_confirm_yes_includes_export_subfolders(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_taxonomy: dict,
+        minimal_settings: dict,
+    ) -> None:
+        """Confirming the draft writes export subfolders into taxonomy.local.yaml."""
+        export_file = tmp_path / "notes-test.json"
+        export_file.write_text(
+            json.dumps(
+                [
+                    {
+                        "id": "n1",
+                        "title": "New Topic",
+                        "body": "x",
+                        "folder_path": "Resources/NewTopic",
+                    }
+                ]
+            )
+        )
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        theme_map_file = tmp_path / "themes-test.json"
+        theme_map_file.write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-01-01T00:00:00+00:00",
+                    "source_export": str(export_file),
+                    "total_notes": 1,
+                    "subfolder_threshold": 8,
+                    "established_paths": [],
+                    "themes": [],
+                    "new_paths": [],
+                    "above_threshold": 0,
+                    "below_threshold": 1,
+                }
+            )
+        )
+        mocker.patch("scripts.classify.draft_taxonomy.load_settings", return_value=minimal_settings)
+        mocker.patch("scripts.classify.draft_taxonomy.load_taxonomy", return_value=minimal_taxonomy)
+        mocker.patch("scripts.classify.draft_taxonomy.local_taxonomy_exists", return_value=True)
+        mocker.patch("scripts.classify.draft_taxonomy.TAXONOMY_DRAFTS_DIR", tmp_path / "drafts")
+        mocker.patch("scripts.classify.draft_taxonomy.CONFIG_DIR", config_dir)
+        mocker.patch("typer.confirm", return_value=True)
+
+        run_draft(theme_map_file=str(theme_map_file), dry_run=False)
+
+        local = config_dir / "taxonomy.local.yaml"
+        assert local.exists()
+        parsed = yaml.safe_load(local.read_text())
+        assert "NewTopic" in parsed["taxonomy"]["resources"]["subfolders"]
+
     def test_confirm_skipped_in_json_output_mode(
         self,
         mocker: MagicMock,
@@ -749,6 +805,62 @@ class TestRunDraftExportOrdering:
         assert content.index("Zebra") < content.index("Alpha")
 
 
+class TestDeriveRoleKey:
+    def test_well_known_name(self) -> None:
+        assert _derive_role_key("Projects", set()) == "projects"
+        assert _derive_role_key("Archive", set()) == "archive"
+        assert _derive_role_key("Inbox", set()) == "inbox"
+
+    def test_case_insensitive(self) -> None:
+        assert _derive_role_key("INBOX", set()) == "inbox"
+        assert _derive_role_key("areas of responsibility", set()) == "areas"
+
+    def test_avoids_collision(self) -> None:
+        # "projects" is taken; should fall back to slug
+        assert _derive_role_key("Projects", {"projects"}) == "projects_2"
+
+    def test_unknown_folder_slugified(self) -> None:
+        key = _derive_role_key("My Custom Folder", set())
+        assert key == "my_custom_folder"
+
+    def test_slug_collision_incremented(self) -> None:
+        key = _derive_role_key("My Folder", {"my_folder", "my_folder_2"})
+        assert key == "my_folder_3"
+
+
+class TestAddMissingTopLevelFolders:
+    def _con(self) -> Console:
+        return Console(quiet=True)
+
+    def test_adds_missing_folder(self) -> None:
+        taxonomy = {"taxonomy": {"inbox": {"folder": "Inbox"}, "areas": {"folder": "Areas"}}}
+        result = _add_missing_top_level_folders(
+            taxonomy, ["Inbox", "Areas", "Projects"], self._con()
+        )
+        fn = result["taxonomy"]
+        assert "Projects" in {e.get("folder") for e in fn.values() if isinstance(e, dict)}
+
+    def test_derived_key_for_known_name(self) -> None:
+        taxonomy = {"taxonomy": {"inbox": {"folder": "Inbox"}}}
+        result = _add_missing_top_level_folders(taxonomy, ["Inbox", "Projects"], self._con())
+        assert "projects" in result["taxonomy"]
+
+    def test_no_change_when_all_present(self) -> None:
+        taxonomy = {"taxonomy": {"inbox": {"folder": "Inbox"}, "areas": {"folder": "Areas"}}}
+        result = _add_missing_top_level_folders(taxonomy, ["Inbox", "Areas"], self._con())
+        assert result is taxonomy  # same object — no copy made
+
+    def test_original_unchanged_when_folders_added(self) -> None:
+        taxonomy = {"taxonomy": {"inbox": {"folder": "Inbox"}}}
+        _add_missing_top_level_folders(taxonomy, ["Inbox", "Projects"], self._con())
+        assert "projects" not in taxonomy["taxonomy"]  # original not mutated
+
+    def test_empty_folder_list(self) -> None:
+        taxonomy = {"taxonomy": {"inbox": {"folder": "Inbox"}}}
+        result = _add_missing_top_level_folders(taxonomy, [], self._con())
+        assert result is taxonomy
+
+
 class TestTopLevelFolders:
     def test_extracts_unique_top_level(self) -> None:
         paths = ["Areas/Finance", "Areas/Household", "Resources/Cooking", "Archive"]
@@ -849,11 +961,15 @@ class TestRunDraftBootstrap:
 
         # Provider should have been called for the bootstrap mapping
         mock_llm_provider.classify_messages.assert_called_once()
-        # Draft file should be written with the bootstrapped taxonomy
+        # Draft file must contain both top-level entries AND export subfolders.
         drafts = list((tmp_path / "drafts").glob("*.yaml"))
         assert len(drafts) == 1
-        content = drafts[0].read_text()
-        assert "Areas" in content
+        parsed = yaml.safe_load(drafts[0].read_text())
+        fn = parsed["taxonomy"]
+        assert "Finance" in fn["areas"]["subfolders"], "Areas/Finance from export must be in draft"
+        assert "Cooking" in fn["resources"]["subfolders"], (
+            "Resources/Cooking from export must be in draft"
+        )
 
     def test_bootstrap_skipped_when_local_taxonomy_exists(
         self,
@@ -923,6 +1039,256 @@ class TestRunDraftBootstrap:
 
         # Should fall back gracefully without calling the provider
         mock_llm_provider.classify_messages.assert_not_called()
+
+    def test_bootstrap_subfolders_written_to_taxonomy_on_confirm(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+        mock_llm_provider: MagicMock,
+    ) -> None:
+        """Confirming the draft writes both top-level roles and export subfolders to taxonomy.local.yaml."""
+        export_file = self._make_export(tmp_path)
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        theme_map_file = tmp_path / "themes-test.json"
+        theme_map_file.write_text(
+            json.dumps(
+                {
+                    **_make_theme_map(
+                        [
+                            {
+                                "name": "Finance",
+                                "suggested_path": "Areas/Finance",
+                                "estimated_count": 10,
+                            }
+                        ]
+                    ),
+                    "source_export": str(export_file),
+                }
+            )
+        )
+        mock_llm_provider.classify_messages.return_value = (
+            '{"areas": "Areas", "resources": "Resources", "archive": "Archive"}'
+        )
+        mocker.patch("scripts.classify.draft_taxonomy.load_settings", return_value=minimal_settings)
+        mocker.patch("scripts.classify.draft_taxonomy.local_taxonomy_exists", return_value=False)
+        mocker.patch("scripts.classify.draft_taxonomy.get_provider", return_value=mock_llm_provider)
+        mocker.patch("scripts.classify.draft_taxonomy.TAXONOMY_DRAFTS_DIR", tmp_path / "drafts")
+        mocker.patch("scripts.classify.draft_taxonomy.CONFIG_DIR", config_dir)
+        mocker.patch("typer.confirm", return_value=True)
+
+        run_draft(theme_map_file=str(theme_map_file), dry_run=False)
+
+        local = config_dir / "taxonomy.local.yaml"
+        assert local.exists(), "taxonomy.local.yaml should be written when confirmed"
+        parsed = yaml.safe_load(local.read_text())
+        fn = parsed["taxonomy"]
+        assert "Finance" in fn["areas"]["subfolders"], (
+            "Areas/Finance must be in taxonomy.local.yaml"
+        )
+        assert "Cooking" in fn["resources"]["subfolders"], (
+            "Resources/Cooking must be in taxonomy.local.yaml"
+        )
+
+
+class TestRunDraftAutoAddMissingFolders:
+    """Folders present in the export but absent from the bootstrap/taxonomy are auto-added."""
+
+    def test_bootstrap_incomplete_folders_auto_added(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+        mock_llm_provider: MagicMock,
+    ) -> None:
+        """LLM bootstrap omits Projects; auto-add fills it in and includes its subfolder."""
+        export_file = tmp_path / "notes-test.json"
+        export_file.write_text(
+            json.dumps(
+                [
+                    {"id": "1", "title": "Note A", "folder_path": "Areas/Finance"},
+                    {"id": "2", "title": "Note B", "folder_path": "Projects/Web App"},
+                    {"id": "3", "title": "Note C", "folder_path": "Archive"},
+                ]
+            )
+        )
+        theme_map_file = tmp_path / "themes-test.json"
+        theme_map_file.write_text(
+            json.dumps({**_make_theme_map([]), "source_export": str(export_file)})
+        )
+        # LLM only returns 2/3 top-level folders — Projects is omitted
+        mock_llm_provider.classify_messages.return_value = (
+            '{"areas": "Areas", "archive": "Archive"}'
+        )
+        mocker.patch("scripts.classify.draft_taxonomy.load_settings", return_value=minimal_settings)
+        mocker.patch("scripts.classify.draft_taxonomy.local_taxonomy_exists", return_value=False)
+        mocker.patch("scripts.classify.draft_taxonomy.get_provider", return_value=mock_llm_provider)
+        mocker.patch("scripts.classify.draft_taxonomy.TAXONOMY_DRAFTS_DIR", tmp_path / "drafts")
+        mocker.patch("typer.confirm", return_value=False)
+
+        run_draft(theme_map_file=str(theme_map_file), dry_run=False)
+
+        drafts = list((tmp_path / "drafts").glob("*.yaml"))
+        assert len(drafts) == 1
+        parsed = yaml.safe_load(drafts[0].read_text())
+        fn = parsed["taxonomy"]
+        folder_names = {e.get("folder") for e in fn.values() if isinstance(e, dict)}
+        assert "Projects" in folder_names, "Projects should be auto-added from export"
+        # The subfolder under Projects should also be present
+        projects_entry = next(
+            e for e in fn.values() if isinstance(e, dict) and e.get("folder") == "Projects"
+        )
+        assert "Web App" in projects_entry.get("subfolders", [])
+
+    def test_existing_incomplete_taxonomy_gets_missing_folders(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+    ) -> None:
+        """Re-run with an existing 3-folder taxonomy: export's missing top-level folders are added."""
+        # Simulates the user's reported scenario: taxonomy.local.yaml exists but
+        # Projects and Archive are absent from it.
+        partial_taxonomy = {
+            "taxonomy": {
+                "inbox": {"folder": "Inbox"},
+                "areas": {"folder": "Areas"},
+                "resources": {"folder": "Resources"},
+            }
+        }
+        export_file = tmp_path / "notes-test.json"
+        export_file.write_text(
+            json.dumps(
+                [
+                    {"id": "1", "title": "Note A", "folder_path": "Inbox"},
+                    {"id": "2", "title": "Note B", "folder_path": "Projects/Web App"},
+                    {"id": "3", "title": "Note C", "folder_path": "Areas/Finance"},
+                    {"id": "4", "title": "Note D", "folder_path": "Archive/Old Work"},
+                ]
+            )
+        )
+        theme_map_file = tmp_path / "themes-test.json"
+        theme_map_file.write_text(
+            json.dumps({**_make_theme_map([]), "source_export": str(export_file)})
+        )
+        mocker.patch("scripts.classify.draft_taxonomy.load_settings", return_value=minimal_settings)
+        mocker.patch("scripts.classify.draft_taxonomy.load_taxonomy", return_value=partial_taxonomy)
+        mocker.patch("scripts.classify.draft_taxonomy.local_taxonomy_exists", return_value=True)
+        mocker.patch("scripts.classify.draft_taxonomy.TAXONOMY_DRAFTS_DIR", tmp_path / "drafts")
+        mocker.patch("typer.confirm", return_value=False)
+
+        run_draft(theme_map_file=str(theme_map_file), dry_run=False)
+
+        drafts = list((tmp_path / "drafts").glob("*.yaml"))
+        assert len(drafts) == 1
+        parsed = yaml.safe_load(drafts[0].read_text())
+        fn = parsed["taxonomy"]
+        folder_names = {e.get("folder") for e in fn.values() if isinstance(e, dict)}
+        assert "Projects" in folder_names, "Projects should be auto-added"
+        assert "Archive" in folder_names, "Archive should be auto-added"
+        # And their subfolders
+        projects_entry = next(
+            e for e in fn.values() if isinstance(e, dict) and e.get("folder") == "Projects"
+        )
+        archive_entry = next(
+            e for e in fn.values() if isinstance(e, dict) and e.get("folder") == "Archive"
+        )
+        assert "Web App" in projects_entry.get("subfolders", [])
+        assert "Old Work" in archive_entry.get("subfolders", [])
+
+    def test_stale_established_paths_do_not_block_subfolders(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+    ) -> None:
+        """Subfolders in the theme map's established_paths are still added if absent from the current taxonomy."""
+        # Scenario: discover ran when taxonomy had "Resources/Cooking"; taxonomy was then
+        # reset to top-level only. Re-running draft should re-add "Resources/Cooking".
+        taxonomy_top_level_only = {
+            "taxonomy": {
+                "resources": {"folder": "Resources"},
+                "archive": {"folder": "Archive"},
+            }
+        }
+        export_file = tmp_path / "notes-test.json"
+        export_file.write_text(
+            json.dumps(
+                [{"id": "1", "title": "Pasta", "body": "x", "folder_path": "Resources/Cooking"}]
+            )
+        )
+        theme_map_file = tmp_path / "themes-test.json"
+        # established_paths contains Resources/Cooking from the old taxonomy
+        theme_map_file.write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-01-01T00:00:00+00:00",
+                    "source_export": str(export_file),
+                    "total_notes": 1,
+                    "subfolder_threshold": 8,
+                    "established_paths": ["Resources/Cooking"],  # stale — not in current taxonomy
+                    "themes": [],
+                    "new_paths": [],
+                    "above_threshold": 0,
+                    "below_threshold": 0,
+                }
+            )
+        )
+        mocker.patch("scripts.classify.draft_taxonomy.load_settings", return_value=minimal_settings)
+        mocker.patch(
+            "scripts.classify.draft_taxonomy.load_taxonomy", return_value=taxonomy_top_level_only
+        )
+        mocker.patch("scripts.classify.draft_taxonomy.local_taxonomy_exists", return_value=True)
+        mocker.patch("scripts.classify.draft_taxonomy.TAXONOMY_DRAFTS_DIR", tmp_path / "drafts")
+        mocker.patch("typer.confirm", return_value=False)
+
+        run_draft(theme_map_file=str(theme_map_file), dry_run=False)
+
+        drafts = list((tmp_path / "drafts").glob("*.yaml"))
+        assert len(drafts) == 1, (
+            "Draft should be written — stale established_paths must not block it"
+        )
+        parsed = yaml.safe_load(drafts[0].read_text())
+        assert "Cooking" in parsed["taxonomy"]["resources"]["subfolders"]
+
+
+class TestRunDraftSourceExportWarning:
+    """Missing source_export emits a warning but does not prevent the draft from being written."""
+
+    def test_missing_source_export_still_writes_draft(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_taxonomy: dict,
+        minimal_settings: dict,
+    ) -> None:
+        theme_map_file = tmp_path / "themes-test.json"
+        theme_map_file.write_text(
+            json.dumps(
+                {
+                    **_make_theme_map(
+                        [
+                            {
+                                "name": "Finance",
+                                "suggested_path": "Resources/Finance",
+                                "estimated_count": 10,
+                            }
+                        ]
+                    ),
+                    "source_export": str(tmp_path / "nonexistent-export.json"),
+                }
+            )
+        )
+        _patch_draft(mocker, tmp_path, minimal_taxonomy, minimal_settings)
+
+        run_draft(theme_map_file=str(theme_map_file), dry_run=False)
+
+        # LLM-suggested path (above threshold) still makes it into the draft
+        drafts = list((tmp_path / "drafts").glob("*.yaml"))
+        assert len(drafts) == 1, "Draft should still be written despite missing source export"
+        content = drafts[0].read_text()
+        assert "Finance" in content
 
 
 class TestFindLatestThemeMap:

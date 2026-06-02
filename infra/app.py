@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -51,7 +52,7 @@ def main() -> None:
         app,
         "AwsLlmStack",
         aws_config=aws_config,
-        env=cdk.Environment(region=region),
+        env=cdk.Environment(account=os.getenv("CDK_DEFAULT_ACCOUNT"), region=region),
     )
     app.synth()
 

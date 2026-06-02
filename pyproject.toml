@@ -27,6 +27,7 @@ dependencies = [
     "openai>=1.50",
     "python-dotenv>=1.0",
     "pyyaml>=6.0",
+    "questionary>=2.0",
     "thefuzz>=0.22",
     "typer>=0.15",
     "rich>=13.0",

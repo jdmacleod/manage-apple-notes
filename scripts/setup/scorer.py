@@ -142,7 +142,7 @@ def _build_rationale(
     # Goal-driven opener
     goal_map = {
         1: "Your primary focus on tasks and commitments",
-        2: "Your need for fast retrieval",
+        2: "Your focus on keeping active work clearly organised",
         3: "Your goal of developing ideas over time",
     }
     if q1 in goal_map:

@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from statistics import mean
 
+import questionary
 import typer
 import yaml
 from rich.console import Console
@@ -134,34 +135,76 @@ def _ask_numbered(question: str, options: list[str]) -> int:
 # ── Folder name collection ─────────────────────────────────────────────────────
 
 
-def _collect_folder_names(framework_key: str) -> dict[str, str]:
-    """Prompt for a folder name for each category in the chosen framework."""
+def _collect_folder_names(framework_key: str, existing_folders: list[str]) -> dict[str, str]:
+    """Prompt for a folder name for each category in the chosen framework.
+
+    When existing_folders is non-empty, uses questionary.autocomplete() so the
+    user can pick an existing Apple Notes folder or type a new name. Falls back
+    to plain typer.prompt() when no folder list is available.
+    """
     fw = get_framework(framework_key)
-    con.print(
-        "\n[bold]Name your folders.[/bold]  Press Enter to accept the default, "
-        "or type your preferred name.\n"
-    )
+    if existing_folders:
+        con.print(
+            "\n[bold]Name your folders.[/bold]  Select an existing folder or type a new name.\n"
+        )
+    else:
+        con.print(
+            "\n[bold]Name your folders.[/bold]  Press Enter to accept the default, "
+            "or type your preferred name.\n"
+        )
     folder_map: dict[str, str] = {}
     for key in fw["category_keys"]:
         default = fw["canonical_names"][key]
         prompt_label = fw["category_prompts"][key]
-        name = typer.prompt(f"  {prompt_label}", default=default).strip()
-        folder_map[key] = name or default
+        if existing_folders:
+            answer = questionary.autocomplete(
+                f"  {prompt_label}",
+                choices=existing_folders,
+                default=default,
+            ).ask()
+            if answer is None:
+                raise typer.Abort()
+            name = answer.strip() or default
+        else:
+            name = typer.prompt(f"  {prompt_label}", default=default).strip() or default
+        folder_map[key] = name
     return folder_map
 
 
-def _collect_existing_folders() -> dict[str, str]:
-    """For the Existing path: map user's current folders to category keys."""
+def _collect_existing_folders(existing_folders: list[str]) -> dict[str, str]:
+    """For the Existing path: map user's current folders to category keys.
+
+    When existing_folders is non-empty, uses questionary.select() so the user
+    can pick directly from their Apple Notes folders. Falls back to typer.prompt()
+    when no folder list is available.
+    """
     mapping_prompts = FRAMEWORKS["EXISTING"]["mapping_prompts"]
-    con.print(
-        "\n[bold]Let's map your existing folders.[/bold]  "
-        "Enter your folder name for each role, or press Enter to skip.\n"
-    )
+    if existing_folders:
+        con.print(
+            "\n[bold]Map your existing folders to each role.[/bold]  "
+            "Select your Apple Notes folder for each role.\n"
+        )
+    else:
+        con.print(
+            "\n[bold]Map your existing folders to each role.[/bold]  "
+            "Type your Apple Notes folder name for each role, or press Enter to skip.\n"
+        )
     folder_map: dict[str, str] = {}
+    _skip = "--- skip ---"
     for key, prompt in mapping_prompts.items():
-        name = typer.prompt(f"  {prompt}", default="").strip()
-        if name:
-            folder_map[key] = name
+        if existing_folders:
+            answer = questionary.select(
+                f"  {prompt}",
+                choices=existing_folders + [_skip],
+            ).ask()
+            if answer is None:
+                raise typer.Abort()
+            if answer != _skip:
+                folder_map[key] = answer
+        else:
+            name = typer.prompt(f"  {prompt}", default="").strip()
+            if name:
+                folder_map[key] = name
     return folder_map
 
 
@@ -209,9 +252,11 @@ def _gtd_categories_snippet() -> str:
     )
 
 
-# ── Account detection ──────────────────────────────────────────────────────────
+# ── Account and folder detection ──────────────────────────────────────────────
 
 _LIST_ACCOUNTS_SCRIPT = CONFIG_DIR.parent / "scripts" / "export" / "list-accounts.applescript"
+_LIST_FOLDERS_SCRIPT = CONFIG_DIR.parent / "scripts" / "export" / "list-folders.applescript"
+_SETUP_ACCOUNT_FILE = Path("/tmp/notes_setup_account.tmp")
 
 
 def _detect_accounts() -> list[str]:
@@ -232,6 +277,34 @@ def _detect_accounts() -> list[str]:
         return []
 
 
+def _fetch_top_level_folders(account: str | None) -> list[str]:
+    """Return top-level Apple Notes folder names via AppleScript, or [] on any failure.
+
+    Writes the account name to a temp file so the AppleScript can filter to one
+    account (same pattern as export-notes.applescript). Returns a sorted list.
+    """
+    if not _LIST_FOLDERS_SCRIPT.exists():
+        return []
+    try:
+        if account:
+            _SETUP_ACCOUNT_FILE.write_text(account)
+        else:
+            _SETUP_ACCOUNT_FILE.unlink(missing_ok=True)
+        result = subprocess.run(
+            ["osascript", str(_LIST_FOLDERS_SCRIPT)],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        _SETUP_ACCOUNT_FILE.unlink(missing_ok=True)
+        if result.returncode != 0:
+            return []
+        return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
+    except Exception:
+        _SETUP_ACCOUNT_FILE.unlink(missing_ok=True)
+        return []
+
+
 def _handle_multiple_accounts(accounts: list[str]) -> str:
     """Display a multiple-accounts panel and return the account the user selects."""
     account_list = "\n".join(f"  {i + 1}) {a}" for i, a in enumerate(accounts))
@@ -249,7 +322,9 @@ def _handle_multiple_accounts(accounts: list[str]) -> str:
         )
     )
     selected = _ask_numbered("Which account do you want to organise?", accounts)
-    return accounts[selected - 1]
+    account = accounts[selected - 1]
+    con.print(f"  [dim]Selected {selected}) {account}[/dim]")
+    return account
 
 
 def _write_primary_account_to_settings(account: str, dry_run: bool) -> None:
@@ -468,7 +543,7 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
         )
     )
 
-    # ── Phase 0: Account detection ─────────────────────────────────────────────
+    # ── Phase 0: Account detection + folder list ──────────────────────────────
     accounts = _detect_accounts()
     selected_account: str | None = None
     if len(accounts) > 1:
@@ -481,6 +556,11 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
             "(System Settings → Privacy & Security → Automation) before running "
             "notes export if you haven't already.[/dim]\n"
         )
+
+    # Fetch top-level folder names for the picker in Phase 5.
+    # Best-effort: empty list falls back to plain text prompts.
+    _primary = selected_account or (accounts[0] if accounts else None)
+    existing_folders = _fetch_top_level_folders(_primary)
 
     # ── Phase 1: Corpus analysis ───────────────────────────────────────────────
     corpus: dict | None = None
@@ -502,7 +582,7 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
         "What matters most to you going forward?",
         [
             "Get on top of tasks and commitments — I need clarity on what to do next",
-            "Find anything instantly — organisation and retrieval is the main problem",
+            "Keep active work organised — I want clear structure for projects, responsibilities, and reference material",
             "Develop ideas over time — I want my notes to think with me",
             "My current system mostly works — I want small improvements, not an overhaul",
         ],
@@ -580,10 +660,10 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
 
     # ── Phase 5: Collect folder names ─────────────────────────────────────────
     if winner == "EXISTING":
-        folder_map = _collect_existing_folders()
+        folder_map = _collect_existing_folders(existing_folders)
         taxonomy_yaml = _build_existing_taxonomy_yaml(folder_map)
     else:
-        folder_map = _collect_folder_names(winner)
+        folder_map = _collect_folder_names(winner, existing_folders)
         taxonomy_yaml = _build_taxonomy_yaml(winner, folder_map)
 
     # ── Phase 6: Write config files ────────────────────────────────────────────
