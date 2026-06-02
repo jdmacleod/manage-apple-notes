@@ -9,6 +9,7 @@ from scripts.json_utils import (
     extract_json_object,
     is_context_overflow,
     is_locale_error,
+    strip_unsupported_chars,
 )
 
 
@@ -95,3 +96,35 @@ class TestIsLocaleError:
 
     def test_empty_message_is_false(self) -> None:
         assert is_locale_error(Exception("")) is False
+
+
+class TestStripUnsupportedChars:
+    def test_ascii_text_unchanged(self) -> None:
+        assert strip_unsupported_chars("Hello world!") == "Hello world!"
+
+    def test_latin_extended_preserved(self) -> None:
+        # accented chars (U+00E9, U+00F1, U+00FC) are within U+0000-U+024F
+        assert strip_unsupported_chars("café résumé naïve") == "café résumé naïve"
+
+    def test_cjk_replaced_and_spaces_collapsed(self) -> None:
+        result = strip_unsupported_chars("Hello 日本語 world")
+        assert result == "Hello world"
+
+    def test_arabic_stripped(self) -> None:
+        result = strip_unsupported_chars("test مرحبا end")
+        assert result == "test end"
+
+    def test_empty_string_returns_empty(self) -> None:
+        assert strip_unsupported_chars("") == ""
+
+    def test_common_unicode_punctuation_preserved(self) -> None:
+        # curly quotes, em dash, ellipsis
+        assert strip_unsupported_chars("it’s “great”—really…") == ("it’s “great”—really…")
+
+    def test_mixed_script_collapses_to_single_spaces(self) -> None:
+        result = strip_unsupported_chars("Title 日本語 and 中文 content")
+        assert result == "Title and content"
+
+    def test_all_unsupported_returns_empty(self) -> None:
+        result = strip_unsupported_chars("日本語")
+        assert result == ""

@@ -34,7 +34,12 @@ from scripts.folder_utils import (
     path_depth,
 )
 from scripts.json_output import emit_result
-from scripts.json_utils import extract_json_object, is_context_overflow, is_locale_error
+from scripts.json_utils import (
+    extract_json_object,
+    is_context_overflow,
+    is_locale_error,
+    strip_unsupported_chars,
+)
 from scripts.providers import LLMProvider, get_max_tokens, get_provider
 from scripts.run_logger import RunLogger, estimate_duration, logs_dir_path
 
@@ -186,6 +191,19 @@ def inject_discover_taxonomy(
     )
 
 
+def _sanitize_batch_for_locale(batch: list[dict]) -> list[dict]:
+    """Strip unsupported characters from user-visible text fields in a discover batch."""
+    return [
+        {
+            **item,
+            "title": strip_unsupported_chars(item.get("title") or ""),
+            "excerpt": strip_unsupported_chars(item.get("excerpt") or ""),
+            "folder_path": strip_unsupported_chars(item.get("folder_path") or ""),
+        }
+        for item in batch
+    ]
+
+
 def _discover_batch(
     provider: LLMProvider,
     system_prompt: str,
@@ -218,12 +236,32 @@ def _discover_batch(
                 provider, system_prompt, batch[mid:], con=_con, max_tokens=max_tokens
             )
         if is_locale_error(exc):
+            sanitized = _sanitize_batch_for_locale(batch)
+            has_content = any(
+                (item.get("title") or "").strip() or (item.get("excerpt") or "").strip()
+                for item in sanitized
+            )
+            if has_content:
+                _con.print(
+                    f"[yellow]Locale error — retrying {len(batch)}-note batch"
+                    " with unsupported characters stripped[/yellow]"
+                )
+                try:
+                    response = provider.classify_messages(
+                        system_prompt,
+                        json.dumps(sanitized, indent=2, ensure_ascii=False),
+                        max_tokens=max_tokens,
+                    )
+                    result = extract_json_object(response)
+                    return list(result.get("themes") or [])
+                except Exception:
+                    pass
             _con.print(
                 f"[yellow]Warning:[/yellow] skipping discover batch of {len(batch)}"
                 " — Apple Intelligence locale error (unsupported characters)"
             )
-        else:
-            _con.print(f"[yellow]Warning:[/yellow] skipping discover batch of {len(batch)} — {exc}")
+            return []
+        _con.print(f"[yellow]Warning:[/yellow] skipping discover batch of {len(batch)} — {exc}")
         return []
 
 

@@ -11,6 +11,7 @@ import pytest
 from scripts.classify.discover_themes import (
     _discover_batch,
     _export_folder_tree,
+    _sanitize_batch_for_locale,
     inject_discover_taxonomy,
     run_discover,
 )
@@ -229,10 +230,43 @@ class TestDiscoverBatch:
         result = _discover_batch(mock_llm_provider, "system", batch)
         assert len(result) == 2
 
-    def test_locale_error_returns_empty_not_raises(self, mock_llm_provider: MagicMock) -> None:
+    def test_locale_error_all_cjk_skips_retry_returns_empty(
+        self, mock_llm_provider: MagicMock
+    ) -> None:
+        # title strips to "" → has_content is False → no retry
         mock_llm_provider.classify_messages.side_effect = RuntimeError("apple_unsupported_locale")
         result = _discover_batch(mock_llm_provider, "system", [{"id": "1", "title": "日本語"}])
         assert result == []
+        mock_llm_provider.classify_messages.assert_called_once()
+
+    def test_locale_error_retries_with_sanitized_content(
+        self, mock_llm_provider: MagicMock
+    ) -> None:
+        # First call raises locale error (mixed content); retry with sanitized succeeds.
+        call_count = 0
+
+        def side_effect(system: str, user: str, **kwargs: object) -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("apple_unsupported_locale")
+            return json.dumps({"themes": [{"name": "Technology", "estimated_count": 5}]})
+
+        mock_llm_provider.classify_messages.side_effect = side_effect
+        batch = [{"id": "1", "title": "Tech note 日本語", "excerpt": "Hello world"}]
+        result = _discover_batch(mock_llm_provider, "system", batch)
+        assert result == [{"name": "Technology", "estimated_count": 5}]
+        assert call_count == 2
+
+    def test_locale_error_retry_also_fails_returns_empty(
+        self, mock_llm_provider: MagicMock
+    ) -> None:
+        # Both the original and sanitized retry fail; batch is skipped.
+        mock_llm_provider.classify_messages.side_effect = RuntimeError("apple_unsupported_locale")
+        batch = [{"id": "1", "title": "Tech note 日本語", "excerpt": "Hello world"}]
+        result = _discover_batch(mock_llm_provider, "system", batch)
+        assert result == []
+        assert mock_llm_provider.classify_messages.call_count == 2
 
     def test_unrecognised_error_returns_empty_not_raises(
         self, mock_llm_provider: MagicMock
@@ -240,6 +274,49 @@ class TestDiscoverBatch:
         mock_llm_provider.classify_messages.side_effect = RuntimeError("connection reset")
         result = _discover_batch(mock_llm_provider, "system", [{"id": "1", "title": "A"}])
         assert result == []
+
+
+class TestSanitizeBatchForLocale:
+    def test_strips_cjk_from_title_and_excerpt(self) -> None:
+        batch = [
+            {"id": "1", "title": "Note 日本語", "excerpt": "Content 中文", "folder_path": "Inbox"}
+        ]
+        result = _sanitize_batch_for_locale(batch)
+        assert result[0]["title"] == "Note"
+        assert result[0]["excerpt"] == "Content"
+        assert result[0]["folder_path"] == "Inbox"
+        assert result[0]["id"] == "1"
+
+    def test_preserves_ascii_fields_unchanged(self) -> None:
+        batch = [{"id": "1", "title": "Hello", "excerpt": "World", "folder_path": "Resources"}]
+        result = _sanitize_batch_for_locale(batch)
+        assert result[0] == {
+            "id": "1",
+            "title": "Hello",
+            "excerpt": "World",
+            "folder_path": "Resources",
+        }
+
+    def test_handles_missing_fields_gracefully(self) -> None:
+        batch = [{"id": "1"}]
+        result = _sanitize_batch_for_locale(batch)
+        assert result[0]["title"] == ""
+        assert result[0]["excerpt"] == ""
+        assert result[0]["folder_path"] == ""
+
+    def test_preserves_non_text_fields(self) -> None:
+        batch = [
+            {
+                "id": "abc-123",
+                "title": "Note",
+                "excerpt": "body",
+                "folder_path": "Inbox",
+                "extra": 42,
+            }
+        ]
+        result = _sanitize_batch_for_locale(batch)
+        assert result[0]["id"] == "abc-123"
+        assert result[0]["extra"] == 42
 
 
 class TestRunDiscover:

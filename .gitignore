@@ -31,3 +31,6 @@ dist/
 # Swift build artifacts
 swift/apple-llm/.build/
 
+# AWS deployment artifacts
+cdk.context.json
+cdk.out/
