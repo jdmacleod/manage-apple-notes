@@ -97,6 +97,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code quality requi
 
 - [GUIDE.md](GUIDE.md) — full setup for all providers, AWS CDK, Apple Intelligence build steps, privacy details
 - [docs/setup.md](docs/setup.md) — framework comparison, corpus signals, manual config editing
+- [docs/para-method.md](docs/para-method.md) — PARA method guide (two taxonomy designs)
+- [docs/gtd-method.md](docs/gtd-method.md) — GTD method guide (two taxonomy designs)
+- [docs/forever-notes-framework.md](docs/forever-notes-framework.md) — Forever Notes / Zettelkasten framework reference
 - [docs/runbooks/main-workflow.md](docs/runbooks/main-workflow.md) — step-by-step workflow
 - [docs/](docs/) — technical notes, security considerations, runbooks
 

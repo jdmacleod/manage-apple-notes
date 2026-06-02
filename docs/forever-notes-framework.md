@@ -33,7 +33,8 @@ categories appear in your ✱ Home note.
 
 Users who prefer PARA can start from `config/taxonomy.para.yaml`; GTD users can start from
 `config/taxonomy.gtd.yaml`. See [`docs/para-method.md`](para-method.md) for PARA guidance and
-both minimalist and expanded designs. Or run `uv run notes setup` to choose interactively.
+[`docs/gtd-method.md`](gtd-method.md) for GTD guidance — both include minimalist and expanded
+designs. Or run `uv run notes setup` to choose interactively.
 
 ---
 

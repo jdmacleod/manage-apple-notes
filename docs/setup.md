@@ -91,6 +91,8 @@ uv run notes move      # apply the approved proposal
 
 GTD uses category keys (`next_actions`, `waiting_for`, `someday_maybe`, `reference`) that are not in the built-in defaults. When GTD is chosen, `notes setup` prints a YAML snippet to add to the `categories:` block of `config/settings.local.yaml` so the classifier and audit use the correct descriptions.
 
+See [`docs/gtd-method.md`](gtd-method.md) for a full explanation of the GTD categories, two ready-to-use taxonomy designs, and guidance on adapting the system for Apple Notes.
+
 Example snippet:
 
 ```yaml

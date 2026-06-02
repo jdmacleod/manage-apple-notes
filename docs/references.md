@@ -19,7 +19,7 @@ Apple Notes stores all note content in `~/Library/Group Containers/group.com.app
 
 ---
 
-## Note Organisation Frameworks
+## Note Organization Frameworks
 
 | Reference | Notes |
 |-----------|-------|
@@ -27,6 +27,8 @@ Apple Notes stores all note content in `~/Library/Group Containers/group.com.app
 | [myforevernotes.com — Framework Documentation](https://www.myforevernotes.com/docs/home) | Full specification of the Forever Notes taxonomy (Inbox, Fleeting, Literature, Permanent, Projects, Areas, Resources, Archive, Review) and the Zettelkasten-influenced design rationale |
 | [The PARA Method — Tiago Forte (Forte Labs)](https://fortelabs.com/blog/para/) | Original article defining PARA (Projects, Areas, Resources, Archive); basis for `config/taxonomy.para.yaml` and `docs/para-method.md` |
 | [The PARA Method — Book (Building a Second Brain)](https://www.buildingasecondbrain.com/para) | Book-length treatment of PARA; reference for the expanded taxonomy design (per-project subfolders, differentiated Resources lanes) |
+| [Getting Things Done — David Allen (gettingthingsdone.com)](https://gettingthingsdone.com) | Canonical source for the GTD system; defines the five-stage workflow (capture, clarify, organize, reflect, engage) and the seven-category taxonomy; basis for `config/taxonomy.gtd.yaml` and `docs/gtd-method.md` |
+| [Getting Things Done — Book (Penguin Random House)](https://www.penguinrandomhouse.com/books/303727/getting-things-done-by-david-allen/) | Book-length treatment of GTD; reference for the weekly review process and the action/project/reference distinction |
 
 ---
 

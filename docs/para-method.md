@@ -324,6 +324,8 @@ of your taxonomy file.
 - [config/taxonomy.zettelkasten.yaml](../config/taxonomy.zettelkasten.yaml) — Zettelkasten / Forever Notes taxonomy template
 - [config/taxonomy.para.yaml](../config/taxonomy.para.yaml) — PARA taxonomy template
 - [config/taxonomy.gtd.yaml](../config/taxonomy.gtd.yaml) — GTD taxonomy template
+- [docs/gtd-method.md](gtd-method.md) — GTD method guide
+- [docs/forever-notes-framework.md](forever-notes-framework.md) — Forever Notes framework reference
 - [PLAN.md](../PLAN.md) — full implementation plan including classification pipeline and
   Forever Notes strict mode
 
