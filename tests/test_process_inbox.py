@@ -174,3 +174,45 @@ class TestRunInbox:
         run_inbox(dry_run=True)
 
         mock_llm_provider.classify_messages.assert_not_called()
+
+    def test_locale_error_does_not_crash_triage(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+        mock_llm_provider: MagicMock,
+    ) -> None:
+        notes = [
+            {
+                "id": "p1",
+                "title": "日本語タイトル",
+                "body": "本文テスト",
+                "folder": "Inbox",
+                "folder_path": "Inbox",
+            }
+        ]
+        export_file = tmp_path / "notes-test.json"
+        export_file.write_text(json.dumps(notes))
+
+        taxonomy = {"taxonomy": {"inbox": {"folder": "Inbox"}}}
+        mocker.patch(
+            "scripts.maintenance.process_inbox.load_settings", return_value=minimal_settings
+        )
+        mocker.patch("scripts.maintenance.process_inbox.load_taxonomy", return_value=taxonomy)
+        mocker.patch(
+            "scripts.maintenance.process_inbox.find_latest_export", return_value=export_file
+        )
+        mocker.patch(
+            "scripts.maintenance.process_inbox.load_prompt_template",
+            return_value="{CATEGORY_LIST} {CATCHALL}",
+        )
+        mocker.patch(
+            "scripts.maintenance.process_inbox.inject_taxonomy", return_value="injected prompt"
+        )
+        mock_llm_provider.classify_messages.side_effect = RuntimeError("apple_unsupported_locale")
+        mocker.patch(
+            "scripts.maintenance.process_inbox.get_provider", return_value=mock_llm_provider
+        )
+
+        # Must not raise — locale error is handled gracefully by classify_batch_resilient
+        run_inbox(dry_run=False)

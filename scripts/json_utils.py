@@ -52,3 +52,8 @@ def is_context_overflow(exc: Exception) -> bool:
             "maximum context",
         )
     )
+
+
+def is_locale_error(exc: Exception) -> bool:
+    """Return True if the exception indicates an Apple Intelligence unsupported-locale error."""
+    return "apple_unsupported_locale" in str(exc)

@@ -405,6 +405,26 @@ class TestClassifyBatchResilient:
         result = classify_batch_resilient(mock_llm_provider, notes, "prompt", {})
         assert result == []
 
+    def test_locale_error_single_note_skipped(self, mock_llm_provider: MagicMock) -> None:
+        notes = [{"id": "1", "title": "日本語タイトル", "body": "本文", "folder": "Inbox"}]
+        mock_llm_provider.classify_messages.side_effect = RuntimeError("apple_unsupported_locale")
+        result = classify_batch_resilient(mock_llm_provider, notes, "prompt", {})
+        assert result == []
+        mock_llm_provider.classify_messages.assert_called_once()
+
+    def test_locale_error_batch_skipped_without_splitting(
+        self, mock_llm_provider: MagicMock
+    ) -> None:
+        notes = [
+            {"id": "1", "title": "A", "body": "B", "folder": "Inbox"},
+            {"id": "2", "title": "日本語", "body": "本文", "folder": "Inbox"},
+        ]
+        mock_llm_provider.classify_messages.side_effect = RuntimeError("apple_unsupported_locale")
+        result = classify_batch_resilient(mock_llm_provider, notes, "prompt", {})
+        assert result == []
+        # Must NOT split — only one call, not recursive halving
+        assert mock_llm_provider.classify_messages.call_count == 1
+
 
 class TestRunClassify:
     def test_dry_run_makes_no_api_calls(

@@ -34,7 +34,7 @@ from scripts.folder_utils import (
     path_depth,
 )
 from scripts.json_output import emit_result
-from scripts.json_utils import extract_json_object, is_context_overflow
+from scripts.json_utils import extract_json_object, is_context_overflow, is_locale_error
 from scripts.providers import LLMProvider, get_max_tokens, get_provider
 from scripts.run_logger import RunLogger, estimate_duration, logs_dir_path
 
@@ -217,7 +217,14 @@ def _discover_batch(
             ) + _discover_batch(
                 provider, system_prompt, batch[mid:], con=_con, max_tokens=max_tokens
             )
-        raise
+        if is_locale_error(exc):
+            _con.print(
+                f"[yellow]Warning:[/yellow] skipping discover batch of {len(batch)}"
+                " — Apple Intelligence locale error (unsupported characters)"
+            )
+        else:
+            _con.print(f"[yellow]Warning:[/yellow] skipping discover batch of {len(batch)} — {exc}")
+        return []
 
 
 def run_discover(export_file: str | None, dry_run: bool, json_output: bool = False) -> None:

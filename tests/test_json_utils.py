@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.json_utils import extract_json_array, extract_json_object, is_context_overflow
+from scripts.json_utils import (
+    extract_json_array,
+    extract_json_object,
+    is_context_overflow,
+    is_locale_error,
+)
 
 
 class TestExtractJsonArray:
@@ -79,3 +84,14 @@ class TestIsContextOverflow:
 
     def test_empty_message(self) -> None:
         assert is_context_overflow(Exception("")) is False
+
+
+class TestIsLocaleError:
+    def test_detects_apple_unsupported_locale(self) -> None:
+        assert is_locale_error(RuntimeError("apple_unsupported_locale")) is True
+
+    def test_unrelated_error_is_false(self) -> None:
+        assert is_locale_error(Exception("context_length exceeded")) is False
+
+    def test_empty_message_is_false(self) -> None:
+        assert is_locale_error(Exception("")) is False

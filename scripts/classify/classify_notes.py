@@ -34,7 +34,7 @@ from scripts.folder_utils import (
     path_depth,
 )
 from scripts.json_output import emit_result
-from scripts.json_utils import extract_json_array, is_context_overflow
+from scripts.json_utils import extract_json_array, is_context_overflow, is_locale_error
 from scripts.providers import LLMProvider, get_max_tokens, get_provider
 from scripts.run_logger import RunLogger, estimate_duration, logs_dir_path
 
@@ -212,6 +212,21 @@ def classify_batch_resilient(
     try:
         return classify_batch(provider, notes_batch, system_prompt, settings)
     except Exception as exc:
+        # Locale errors: splitting won't help (the bad character is in a specific note).
+        # Skip the whole batch if > 1 so we don't waste N recursive calls; at size 1
+        # we already have the individual note — skip it with a clear message.
+        if is_locale_error(exc):
+            if len(notes_batch) == 1:
+                _con.print(
+                    f"[yellow]Warning:[/yellow] skipping note '{notes_batch[0].get('title', '')}'"
+                    " — Apple Intelligence locale error (unsupported characters)"
+                )
+            else:
+                _con.print(
+                    f"[yellow]Warning:[/yellow] skipping batch of {len(notes_batch)}"
+                    " — Apple Intelligence locale error; rerun with batch_size: 1 to skip only affected notes"
+                )
+            return []
         is_recoverable = is_context_overflow(exc) or isinstance(
             exc, (ValueError, json.JSONDecodeError)
         )

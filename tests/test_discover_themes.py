@@ -229,6 +229,18 @@ class TestDiscoverBatch:
         result = _discover_batch(mock_llm_provider, "system", batch)
         assert len(result) == 2
 
+    def test_locale_error_returns_empty_not_raises(self, mock_llm_provider: MagicMock) -> None:
+        mock_llm_provider.classify_messages.side_effect = RuntimeError("apple_unsupported_locale")
+        result = _discover_batch(mock_llm_provider, "system", [{"id": "1", "title": "日本語"}])
+        assert result == []
+
+    def test_unrecognised_error_returns_empty_not_raises(
+        self, mock_llm_provider: MagicMock
+    ) -> None:
+        mock_llm_provider.classify_messages.side_effect = RuntimeError("connection reset")
+        result = _discover_batch(mock_llm_provider, "system", [{"id": "1", "title": "A"}])
+        assert result == []
+
 
 class TestRunDiscover:
     def test_dry_run_makes_no_api_calls(

@@ -17,7 +17,7 @@ from rich.progress import (
 
 from scripts.classify.classify_notes import (
     PROPOSALS_DIR,
-    classify_batch,
+    classify_batch_resilient,
     inject_taxonomy,
     load_prompt_template,
     price_per_million,
@@ -130,7 +130,7 @@ def run_inbox(dry_run: bool, json_output: bool = False) -> None:
     ) as progress:
         task = progress.add_task("Processing inbox...", total=len(batches))
         for i, batch in enumerate(batches):
-            results = classify_batch(provider, batch, system_prompt, settings)
+            results = classify_batch_resilient(provider, batch, system_prompt, settings, con=con)
             if not results:
                 logger.event("batch", batch=i + 1, count=len(batch), status="error")
                 batch_errors += 1
