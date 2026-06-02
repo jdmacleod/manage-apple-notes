@@ -115,14 +115,6 @@ uv run notes restore             # recreate missing notes from the backup
 `restore` compares the backup against the current library (matched by title within
 each folder) and recreates every note that is absent. No manual list is needed.
 
-If restored notes have formatting corruption (title repeated, newlines collapsed —
-a known symptom of iCloud Recently Deleted restoration):
-
-```bash
-uv run notes repair --dry-run   # preview what would be rewritten
-uv run notes repair             # rebuild body HTML from backup content
-```
-
 For targeted restoration of a specific subset of notes, create a
 `data/missing-notes-YYYY-MM-DD.json` file manually and pass it with
 `uv run notes restore --missing data/missing-notes-YYYY-MM-DD.json`.

@@ -14,7 +14,6 @@ from scripts.export.run_export import run_backup, run_export
 from scripts.forever_notes.sync_hubs import run_sync_hubs
 from scripts.maintenance.audit import run_audit
 from scripts.maintenance.process_inbox import run_inbox
-from scripts.maintenance.repair_restored_notes import run_repair_restored
 from scripts.restore.run_restore import run_restore
 from scripts.review.run_review import run_review
 from scripts.setup.run_setup import run_setup
@@ -252,32 +251,6 @@ def sync_hubs(
 ) -> None:
     """Create or update ✱ Home and ✱ Hub notes (strict mode only)."""
     run_sync_hubs(export_file=export_file, dry_run=dry_run, json_output=json_output)
-
-
-@app.command()
-def repair(
-    missing_file: str | None = typer.Option(
-        None,
-        "--missing-file",
-        help="missing-notes JSON listing notes to repair. Defaults to latest data/missing-notes-*.json.",
-    ),
-    old_export: str | None = typer.Option(
-        None,
-        "--old-export",
-        help="Export JSON containing the original note content. Defaults to the second most recent export.",
-    ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Preview what would be rewritten without touching Notes."
-    ),
-    json_output: bool = typer.Option(False, "--json", help=_JSON_HELP),
-) -> None:
-    """Repair notes corrupted after an iCloud Recently Deleted restore (duplicate title, missing newlines)."""
-    run_repair_restored(
-        missing_file=missing_file,
-        old_export_file=old_export,
-        dry_run=dry_run,
-        json_output=json_output,
-    )
 
 
 if __name__ == "__main__":

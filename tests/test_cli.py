@@ -116,14 +116,6 @@ class TestCliCommands:
         assert result.exit_code == 0
         mock.assert_called_once()
 
-    def test_repair_invokes_run_repair_restored(self, mocker: MagicMock) -> None:
-        mock = mocker.patch("scripts.cli.run_repair_restored")
-        result = runner.invoke(app, ["repair", "--dry-run"])
-        assert result.exit_code == 0
-        mock.assert_called_once_with(
-            missing_file=None, old_export_file=None, dry_run=True, json_output=False
-        )
-
     def test_restore_invokes_run_restore(self, mocker: MagicMock) -> None:
         mock = mocker.patch("scripts.cli.run_restore")
         result = runner.invoke(app, ["restore", "--dry-run"])

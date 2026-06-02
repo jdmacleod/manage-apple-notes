@@ -131,7 +131,7 @@ phases (1–3c) are in `PLAN-archive.md`.
 | 1 | Scaffold, `.gitignore`, pre-commit hook, config examples | ✅ |
 | 2 | Export, classify, apply scripts | ✅ |
 | 2a–2b | Theme discovery, taxonomy drafting, nested subfolders | ✅ |
-| 3 | Maintenance: audit, repair, restore | ✅ |
+| 3 | Maintenance: audit, restore | ✅ |
 | 3b | Deduplication (three-pass funnel) | ✅ |
 | 3c | Hub/Home notes (strict mode) | ✅ |
 | 4 | Scheduling via cron or launchd | 🔲 |

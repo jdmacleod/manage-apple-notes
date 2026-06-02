@@ -45,13 +45,13 @@ Not on Apple Silicon or macOS 26+? See [GUIDE.md](GUIDE.md) for Anthropic API, O
 
 ## Provider comparison
 
-Benchmarked on a 330-note library (2021 M1 MacBook Pro). Anthropic and AWS-Ollama not yet timed.
+Benchmarked on a 390-note library (2024 M4 MacBook Pro). Anthropic and AWS-Ollama not yet timed.
 
 | Provider | Note content leaves device | Setup | Discover | Classify | Cost |
 |---|---|---|---|---|---|
 | **Apple Intelligence** *(default)* | Never | Medium | 12 min | 60 min | $0 |
 | Anthropic API | Yes — Anthropic's servers | Low | — | — | TBD |
-| Ollama (local) | Never | Medium | 12 min | 60 min | $0 |
+| Ollama (local, gemma-4-E4B) | Never | Medium | 15 min | 60 min | $0 |
 | AWS-Ollama | Never (your EC2, SSH tunnel) | High | — | — | TBD |
 
 ## Commands
@@ -83,7 +83,6 @@ uv run notes sync-hubs           # update ✱ Home and Hub notes (strict mode on
 
 # Recovery
 uv run notes restore             # recreate notes lost during a move
-uv run notes repair              # fix formatting after iCloud Recently Deleted restore
 ```
 
 Most commands accept `--dry-run`. `purge` is dry-run by default; pass `--execute` to apply.
