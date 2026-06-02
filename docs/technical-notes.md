@@ -336,7 +336,7 @@ existing taxonomy subfolder paths into both the per-batch and synthesis prompts.
 instructed to map themes to established paths before proposing new ones. This means:
 
 - Re-running discover on the same library after adding subfolders to `taxonomy.local.yaml`
-  produces the same `suggested_path` values for unchanged note clusters — theme names stabilise
+  produces the same `suggested_path` values for unchanged note clusters — theme names stabilize
 - The console output labels themes as "existing" or "new", and the theme map JSON includes
   `established_paths` and `new_paths` keys for at-a-glance review
 - As the taxonomy matures, the "new proposals" count approaches zero — discover becomes a
@@ -496,7 +496,7 @@ llm:
 
 `batch_size: 10` works reliably within the 8K context window. If you see context overflow errors (malformed or truncated JSON), reduce `batch_size` to 5 before lowering `context_size`.
 
-### Verifying GPU utilisation
+### Verifying GPU utilization
 
 After connecting via SSH tunnel and running a classification pass, confirm the model is running on the GPU (not CPU-offloaded):
 
@@ -504,7 +504,7 @@ After connecting via SSH tunnel and running a classification pass, confirm the m
 ssh -i ~/.ssh/my-aws-key.pem ec2-user@<ip> nvidia-smi
 ```
 
-The `GPU-Util` column should show non-zero utilisation during inference and `ollama` should appear in the process list. A model that partially offloads to system RAM will show lower VRAM utilisation and slower throughput.
+The `GPU-Util` column should show non-zero utilization during inference and `ollama` should appear in the process list. A model that partially offloads to system RAM will show lower VRAM utilization and slower throughput.
 
 ---
 

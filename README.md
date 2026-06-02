@@ -6,7 +6,7 @@
 [![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://www.apple.com/macos/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-AI-powered organisation for Apple Notes. The pipeline is **export → discover → classify → human review → apply** — nothing touches your notes until you approve a proposal.
+AI-powered organization for Apple Notes. The pipeline is **export → discover → classify → human review → apply** — nothing touches your notes until you approve a proposal.
 
 ## Quickstart
 

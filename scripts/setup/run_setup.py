@@ -405,13 +405,13 @@ def _handle_multiple_accounts(accounts: list[str]) -> str:
             "Classifying and moving notes across accounts can cause confusion — "
             "folders may share names across accounts and the pipeline will treat "
             "them as one library.\n\n"
-            "Select the account you want to organise. Notes from other accounts "
+            "Select the account you want to organize. Notes from other accounts "
             "will not be exported or moved.",
             title="Multiple accounts",
             border_style="yellow",
         )
     )
-    selected = _ask_numbered("Which account do you want to organise?", accounts)
+    selected = _ask_numbered("Which account do you want to organize?", accounts)
     account = accounts[selected - 1]
     con.print(f"  [dim]Selected {selected}) {account}[/dim]")
     return account
@@ -675,7 +675,7 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
         "What matters most to you going forward?",
         [
             "Get on top of tasks and commitments — I need clarity on what to do next",
-            "Keep active work organised — I want clear structure for projects, responsibilities, and reference material",
+            "Keep active work organized — I want clear structure for projects, responsibilities, and reference material",
             "Develop ideas over time — I want my notes to think with me",
             "My current system mostly works — I want small improvements, not an overhaul",
         ],

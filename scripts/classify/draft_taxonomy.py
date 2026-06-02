@@ -502,7 +502,7 @@ def run_draft(theme_map_file: str | None, dry_run: bool, json_output: bool = Fal
         if no_match:
             con.print(
                 f"\n[yellow]Warning:[/yellow] {len(no_match)} path(s) could not be matched "
-                "to any taxonomy category (top-level folder name not recognised):"
+                "to any taxonomy category (top-level folder name not recognized):"
             )
             for p in no_match:
                 con.print(f"  [dim]-[/dim] {p}")
@@ -539,7 +539,7 @@ def run_draft(theme_map_file: str | None, dry_run: bool, json_output: bool = Fal
     if no_match:
         con.print(
             f"\n[yellow]Warning:[/yellow] {len(no_match)} path(s) could not be matched "
-            "to any taxonomy category (top-level folder name not recognised):"
+            "to any taxonomy category (top-level folder name not recognized):"
         )
         for p in no_match:
             con.print(f"  [dim]-[/dim] {p}")

@@ -10,8 +10,8 @@
 
 - [ ] Bug fix (non-breaking change that fixes an issue)
 - [ ] New feature (non-breaking change that adds functionality)
-- [ ] Breaking change (fix or feature that changes existing behaviour)
-- [ ] Refactor / internal cleanup (no behaviour change)
+- [ ] Breaking change (fix or feature that changes existing behavior)
+- [ ] Refactor / internal cleanup (no behavior change)
 - [ ] Documentation only
 - [ ] Tests only
 

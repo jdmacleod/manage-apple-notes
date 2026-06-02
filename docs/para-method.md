@@ -13,7 +13,7 @@
 
 ## What Is PARA?
 
-PARA is a four-category system for organising all digital information by
+PARA is a four-category system for organizing all digital information by
 **actionability** — how actively you are working with something right now —
 rather than by topic or subject matter.
 
@@ -28,7 +28,7 @@ The four categories are:
 
 ### The Most Important Distinction: Projects vs Areas
 
-This is the distinction that changes behaviour most. Most people mistake Areas
+This is the distinction that changes behavior most. Most people mistake Areas
 for Projects, producing a list of responsibilities that never shrinks and never
 gets crossed off. PARA insists on the difference:
 
@@ -42,11 +42,11 @@ A project must have both a **specific outcome** and an implicit or explicit
 **deadline**. If either is missing, it is an Area (or a task within an Area,
 managed in a task manager rather than a note system).
 
-### Why Organise by Actionability?
+### Why Organize by Actionability?
 
-Organising by topic (the way most people learned in school) produces broad
+Organizing by topic (the way most people learned in school) produces broad
 categories like "Psychology" or "Business" that are too large to navigate
-usefully. Organising by actionability ensures that when you open your Projects
+usefully. Organizing by actionability ensures that when you open your Projects
 folder, everything in it demands attention and has a finish line. When a project
 completes, it moves to Archive — the system stays current automatically.
 
@@ -162,7 +162,7 @@ retrieval.
 
 ### When to Choose Minimalist
 
-- You are migrating a large, disorganised library and want quick results
+- You are migrating a large, disorganized library and want quick results
 - You prefer a system that stays out of the way
 - You have fewer than 8–10 active projects at any time
 - Your Resources notes are predominantly reference material (not ideas or
@@ -284,7 +284,7 @@ Claude will produce a `taxonomy.local.yaml` following the schema in
 - Top-level category folder names filled in
 - Subfolders populated based on your inputs
 - For strict mode: `hub_title` and `hub_tag` values auto-derived or specified
-- A comment block at the top summarising the taxonomy choices made
+- A comment block at the top summarizing the taxonomy choices made
 
 The generated file should be reviewed before use. Pay particular attention to:
 - Folder names — must match exactly what exists or will be created in Apple Notes

@@ -47,7 +47,7 @@ uv run pytest                        # tests — must pass at ≥90% line covera
 
 **Type annotations** — all new functions and methods must be fully annotated. Existing mypy errors in files you haven't touched don't need to be fixed in the same PR, but errors introduced by new code should be resolved.
 
-**Tests** — new behaviour requires tests. The project targets ≥90% line coverage; check the coverage report in the pytest output and add tests for any uncovered branches you introduce.
+**Tests** — new behavior requires tests. The project targets ≥90% line coverage; check the coverage report in the pytest output and add tests for any uncovered branches you introduce.
 
 **Linting rules in effect**: `E`/`F` (pyflakes/pycodestyle), `I` (isort), `UP` (pyupgrade), `B` (bugbear), `SIM` (simplify). `SIM108` (ternary) is suppressed — explicit `if/else` is preferred throughout. `E501` (line length) is enforced by the formatter, not the linter.
 

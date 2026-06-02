@@ -495,7 +495,7 @@ def run_discover(export_file: str | None, dry_run: bool, json_output: bool = Fal
     for theme in final_themes:
         sp = theme.get("suggested_path") or ""
         top = sp.split("/")[0] if sp else ""
-        bucket = top if top in top_level_folders else "Uncategorised"
+        bucket = top if top in top_level_folders else "Uncategorized"
         by_category.setdefault(bucket, []).append(theme)
 
     existing_count = sum(1 for t in final_themes if t.get("suggested_path") in established_set)
@@ -509,7 +509,7 @@ def run_discover(export_file: str | None, dry_run: bool, json_output: bool = Fal
 
     if by_category:
         con.print("\n  [bold]By category:[/bold]")
-        for cat in sorted(by_category, key=lambda c: (c == "Uncategorised", c)):
+        for cat in sorted(by_category, key=lambda c: (c == "Uncategorized", c)):
             themes_in_cat = by_category[cat]
             new_in_cat = sum(
                 1 for t in themes_in_cat if t.get("suggested_path") not in established_set

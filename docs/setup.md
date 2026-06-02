@@ -16,7 +16,7 @@ Run `notes setup` again any time you want to switch frameworks or rename folders
 
 ## What it does
 
-1. **Account detection** — setup queries Apple Notes via AppleScript to list your accounts (e.g. iCloud, Gmail). If a single account is found, it's noted and setup continues. If multiple accounts are found, setup explains the implications and asks which one you want to organise; the selection is written to `settings.local.yaml` as `primary_account` so all subsequent exports and moves stay within that account. If detection fails (Automation permission not yet granted), setup prints a reminder and continues — you can set `primary_account` manually later.
+1. **Account detection** — setup queries Apple Notes via AppleScript to list your accounts (e.g. iCloud, Gmail). If a single account is found, it's noted and setup continues. If multiple accounts are found, setup explains the implications and asks which one you want to organize; the selection is written to `settings.local.yaml` as `primary_account` so all subsequent exports and moves stay within that account. If detection fails (Automation permission not yet granted), setup prints a reminder and continues — you can set `primary_account` manually later.
 
 2. **Corpus analysis** — if a recent export exists in `data/exports/`, setup analyzes it silently and uses those signals to weight the framework recommendation. If no export exists, setup relies on your answers alone.
 
@@ -54,12 +54,12 @@ When a `notes-*.json` export is available, setup extracts these signals:
 
 | Signal | How it's measured | Effect |
 |--------|-------------------|--------|
-| Note count | Total notes in export | Large libraries (>1000) favour Zettelkasten |
-| Folder count | Unique top-level folders | Many folders (>6) favour PARA |
-| Avg note length | Mean word count per body | Long notes (>300 words) favour Zettelkasten; short (<80) favour GTD |
-| Task keywords | Notes with TODO / `- [ ]` / @ / next: / waiting | High density (>10%) favours GTD |
-| Cross-references | Notes with `[[...]]` patterns | Any presence (>5%) strongly favours Zettelkasten |
-| Oldest note | Days since the oldest modified note | Old libraries (>3 years) slightly favour Zettelkasten |
+| Note count | Total notes in export | Large libraries (>1000) favor Zettelkasten |
+| Folder count | Unique top-level folders | Many folders (>6) favor PARA |
+| Avg note length | Mean word count per body | Long notes (>300 words) favor Zettelkasten; short (<80) favor GTD |
+| Task keywords | Notes with TODO / `- [ ]` / @ / next: / waiting | High density (>10%) favors GTD |
+| Cross-references | Notes with `[[...]]` patterns | Any presence (>5%) strongly favors Zettelkasten |
+| Oldest note | Days since the oldest modified note | Old libraries (>3 years) slightly favor Zettelkasten |
 
 ---
 

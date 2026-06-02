@@ -45,7 +45,7 @@ Set `forever_notes_mode` in `settings.local.yaml`:
 
 Folder taxonomy, theme discovery, classification, and deduplication — the full pipeline
 described in `docs/runbooks/main-workflow.md`. No structural notes required. A clean,
-well-organised library without any additional maintenance overhead.
+well-organized library without any additional maintenance overhead.
 
 Good for users who want the organizational benefits of the framework without committing to
 the full navigational layer.
