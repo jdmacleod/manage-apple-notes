@@ -29,11 +29,42 @@ public struct Input: Decodable, Sendable {
 
 // MARK: — Helpers
 
-/// Strip non-printable and non-ASCII characters from `text` and collapse whitespace
-/// into single spaces.  Keeps printable ASCII (U+0020-U+007E) and standard
-/// whitespace (tab U+0009, newline U+000A, carriage-return U+000D).
-public func stripToASCII(_ text: String) -> String {
-    text.unicodeScalars
+/// Normalize and strip characters Apple Intelligence cannot process.
+///
+/// Three-pass approach:
+///
+/// 1. Replace common typographic Unicode with ASCII equivalents (curly quotes,
+///    em/en dash, ellipsis).  Apple's own autocorrect inserts these into normal
+///    English notes, so without this step "it's" splits at the apostrophe.
+///
+/// 2. Transliterate any non-Latin script to Latin romanisation via
+///    `kCFStringTransformToLatin` (CJK → pinyin/romaji, Arabic → romanised,
+///    etc.), then strip diacritics via `kCFStringTransformStripCombiningMarks`
+///    so "café" → "cafe", "résumé" → "resume", "東京" → "Dong Jing".
+///
+/// 3. Filter the result to printable ASCII (U+0020-U+007E) plus standard
+///    whitespace (tab/newline/CR); collapse whitespace runs into single spaces.
+public func sanitizeForAppleIntelligence(_ text: String) -> String {
+    if text.isEmpty { return text }
+
+    // Pass 1 — typographic normalisation
+    var result = text
+        .replacingOccurrences(of: "\u{2018}", with: "'")   // ' LEFT SINGLE QUOTATION MARK
+        .replacingOccurrences(of: "\u{2019}", with: "'")   // ' RIGHT SINGLE QUOTATION MARK
+        .replacingOccurrences(of: "\u{201C}", with: "\"")  // " LEFT DOUBLE QUOTATION MARK
+        .replacingOccurrences(of: "\u{201D}", with: "\"")  // " RIGHT DOUBLE QUOTATION MARK
+        .replacingOccurrences(of: "\u{2013}", with: "-")   // – EN DASH
+        .replacingOccurrences(of: "\u{2014}", with: "-")   // — EM DASH
+        .replacingOccurrences(of: "\u{2026}", with: "...") // … HORIZONTAL ELLIPSIS
+
+    // Pass 2 — script transliteration + diacritic stripping
+    let ms = NSMutableString(string: result) as CFMutableString
+    CFStringTransform(ms, nil, kCFStringTransformToLatin, false)
+    CFStringTransform(ms, nil, kCFStringTransformStripCombiningMarks, false)
+    result = ms as String
+
+    // Pass 3 — filter to printable ASCII + standard whitespace; collapse runs
+    return result.unicodeScalars
         .filter {
             let v = $0.value
             return (v >= 0x20 && v <= 0x7E) || v == 0x09 || v == 0x0A || v == 0x0D

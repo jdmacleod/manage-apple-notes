@@ -58,7 +58,7 @@ class TestCliCommands:
         mock = mocker.patch("scripts.cli.run_discover")
         result = runner.invoke(app, ["discover", "--dry-run"])
         assert result.exit_code == 0
-        mock.assert_called_once_with(export_file=None, dry_run=True, json_output=False)
+        mock.assert_called_once_with(export_file=None, dry_run=True, json_output=False, debug=False)
 
     def test_audit_invokes_run_audit(self, mocker: MagicMock) -> None:
         mock = mocker.patch("scripts.cli.run_audit")

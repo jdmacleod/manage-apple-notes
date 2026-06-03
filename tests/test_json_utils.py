@@ -102,11 +102,36 @@ class TestStripUnsupportedChars:
     def test_ascii_text_unchanged(self) -> None:
         assert strip_unsupported_chars("Hello world!") == "Hello world!"
 
-    def test_latin1_accented_stripped(self) -> None:
-        # é (U+00E9), ñ (U+00F1), ü (U+00FC) are above U+007F and are now stripped.
-        # Threshold is ASCII-only to match the Swift bridge's stripToASCII().
+    def test_diacritics_normalized_to_ascii_base(self) -> None:
+        # NFD decomposition strips the combining mark, keeping the base letter.
+        # Words are preserved intact rather than corrupted by spaces at each accent.
         result = strip_unsupported_chars("café résumé naïve")
-        assert result == "caf r sum na ve"
+        assert result == "cafe resume naive"
+
+    def test_accented_word_preserved_intact(self) -> None:
+        # Before: "café" → "caf" (accent became a space, word corrupted).
+        # After:  "café" → "cafe" (combining accent dropped, base letter kept).
+        assert strip_unsupported_chars("café") == "cafe"
+
+    def test_typographic_chars_converted_to_ascii(self) -> None:
+        # Curly quotes, em dash, and ellipsis inserted by Apple autocorrect.
+        # Before: "it’s" → "it s" (word split at the typographic apostrophe).
+        # After:  "it’s" → "it's" (U+2019 mapped to straight apostrophe first).
+        text = "it’s “great”—really…"
+        assert strip_unsupported_chars(text) == 'it\'s "great"-really...'
+
+    def test_curly_apostrophe_preserves_contraction(self) -> None:
+        assert strip_unsupported_chars("it’s") == "it's"
+        assert strip_unsupported_chars("don’t") == "don't"
+
+    def test_curly_quotes_converted(self) -> None:
+        assert strip_unsupported_chars("“hello”") == '"hello"'
+
+    def test_em_dash_converted_to_hyphen(self) -> None:
+        assert strip_unsupported_chars("cost—benefit") == "cost-benefit"
+
+    def test_ellipsis_converted(self) -> None:
+        assert strip_unsupported_chars("really…") == "really..."
 
     def test_cjk_replaced_and_spaces_collapsed(self) -> None:
         result = strip_unsupported_chars("Hello 日本語 world")
@@ -119,14 +144,6 @@ class TestStripUnsupportedChars:
     def test_empty_string_returns_empty(self) -> None:
         assert strip_unsupported_chars("") == ""
 
-    def test_curly_quotes_and_em_dash_stripped(self) -> None:
-        # Curly quotes (U+2018/2019, U+201C/201D), em dash (U+2014), ellipsis (U+2026)
-        # are above U+007F and are now stripped. Apple’s autocorrect inserts these into
-        # virtually every note -- retaining them was why the retry failed on almost all batches.
-        text = "it\u2019s \u201cgreat\u201d\u2014really\u2026"
-        result = strip_unsupported_chars(text)
-        assert result == "it s great really"
-
     def test_mixed_script_collapses_to_single_spaces(self) -> None:
         result = strip_unsupported_chars("Title 日本語 and 中文 content")
         assert result == "Title and content"
@@ -136,19 +153,13 @@ class TestStripUnsupportedChars:
         assert result == ""
 
     def test_non_printable_ascii_control_chars_stripped(self) -> None:
-        # U+0001 (SOH) and U+001B (ESC) are non-printable ASCII and are replaced with
-        # spaces. Printable ASCII chars that follow (e.g. "[0m" from an ANSI sequence)
-        # are kept -- only the ESC char itself is stripped, not the surrounding text.
         assert strip_unsupported_chars("hello\x01world") == "hello world"
-        # ESC (0x1B) stripped; printable "[0m" suffix of the ANSI sequence is kept
         assert strip_unsupported_chars("hello\x1b[0mworld") == "hello [0mworld"
 
     def test_tab_and_newline_preserved(self) -> None:
-        # Tab, newline, and CR are kept (useful whitespace in multi-line note content).
         result = strip_unsupported_chars("line1\n\tindented\r\nline2")
         assert result == "line1\n\tindented\r\nline2"
 
     def test_del_char_stripped(self) -> None:
-        # U+007F (DEL) is non-printable and must be stripped.
         result = strip_unsupported_chars("before\x7fafter")
         assert result == "before after"

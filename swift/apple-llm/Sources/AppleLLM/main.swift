@@ -77,8 +77,8 @@ func run() async {
     // trigger the locale filter even when the title and most of the content are English.
     // The system prompt must also be stripped: it contains taxonomy folder names injected
     // by Python, which may include non-ASCII characters (accented names, CJK paths, etc.).
-    let strippedSystem = stripToASCII(input.system)
-    let strippedUser = stripToASCII(input.user)
+    let strippedSystem = sanitizeForAppleIntelligence(input.system)
+    let strippedUser = sanitizeForAppleIntelligence(input.user)
 
     guard hasEnoughContent(strippedUser) else {
         // Too little ASCII content left to classify meaningfully.

@@ -68,47 +68,73 @@ final class InputTests: XCTestCase {
     }
 }
 
-// MARK: — stripToASCII
+// MARK: — sanitizeForAppleIntelligence
 
-final class StripToASCIITests: XCTestCase {
+final class SanitizeForAppleIntelligenceTests: XCTestCase {
     func testPureASCIIPassesThrough() {
-        XCTAssertEqual(stripToASCII("hello world"), "hello world")
+        XCTAssertEqual(sanitizeForAppleIntelligence("hello world"), "hello world")
     }
 
-    func testNonASCIICharactersRemoved() {
-        XCTAssertEqual(stripToASCII("café"), "caf")
+    func testAccentedLatinNormalized() {
+        // é/ü/ñ etc. decompose to base + combining mark; the combining mark is stripped.
+        XCTAssertEqual(sanitizeForAppleIntelligence("café"), "cafe")
+        XCTAssertEqual(sanitizeForAppleIntelligence("résumé"), "resume")
+        XCTAssertEqual(sanitizeForAppleIntelligence("naïve"), "naive")
     }
 
-    func testMixedContentPreservesASCIIWords() {
-        XCTAssertEqual(stripToASCII("Hello 日本語 world"), "Hello world")
+    func testCJKTransliteratedToASCII() {
+        // kCFStringTransformToLatin romanises CJK; result must be non-empty pure ASCII.
+        let result = sanitizeForAppleIntelligence("日本語")
+        XCTAssertFalse(result.isEmpty, "CJK should transliterate to non-empty romanisation")
+        XCTAssertFalse(
+            result.unicodeScalars.contains { $0.value > 0x7E },
+            "result must be pure ASCII"
+        )
+    }
+
+    func testMixedContentTransliteratesCJKPreservesLatin() {
+        let result = sanitizeForAppleIntelligence("Hello 日本語 world")
+        XCTAssert(result.hasPrefix("Hello "), "Latin words must survive unchanged")
+        XCTAssert(result.hasSuffix(" world"), "Latin words must survive unchanged")
+        XCTAssertNotEqual(result, "Hello world", "CJK must produce transliterated content, not empty")
+        XCTAssertFalse(result.unicodeScalars.contains { $0.value > 0x7E })
+    }
+
+    func testTypographicCharsConvertedToASCII() {
+        // Curly quotes, em dash, and ellipsis inserted by Apple autocorrect.
+        XCTAssertEqual(sanitizeForAppleIntelligence("\u{2018}quoted\u{2019}"), "'quoted'")
+        XCTAssertEqual(sanitizeForAppleIntelligence("\u{201C}quoted\u{201D}"), "\"quoted\"")
+        XCTAssertEqual(sanitizeForAppleIntelligence("cost\u{2013}benefit"), "cost-benefit")
+        XCTAssertEqual(sanitizeForAppleIntelligence("really\u{2026}"), "really...")
+    }
+
+    func testCurlyApostrophePreservesWord() {
+        // U+2019 is the curly apostrophe Apple autocorrect uses in contractions.
+        XCTAssertEqual(sanitizeForAppleIntelligence("it\u{2019}s great"), "it's great")
+    }
+
+    func testEmDashPreservedAsHyphen() {
+        XCTAssertEqual(sanitizeForAppleIntelligence("a\u{2014}b"), "a-b")
     }
 
     func testMultipleWhitespaceCollapsed() {
-        XCTAssertEqual(stripToASCII("a  b\n\tc"), "a b c")
+        XCTAssertEqual(sanitizeForAppleIntelligence("a  b\n\tc"), "a b c")
     }
 
     func testLeadingTrailingWhitespaceRemoved() {
-        XCTAssertEqual(stripToASCII("  hello  "), "hello")
+        XCTAssertEqual(sanitizeForAppleIntelligence("  hello  "), "hello")
     }
 
     func testEmptyStringReturnsEmpty() {
-        XCTAssertEqual(stripToASCII(""), "")
-    }
-
-    func testAllNonASCIIReturnsEmpty() {
-        XCTAssertEqual(stripToASCII("日本語"), "")
+        XCTAssertEqual(sanitizeForAppleIntelligence(""), "")
     }
 
     func testEmojiStripped() {
-        XCTAssertEqual(stripToASCII("hello 🎉 world"), "hello world")
-    }
-
-    func testAccentedLatinStripped() {
-        XCTAssertEqual(stripToASCII("résumé"), "rsum")
+        XCTAssertEqual(sanitizeForAppleIntelligence("hello \u{1F389} world"), "hello world")
     }
 
     func testNumbersAndPunctuationPreserved() {
-        XCTAssertEqual(stripToASCII("note #42: cost $9.99"), "note #42: cost $9.99")
+        XCTAssertEqual(sanitizeForAppleIntelligence("note #42: cost $9.99"), "note #42: cost $9.99")
     }
 }
 

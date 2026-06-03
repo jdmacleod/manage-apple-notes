@@ -4,6 +4,22 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
+
+# Common typographic Unicode chars that Apple's autocorrect inserts into ordinary
+# English notes.  Mapped to their plain-ASCII equivalents before sanitization so
+# words like "it's" are preserved rather than split at the apostrophe.
+_TYPOGRAPHIC_TABLE = str.maketrans(
+    {
+        "‘": "'",  # ' LEFT SINGLE QUOTATION MARK
+        "’": "'",  # ' RIGHT SINGLE QUOTATION MARK
+        "“": '"',  # " LEFT DOUBLE QUOTATION MARK
+        "”": '"',  # " RIGHT DOUBLE QUOTATION MARK
+        "–": "-",  # – EN DASH
+        "—": "-",  # — EM DASH
+        "…": "...",  # … HORIZONTAL ELLIPSIS
+    }
+)
 
 
 def extract_json_array(text: str) -> list:
@@ -61,24 +77,38 @@ def is_locale_error(exc: Exception) -> bool:
 
 
 def strip_unsupported_chars(text: str) -> str:
-    """Replace characters Apple Intelligence cannot process with spaces.
+    """Normalize and strip characters Apple Intelligence cannot process.
 
-    Keeps printable ASCII (U+0020-U+007E) and standard line-break whitespace
-    (tab U+0009, newline U+000A, carriage-return U+000D). Everything else --
-    non-printable control chars (U+0001-U+0008, U+000B-U+000C, U+000E-U+001F,
-    U+007F) and all non-ASCII (U+0080 and above) -- is replaced with a space;
-    consecutive spaces are then collapsed.
+    Three-pass approach:
 
-    This matches the Swift bridge's stripToASCII() threshold. Apple
-    Intelligence's locale filter rejects any non-ASCII character, including the
-    curly-quote and em-dash characters that Apple's own autocorrect inserts into
-    normal English notes -- retaining Latin-1 or higher was causing the retry to
-    fail with a second locale error.
+    1. Replace common typographic Unicode with ASCII equivalents (curly quotes
+       → straight, em/en dash → hyphen, ellipsis → three dots).  Apple's
+       autocorrect inserts these into virtually every English note, so without
+       this step words like "it's" or phrases like "cost—benefit" are split at
+       the typographic char rather than preserved.
+
+    2. NFD-decompose accented Latin characters, then drop the resulting
+       combining marks (Unicode category Mn).  This maps "café" → "cafe",
+       "naïve" → "naive", "résumé" → "resume" rather than corrupting the words
+       into "caf", "na ve", "r sum".
+
+    3. Replace any remaining non-ASCII and non-printable characters with spaces
+       (keeps printable ASCII U+0020-U+007E plus tab/newline/CR); collapse runs
+       of spaces; strip leading/trailing whitespace.  CJK, Arabic, Cyrillic,
+       and other non-Latin scripts become spaces (no transliteration in Python —
+       the Swift bridge's sanitizeForAppleIntelligence does that via
+       CFStringTransform on its own retry path).
     """
     if not text:
         return text
-    chars = []
-    for ch in text:
+    # Pass 1: typographic normalisation
+    text = text.translate(_TYPOGRAPHIC_TABLE)
+    # Pass 2: diacritic stripping via NFD decomposition
+    nfd = unicodedata.normalize("NFD", text)
+    chars: list[str] = []
+    for ch in nfd:
+        if unicodedata.category(ch) == "Mn":
+            continue  # combining mark — the accent half of a decomposed char
         cp = ord(ch)
         if (0x20 <= cp <= 0x7E) or ch in "\t\n\r":
             chars.append(ch)
