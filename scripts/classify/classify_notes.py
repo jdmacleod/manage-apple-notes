@@ -38,7 +38,8 @@ from scripts.json_utils import (
     extract_json_array,
     is_context_overflow,
     is_locale_error,
-    strip_unsupported_chars,
+    normalize_for_apple,
+    normalize_slug_title,
 )
 from scripts.providers import LLMProvider, get_max_tokens, get_provider
 from scripts.run_logger import RunLogger, estimate_duration, logs_dir_path
@@ -178,14 +179,14 @@ def inject_taxonomy(
 
 
 def _sanitize_notes_for_locale(notes_batch: list[dict]) -> list[dict]:
-    """Strip unsupported characters from text fields so Apple Intelligence can process the batch."""
+    """Strip unsupported characters and normalise slug titles for Apple Intelligence."""
     return [
         {
             **note,
-            "title": strip_unsupported_chars(note.get("title") or ""),
-            "body": strip_unsupported_chars(note.get("body") or ""),
-            "folder": strip_unsupported_chars(note.get("folder") or ""),
-            "folder_path": strip_unsupported_chars(note.get("folder_path") or ""),
+            "title": normalize_slug_title(normalize_for_apple(note.get("title") or "")),
+            "body": normalize_for_apple(note.get("body") or ""),
+            "folder": normalize_for_apple(note.get("folder") or ""),
+            "folder_path": normalize_for_apple(note.get("folder_path") or ""),
         }
         for note in notes_batch
     ]
@@ -264,11 +265,11 @@ def classify_batch_resilient(
     _con = con or console
     if not notes_batch:
         return []
-    # For Apple Intelligence, strip non-ASCII before the first call to avoid triggering
-    # the locale filter on every batch (discover_themes uses the same pattern).
+    # For Apple Intelligence, normalize content for locale compatibility before the first
+    # call (discover_themes uses the same pattern).
     if provider.name == "apple":
         notes_batch = _sanitize_notes_for_locale(notes_batch)
-        system_prompt = strip_unsupported_chars(system_prompt)
+        system_prompt = normalize_for_apple(system_prompt)
     try:
         return classify_batch(provider, notes_batch, system_prompt, settings)
     except Exception as exc:
@@ -281,7 +282,7 @@ def classify_batch_resilient(
             if has_content:
                 _con.print(
                     f"[yellow]Locale error — retrying {len(notes_batch)}-note batch"
-                    " with unsupported characters stripped[/yellow]"
+                    " with content normalized for Apple Intelligence[/yellow]"
                 )
                 try:
                     return classify_batch(provider, sanitized, system_prompt, settings)

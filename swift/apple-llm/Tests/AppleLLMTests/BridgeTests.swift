@@ -181,8 +181,10 @@ final class HasEnoughContentTests: XCTestCase {
 // MARK: — cappedResponseTokens
 
 final class CappedResponseTokensTests: XCTestCase {
+    // Default ceiling is 1600 (raised from 800 to avoid mid-JSON truncation on discover
+    // batches, which can need 900+ tokens for 5 notes × 3 themes × 6 fields each).
     func testNilRequestedUsesCeiling() {
-        XCTAssertEqual(cappedResponseTokens(requested: nil), 800)
+        XCTAssertEqual(cappedResponseTokens(requested: nil), 1600)
     }
 
     func testBelowCeilingPassesThrough() {
@@ -190,10 +192,14 @@ final class CappedResponseTokensTests: XCTestCase {
     }
 
     func testAboveCeilingClampedToCeiling() {
-        XCTAssertEqual(cappedResponseTokens(requested: 4096), 800)
+        XCTAssertEqual(cappedResponseTokens(requested: 4096), 1600)
     }
 
     func testAtCeilingUnchanged() {
+        XCTAssertEqual(cappedResponseTokens(requested: 1600), 1600)
+    }
+
+    func testBelowCeilingStillPassesThrough() {
         XCTAssertEqual(cappedResponseTokens(requested: 800), 800)
     }
 

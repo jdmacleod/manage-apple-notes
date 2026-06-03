@@ -9,7 +9,8 @@ from scripts.json_utils import (
     extract_json_object,
     is_context_overflow,
     is_locale_error,
-    strip_unsupported_chars,
+    normalize_slug_title,
+    normalize_for_apple,
 )
 
 
@@ -98,68 +99,119 @@ class TestIsLocaleError:
         assert is_locale_error(Exception("")) is False
 
 
-class TestStripUnsupportedChars:
+class TestNormalizeForApple:
     def test_ascii_text_unchanged(self) -> None:
-        assert strip_unsupported_chars("Hello world!") == "Hello world!"
+        assert normalize_for_apple("Hello world!") == "Hello world!"
 
     def test_diacritics_normalized_to_ascii_base(self) -> None:
         # NFD decomposition strips the combining mark, keeping the base letter.
         # Words are preserved intact rather than corrupted by spaces at each accent.
-        result = strip_unsupported_chars("café résumé naïve")
+        result = normalize_for_apple("café résumé naïve")
         assert result == "cafe resume naive"
 
     def test_accented_word_preserved_intact(self) -> None:
         # Before: "café" → "caf" (accent became a space, word corrupted).
         # After:  "café" → "cafe" (combining accent dropped, base letter kept).
-        assert strip_unsupported_chars("café") == "cafe"
+        assert normalize_for_apple("café") == "cafe"
 
     def test_typographic_chars_converted_to_ascii(self) -> None:
         # Curly quotes, em dash, and ellipsis inserted by Apple autocorrect.
         # Before: "it’s" → "it s" (word split at the typographic apostrophe).
         # After:  "it’s" → "it's" (U+2019 mapped to straight apostrophe first).
         text = "it’s “great”—really…"
-        assert strip_unsupported_chars(text) == 'it\'s "great"-really...'
+        assert normalize_for_apple(text) == 'it\'s "great"-really...'
 
     def test_curly_apostrophe_preserves_contraction(self) -> None:
-        assert strip_unsupported_chars("it’s") == "it's"
-        assert strip_unsupported_chars("don’t") == "don't"
+        assert normalize_for_apple("it’s") == "it's"
+        assert normalize_for_apple("don’t") == "don't"
 
     def test_curly_quotes_converted(self) -> None:
-        assert strip_unsupported_chars("“hello”") == '"hello"'
+        assert normalize_for_apple("“hello”") == '"hello"'
 
     def test_em_dash_converted_to_hyphen(self) -> None:
-        assert strip_unsupported_chars("cost—benefit") == "cost-benefit"
+        assert normalize_for_apple("cost—benefit") == "cost-benefit"
 
     def test_ellipsis_converted(self) -> None:
-        assert strip_unsupported_chars("really…") == "really..."
+        assert normalize_for_apple("really…") == "really..."
 
     def test_cjk_replaced_and_spaces_collapsed(self) -> None:
-        result = strip_unsupported_chars("Hello 日本語 world")
+        result = normalize_for_apple("Hello 日本語 world")
         assert result == "Hello world"
 
     def test_arabic_stripped(self) -> None:
-        result = strip_unsupported_chars("test مرحبا end")
+        result = normalize_for_apple("test مرحبا end")
         assert result == "test end"
 
     def test_empty_string_returns_empty(self) -> None:
-        assert strip_unsupported_chars("") == ""
+        assert normalize_for_apple("") == ""
 
     def test_mixed_script_collapses_to_single_spaces(self) -> None:
-        result = strip_unsupported_chars("Title 日本語 and 中文 content")
+        result = normalize_for_apple("Title 日本語 and 中文 content")
         assert result == "Title and content"
 
     def test_all_unsupported_returns_empty(self) -> None:
-        result = strip_unsupported_chars("日本語")
+        result = normalize_for_apple("日本語")
         assert result == ""
 
     def test_non_printable_ascii_control_chars_stripped(self) -> None:
-        assert strip_unsupported_chars("hello\x01world") == "hello world"
-        assert strip_unsupported_chars("hello\x1b[0mworld") == "hello [0mworld"
+        assert normalize_for_apple("hello\x01world") == "hello world"
+        assert normalize_for_apple("hello\x1b[0mworld") == "hello [0mworld"
 
     def test_tab_and_newline_preserved(self) -> None:
-        result = strip_unsupported_chars("line1\n\tindented\r\nline2")
+        result = normalize_for_apple("line1\n\tindented\r\nline2")
         assert result == "line1\n\tindented\r\nline2"
 
     def test_del_char_stripped(self) -> None:
-        result = strip_unsupported_chars("before\x7fafter")
+        result = normalize_for_apple("before\x7fafter")
         assert result == "before after"
+
+
+class TestNormalizeSlugTitle:
+    def test_converts_full_date_slug(self) -> None:
+        assert normalize_slug_title("2019-04-02-Legislative-Conference") == (
+            "Legislative Conference (April 2, 2019)"
+        )
+
+    def test_converts_acronym_slug(self) -> None:
+        assert normalize_slug_title("2018-08-28-L839-AMPTP") == "L839 AMPTP (August 28, 2018)"
+
+    def test_converts_multi_word_slug(self) -> None:
+        assert normalize_slug_title("2019-02-06-IATSE-GEB-Austin") == (
+            "IATSE GEB Austin (February 6, 2019)"
+        )
+
+    def test_single_word_after_date(self) -> None:
+        assert normalize_slug_title("2023-01-15-Work") == "Work (January 15, 2023)"
+
+    def test_january_maps_correctly(self) -> None:
+        result = normalize_slug_title("2023-01-01-Note")
+        assert "January" in result
+
+    def test_december_maps_correctly(self) -> None:
+        result = normalize_slug_title("2023-12-25-Note")
+        assert "December" in result
+
+    def test_passthrough_no_date_prefix(self) -> None:
+        title = "My-Project-Notes"
+        assert normalize_slug_title(title) == title
+
+    def test_passthrough_plain_title(self) -> None:
+        title = "Budget review 2024"
+        assert normalize_slug_title(title) == title
+
+    def test_passthrough_invalid_month_13(self) -> None:
+        title = "2019-13-02-Something"
+        assert normalize_slug_title(title) == title
+
+    def test_passthrough_month_zero(self) -> None:
+        title = "2019-00-15-Something"
+        assert normalize_slug_title(title) == title
+
+    def test_passthrough_empty_string(self) -> None:
+        assert normalize_slug_title("") == ""
+
+    def test_day_integer_strips_leading_zero(self) -> None:
+        # Day 02 should appear as "2" not "02" in the output
+        result = normalize_slug_title("2019-04-02-Note")
+        assert "April 2, 2019" in result
+        assert "April 02" not in result

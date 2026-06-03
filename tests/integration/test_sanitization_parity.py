@@ -1,10 +1,10 @@
-"""Sanitization parity tests.
+"""Normalization parity tests.
 
-Verifies that the Python strip_unsupported_chars() function produces content that
+Verifies that the Python normalize_for_apple() function produces content that
 Apple Intelligence accepts without a locale error.  The goal is not to test that
 Python and Swift produce byte-identical output (they don't — Swift preserves word
 boundaries differently for CJK); it's to test the property that matters:
-"Python pre-sanitization produces content Apple will accept."
+"Python normalization produces content Apple will accept."
 
 Run with:  uv run pytest tests/integration/test_sanitization_parity.py --real-providers -v
 """
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.json_utils import is_locale_error, strip_unsupported_chars
+from scripts.json_utils import is_locale_error, normalize_for_apple
 
 
 def _call_apple(apple_provider: object, content: str) -> None:
@@ -47,21 +47,22 @@ class TestSanitizedContentAcceptedByApple:
     def test_sanitized_input_no_locale_error(
         self, apple_provider: object, description: str, raw: str
     ) -> None:
-        sanitized = strip_unsupported_chars(raw)
+        sanitized = normalize_for_apple(raw)
         if not sanitized.strip():
             pytest.skip(f"Input {description!r} sanitizes to empty — nothing to test")
         _call_apple(apple_provider, sanitized)
 
     def test_all_cjk_sanitizes_to_empty(self) -> None:
         # Verify that pure CJK content sanitizes to empty string (no testable content).
-        result = strip_unsupported_chars("日本語テスト")
+        result = normalize_for_apple("日本語テスト")
         assert result.strip() == ""
 
-    def test_curly_quotes_stripped(self) -> None:
-        # Verify that typographic punctuation is stripped, not passed through.
-        result = strip_unsupported_chars("“Hello”—world…")
-        assert "“" not in result
-        assert "—" not in result
-        assert "…" not in result
+    def test_curly_quotes_normalized(self) -> None:
+        # Verify that typographic punctuation is normalized to ASCII equivalents.
+        text = "\u201cHello\u201d\u2014world\u2026"
+        result = normalize_for_apple(text)
+        assert "\u201c" not in result  # left curly double quote
+        assert "\u2014" not in result  # em dash
+        assert "\u2026" not in result  # ellipsis
         assert "Hello" in result
         assert "world" in result

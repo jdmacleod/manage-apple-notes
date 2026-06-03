@@ -9,10 +9,14 @@ from unittest.mock import MagicMock
 import pytest
 
 from scripts.classify.discover_themes import (
+    _apple_synthesis_prompt,
     _build_discover_payload,
     _discover_batch,
     _export_folder_tree,
+    _python_dedup_themes,
+    _reattach_theme_details,
     _sanitize_batch_for_locale,
+    _strip_for_synthesis,
     inject_discover_taxonomy,
     run_discover,
 )
@@ -241,56 +245,59 @@ class TestDiscoverBatch:
         assert result == []
         mock_llm_provider.classify_messages.assert_called_once()
 
-    def test_locale_error_retries_with_sanitized_content(
+    def test_apple_presanitize_strips_non_ascii_before_first_call(
         self, mock_llm_provider: MagicMock
     ) -> None:
-        # First call raises locale error (mixed content); retry with sanitized succeeds.
-        call_count = 0
+        # For Apple provider, non-ASCII is stripped before the first call, so no
+        # locale error is raised and no retry is needed.
+        received_user: list[str] = []
 
         def side_effect(system: str, user: str, **kwargs: object) -> str:
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                raise RuntimeError("apple_unsupported_locale")
+            received_user.append(user)
             return json.dumps({"themes": [{"name": "Technology", "estimated_count": 5}]})
 
+        mock_llm_provider.name = "apple"
         mock_llm_provider.classify_messages.side_effect = side_effect
         batch = [{"id": "1", "title": "Tech note 日本語", "excerpt": "Hello world"}]
         result = _discover_batch(mock_llm_provider, "system", batch)
         assert result == [{"name": "Technology", "estimated_count": 5}]
-        assert call_count == 2
+        # Non-ASCII stripped before the call — exactly one call, no retry
+        assert mock_llm_provider.classify_messages.call_count == 1
+        assert "日本語" not in received_user[0]
 
-    def test_locale_error_retry_sanitizes_system_prompt(self, mock_llm_provider: MagicMock) -> None:
-        # Root cause: system prompt contains non-Latin folder paths from {ESTABLISHED_PATHS}.
-        # The retry must sanitize the system prompt too, not just the batch content.
+    def test_apple_presanitize_strips_system_prompt_too(
+        self, mock_llm_provider: MagicMock
+    ) -> None:
+        # System prompt non-Latin chars (e.g. CJK folder paths from {ESTABLISHED_PATHS})
+        # are stripped before the first call for the Apple provider.
         received_prompts: list[str] = []
 
         def side_effect(system: str, user: str, **kwargs: object) -> str:
             received_prompts.append(system)
-            if len(received_prompts) == 1:
-                raise RuntimeError("apple_unsupported_locale")
             return json.dumps({"themes": [{"name": "Work", "estimated_count": 3}]})
 
+        mock_llm_provider.name = "apple"
         mock_llm_provider.classify_messages.side_effect = side_effect
         non_latin_prompt = "Categories: Inbox. Existing paths: 仕事/Projects, 日記."
         batch = [{"id": "1", "title": "Work item", "excerpt": "Budget review"}]
         result = _discover_batch(mock_llm_provider, non_latin_prompt, batch)
         assert result == [{"name": "Work", "estimated_count": 3}]
-        # First call used the original (non-Latin) prompt
-        assert "仕事" in received_prompts[0]
-        # Retry used a sanitized prompt — non-Latin chars stripped
-        assert "仕事" not in received_prompts[1]
-        assert "Categories: Inbox" in received_prompts[1]
+        assert mock_llm_provider.classify_messages.call_count == 1
+        # System prompt was sanitized before the call
+        assert "仕事" not in received_prompts[0]
+        assert "Categories: Inbox" in received_prompts[0]
 
-    def test_locale_error_retry_also_fails_returns_empty(
+    def test_locale_error_single_note_skipped_immediately(
         self, mock_llm_provider: MagicMock
     ) -> None:
-        # Both the original and sanitized retry fail; batch is skipped.
+        # Single-note batch: locale error → skip immediately with exactly one call.
+        # No retry is attempted because pre-sanitization already ran for Apple and
+        # a retry on the same sanitized content would always fail the same way.
         mock_llm_provider.classify_messages.side_effect = RuntimeError("apple_unsupported_locale")
-        batch = [{"id": "1", "title": "Tech note 日本語", "excerpt": "Hello world"}]
+        batch = [{"id": "1", "title": "Tech note", "excerpt": "Hello world"}]
         result = _discover_batch(mock_llm_provider, "system", batch)
         assert result == []
-        assert mock_llm_provider.classify_messages.call_count == 2
+        assert mock_llm_provider.classify_messages.call_count == 1
 
     def test_locale_error_splits_on_persistent_retry_failure(
         self, mock_llm_provider: MagicMock
@@ -486,3 +493,127 @@ class TestRunDiscover:
 
         with pytest.raises(SystemExit):
             run_discover(export_file=str(tmp_path / "nonexistent.json"), dry_run=True)
+
+
+class TestAppleSynthesisHelpers:
+    # ── _python_dedup_themes ──────────────────────────────────────────────────
+
+    def test_python_dedup_merges_same_path(self) -> None:
+        themes = [
+            {"name": "Health", "estimated_count": 3, "suggested_path": "Resources/Health"},
+            {"name": "Health & Fitness", "estimated_count": 5, "suggested_path": "Resources/Health"},
+        ]
+        result = _python_dedup_themes(themes)
+        assert len(result) == 1
+        assert result[0]["estimated_count"] == 8
+
+    def test_python_dedup_preserves_distinct_paths(self) -> None:
+        themes = [
+            {"name": "Health", "estimated_count": 3, "suggested_path": "Resources/Health"},
+            {"name": "Projects", "estimated_count": 7, "suggested_path": "Projects"},
+        ]
+        result = _python_dedup_themes(themes)
+        assert len(result) == 2
+
+    def test_python_dedup_keeps_first_occurrence_fields(self) -> None:
+        themes = [
+            {
+                "name": "Health",
+                "estimated_count": 3,
+                "suggested_path": "Resources/Health",
+                "description": "First description",
+            },
+            {
+                "name": "Health & Fitness",
+                "estimated_count": 5,
+                "suggested_path": "Resources/Health",
+                "description": "Second description",
+            },
+        ]
+        result = _python_dedup_themes(themes)
+        assert result[0]["name"] == "Health"
+        assert result[0]["description"] == "First description"
+        assert result[0]["estimated_count"] == 8
+
+    def test_python_dedup_handles_empty_path(self) -> None:
+        themes = [
+            {"name": "A", "estimated_count": 1, "suggested_path": ""},
+            {"name": "B", "estimated_count": 2, "suggested_path": ""},
+        ]
+        result = _python_dedup_themes(themes)
+        assert len(result) == 1
+        assert result[0]["estimated_count"] == 3
+
+    # ── _strip_for_synthesis ─────────────────────────────────────────────────
+
+    def test_strip_for_synthesis_three_fields_only(self) -> None:
+        themes = [
+            {
+                "name": "Health",
+                "estimated_count": 5,
+                "suggested_path": "Resources/Health",
+                "description": "A description",
+                "reasoning": "Some reasoning",
+                "appears_in_categories": ["Resources"],
+            }
+        ]
+        result = _strip_for_synthesis(themes)
+        assert result == [{"name": "Health", "estimated_count": 5, "suggested_path": "Resources/Health"}]
+
+    def test_strip_for_synthesis_handles_missing_fields(self) -> None:
+        result = _strip_for_synthesis([{}])
+        assert result == [{"name": "", "estimated_count": 0, "suggested_path": ""}]
+
+    # ── _reattach_theme_details ───────────────────────────────────────────────
+
+    def test_reattach_finds_original_by_path(self) -> None:
+        merged = [{"name": "Health & Fitness", "estimated_count": 8, "suggested_path": "Resources/Health"}]
+        originals = [
+            {
+                "name": "Health",
+                "estimated_count": 3,
+                "suggested_path": "Resources/Health",
+                "description": "Health notes",
+                "reasoning": "Fitness cluster",
+            }
+        ]
+        result = _reattach_theme_details(merged, originals)
+        # Merged name/count/path override, original's extra fields are attached
+        assert result[0]["name"] == "Health & Fitness"
+        assert result[0]["estimated_count"] == 8
+        assert result[0]["description"] == "Health notes"
+        assert result[0]["reasoning"] == "Fitness cluster"
+
+    def test_reattach_no_match_passes_through(self) -> None:
+        merged = [{"name": "New Theme", "estimated_count": 5, "suggested_path": "Areas/New"}]
+        originals = [{"name": "Other", "suggested_path": "Resources/Other", "description": "X"}]
+        result = _reattach_theme_details(merged, originals)
+        assert result == [{"name": "New Theme", "estimated_count": 5, "suggested_path": "Areas/New"}]
+
+    def test_reattach_merged_overrides_original_core_fields(self) -> None:
+        merged = [{"name": "Merged Name", "estimated_count": 99, "suggested_path": "Projects"}]
+        originals = [
+            {"name": "Original Name", "estimated_count": 10, "suggested_path": "Projects", "description": "Desc"}
+        ]
+        result = _reattach_theme_details(merged, originals)
+        assert result[0]["name"] == "Merged Name"
+        assert result[0]["estimated_count"] == 99
+        assert result[0]["description"] == "Desc"
+
+    # ── _apple_synthesis_prompt ───────────────────────────────────────────────
+
+    def test_apple_synthesis_prompt_contains_folders(self) -> None:
+        prompt = _apple_synthesis_prompt(["Inbox", "Projects", "Resources"])
+        assert "Inbox" in prompt
+        assert "Projects" in prompt
+        assert "Resources" in prompt
+
+    def test_apple_synthesis_prompt_requests_json(self) -> None:
+        prompt = _apple_synthesis_prompt(["Inbox"])
+        assert "themes" in prompt
+        assert "suggested_path" in prompt
+
+    def test_apple_synthesis_prompt_empty_categories(self) -> None:
+        prompt = _apple_synthesis_prompt([])
+        assert isinstance(prompt, str)
+        assert len(prompt) > 0

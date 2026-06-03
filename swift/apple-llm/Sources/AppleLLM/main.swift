@@ -69,26 +69,26 @@ func run() async {
             fputs("error: generation failed: \(error)\n", stderr)
             exit(ExitCode.generalError)
         }
-        // Fall through to retry with stripped content.
+        // Fall through to retry with normalized content.
     }
 
-    // Retry — strip non-ASCII from both the system prompt and note body, then try again.
+    // Retry — normalize both the system prompt and note body to ASCII, then try again.
     // Notes that contain pasted foreign-language text (recipes, quotes, etc.) often
     // trigger the locale filter even when the title and most of the content are English.
-    // The system prompt must also be stripped: it contains taxonomy folder names injected
+    // The system prompt must also be normalized: it contains taxonomy folder names injected
     // by Python, which may include non-ASCII characters (accented names, CJK paths, etc.).
-    let strippedSystem = sanitizeForAppleIntelligence(input.system)
-    let strippedUser = sanitizeForAppleIntelligence(input.user)
+    let normalizedSystem = sanitizeForAppleIntelligence(input.system)
+    let normalizedUser = sanitizeForAppleIntelligence(input.user)
 
-    guard hasEnoughContent(strippedUser) else {
+    guard hasEnoughContent(normalizedUser) else {
         // Too little ASCII content left to classify meaningfully.
-        fputs("error: unsupported language or locale (insufficient ASCII content after stripping)\n", stderr)
+        fputs("error: unsupported language or locale (insufficient ASCII content after normalization)\n", stderr)
         exit(ExitCode.unsupportedLocale)
     }
 
     do {
-        let retrySession = LanguageModelSession { strippedSystem }
-        let retryResponse = try await retrySession.respond(to: strippedUser, options: options)
+        let retrySession = LanguageModelSession { normalizedSystem }
+        let retryResponse = try await retrySession.respond(to: normalizedUser, options: options)
         print(retryResponse.content)
     } catch {
         fputs("error: unsupported language or locale\n", stderr)

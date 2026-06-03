@@ -623,10 +623,10 @@ The filter has two distinct triggers:
 
 Standard ASCII punctuation (`.`, `,`, `!`, `?`, `-`, `(`, `)`, `[`, `]`) is **not** a problem.
 
-**Language detection** — even with all characters stripped to ASCII, the model runs a
+**Language detection** — even with content normalized to ASCII, the model runs a
 language classifier on the user content. Triggers that look non-English to the classifier:
 - `x-coredata://UUID/ICNote/pN` Apple Notes IDs sent as part of the batch
-- Batches where many notes have empty content after CJK stripping (the classifier sees
+- Batches where many notes have empty content after CJK normalization (the classifier sees
   mostly JSON structure and empty fields, which are ambiguous)
 - Dense technical content (URLs, code, hex strings)
 
@@ -634,27 +634,28 @@ language classifier on the user content. Triggers that look non-English to the c
 its output), and `"Notes sample:\n\n"` preamble prepended so the classifier sees
 English prose first.
 
-**Classify action** — `id` field cannot be stripped because the LLM response must echo
+**Classify action** — `id` field cannot be removed because the LLM response must echo
 it back for note matching. Instead, `x-coredata://UUID/ICNote/pN` IDs are replaced with
 short placeholders (`note_0`, `note_1`, …) before sending, and remapped back to real IDs
 after parsing the response. A `"Classify these notes:\n\n"` preamble is also prepended.
 
 **Two-level retry:** `apple-llm` (Swift) retries automatically, and the Python pipeline
-retries if the Swift-level retry also fails. Both strip to printable ASCII + standard
+retries if the Swift-level retry also fails. Both normalize to printable ASCII + standard
 whitespace (tab, newline, CR). Non-printable control chars (U+0001–U+001F excluding
 whitespace, and U+007F) are also removed.
 
 Swift-level (`apple-llm`):
 1. First attempt: full content → `unsupportedLanguageOrLocale`
-2. Strip non-ASCII from **both** system prompt and user content; collapse whitespace
+2. Normalize **both** system prompt and user content to ASCII; collapse whitespace
 3. If ≥ 5 ASCII words remain in user content: retry
 4. Retry succeeds → exit 0; fails or too short → exit 4
 
 Python-level (`discover` and `classify` actions, on receiving exit 4):
 
-**Pre-sanitization (Apple provider only):** Before the first API call, both the batch
-payload and system prompt are stripped to ASCII. This prevents the fail/retry cycle for
-character-encoding issues (accented letters, autocorrect curly quotes) on every batch.
+**Pre-normalization (Apple provider only):** Before the first API call, both the batch
+payload and system prompt are normalized for locale compatibility. This prevents the
+fail/retry cycle for character-encoding issues (accented letters, autocorrect curly
+quotes) on every batch.
 
 **Batch retry and split strategy (for batches > 1 note):**
 1. On locale error: sanitize batch + system prompt to ASCII; retry the full batch.
@@ -678,16 +679,86 @@ mixed-language batch are not discarded because non-English notes tipped the dete
 - The language detector can be triggered by ASCII content whose pattern looks non-English
   (romanized text, dense code snippets). These notes are isolated to batch size 1 and
   skipped individually rather than causing whole-batch failures.
-- Response truncation: the 4096-token total context window means long notes can produce
-  truncated JSON responses (the `reason` field gets cut off). The pipeline skips truncated
-  responses. Keeping note exports short (`max_body_chars: 500–1000` in settings) reduces
-  this.
+- Notes composed entirely in an unsupported language cannot be classified by the Apple
+  provider. Switch to Anthropic or Ollama for multilingual libraries.
+
+### Response token ceiling
+
+The Swift bridge caps `maximumResponseTokens` at **1600** via `cappedResponseTokens()` in
+`Bridge.swift`. This value was raised from an earlier 800-token ceiling after discovery runs
+exhibited systematic "no JSON object found" parse failures: a batch of 20 notes can produce
+10–15 theme objects each with 6 fields (~150–200 tokens each), requiring 1,500–3,000
+response tokens — far beyond the old 800-token cap.
+
+The 1600-token ceiling is safe given the 4096-token total context budget:
+- System prompt: ~1,200–1,500 tokens
+- User content for a 5-note discover batch: ~250 tokens
+- Remaining budget: ~2,300 tokens — well above 1600
+
+For classify (always `batch_size: 1`), a single-note response is ~100 tokens; the ceiling
+is not a factor.
+
+Individual-note probes within the locale-isolation loop (see below) use a tighter cap of
+400 tokens, since a single-note discover probe needs at most 2–3 themes and a full 1600-token
+budget encourages the model to write verbose reasoning that overflows the context.
+
+### ISO-8601 slug title normalisation
+
+Notes with titles of the form `YYYY-MM-DD-Word-Word` (e.g. meeting notes exported from
+note-taking apps as `2019-04-02-Legislative-Conference`) trigger Apple's language detector
+even when all characters are pure ASCII. The dense-hyphen, numeric-date pattern creates
+n-gram sequences that score low on all known-language models — the classifier sees a
+technical identifier, not English prose.
+
+`normalize_slug_title()` in `scripts/json_utils.py` detects the pattern and rewrites it
+before the payload is sent to the on-device model:
+
+```
+2019-04-02-Legislative-Conference  →  Legislative Conference (April 2, 2019)
+2018-08-28-L839-AMPTP              →  L839 AMPTP (August 28, 2018)
+```
+
+Applied after `normalize_for_apple` (so the regex always operates on clean ASCII)
+in `_sanitize_batch_for_locale` (discover) and `_sanitize_notes_for_locale` (classify).
+The original title is never modified in Apple Notes or in the proposal output.
+
+### Locale isolation — linear probe
+
+When a discover batch fails Apple's locale filter after slug normalisation, the pipeline
+probes each note individually (O(n) API calls) to identify and skip only the problematic
+notes, then collects themes from the passing notes. This replaces an earlier O(n log n)
+binary-split cascade.
+
+### Synthesis for Apple — two-step approach
+
+The synthesis step merges per-batch theme lists into a single deduplicated list. The naive
+approach — sending the full synthesis prompt (~1000 tokens) + all raw themes (~90 tokens
+each) + 1600-token response ceiling to Apple's 4096-token context — overflows. The
+pipeline uses a two-step approach to fit synthesis within the budget:
+
+**Step 1 — Python exact dedup (no API call):** Themes with identical `suggested_path` are
+merged in Python, summing `estimated_count` and keeping the first occurrence's metadata.
+With `theme_discovery_sample: 5` and a 338-note library, ~200 raw themes from 68 batches
+collapse to ~30–50 distinct-path themes.
+
+**Step 2 — LLM semantic dedup (1 API call):** Themes are stripped to 3 fields (`name`,
+`estimated_count`, `suggested_path`, ~25 tokens each) before sending. A minimal synthesis
+prompt (~80 tokens) replaces the full prompt (~1000 tokens). Token budget:
+- System: ~80 tokens
+- User (50 stripped themes × 25): ~1,250 tokens
+- Total input: ~1,330 tokens — leaves 2,766 tokens for response, capped at 1,600 ✓
+
+After synthesis the full fields (`description`, `reasoning`, `appears_in_categories`) are
+re-attached from the original raw themes by matching on `suggested_path`.
+
+**Fallback:** If synthesis overflows (>95 distinct-path themes — very large libraries), the
+Python-deduped list is used directly. Exact duplicates are still merged; only the semantic
+near-duplicate consolidation is skipped.
 
 ### macOS 26.4+ context size API
 
 Apple added `SystemLanguageModel.contextSize` (the available token capacity) and
 `tokenCount(for:)` (precise token counting for a given input) in macOS 26.4, both
 back-deployed to all macOS 26.x versions. A future improvement to the Swift tool could
-use these to compute the exact available response budget dynamically, rather than capping
-`maximumResponseTokens` at 800. The current conservative cap is safe for all macOS 26.x
-versions.
+use these to compute the exact available response budget dynamically, rather than using the
+static 1600-token ceiling.

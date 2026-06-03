@@ -79,9 +79,14 @@ def discover(
     debug: bool = typer.Option(
         False, "--debug", help="Print per-batch diagnostics: non-ASCII char counts, retry errors."
     ),
+    limit: int | None = typer.Option(
+        None, "--limit", help="Process only the first N notes. Useful for quick smoke-tests."
+    ),
 ) -> None:
     """Discover thematic clusters in the library for subfolder planning."""
-    run_discover(export_file=export_file, dry_run=dry_run, json_output=json_output, debug=debug)
+    run_discover(
+        export_file=export_file, dry_run=dry_run, json_output=json_output, debug=debug, limit=limit
+    )
 
 
 @app.command()

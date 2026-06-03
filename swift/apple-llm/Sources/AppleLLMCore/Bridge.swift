@@ -29,7 +29,7 @@ public struct Input: Decodable, Sendable {
 
 // MARK: — Helpers
 
-/// Normalize and strip characters Apple Intelligence cannot process.
+/// Normalize characters to the ASCII subset Apple Intelligence can process.
 ///
 /// Three-pass approach:
 ///
@@ -82,7 +82,15 @@ public func hasEnoughContent(_ text: String, minimumWords: Int = 5) -> Bool {
 }
 
 /// Returns `min(requested ?? ceiling, ceiling)` — safe response token budget.
-public func cappedResponseTokens(requested: Int?, ceiling: Int = 800) -> Int {
+///
+/// Ceiling is set to 1600 rather than the obvious 4096 because the total
+/// FoundationModels context is 4096 tokens (system + user + response combined).
+/// A typical system prompt consumes 1200–1500 tokens, leaving roughly 2500 for
+/// user content + response.  1600 gives comfortable headroom for a discover batch
+/// of 5 notes (response ~900 tokens) while staying well within the 4096 ceiling.
+/// The old 800-token ceiling caused mid-JSON truncation on discover batches and
+/// "no JSON object found" parse errors.
+public func cappedResponseTokens(requested: Int?, ceiling: Int = 1600) -> Int {
     min(requested ?? ceiling, ceiling)
 }
 

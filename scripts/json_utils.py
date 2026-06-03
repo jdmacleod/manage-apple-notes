@@ -6,6 +6,29 @@ import json
 import re
 import unicodedata
 
+# ── Slug title normalisation ─────────────────────────────────────────────────
+# Apple Intelligence's language detector rejects titles of the form
+# "YYYY-MM-DD-Word-Word" because the dense-hyphen, numeric-date pattern scores
+# low on all known-language n-gram models.  Converting to natural English prose
+# before sending the payload avoids the unsupportedLanguageOrLocale error.
+
+_ISO_SLUG_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})-(.+)$")
+
+_MONTH_NAMES = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+]
+
 # Common typographic Unicode chars that Apple's autocorrect inserts into ordinary
 # English notes.  Mapped to their plain-ASCII equivalents before sanitization so
 # words like "it's" are preserved rather than split at the apostrophe.
@@ -76,34 +99,32 @@ def is_locale_error(exc: Exception) -> bool:
     return "apple_unsupported_locale" in str(exc)
 
 
-def strip_unsupported_chars(text: str) -> str:
-    """Normalize and strip characters Apple Intelligence cannot process.
+def normalize_for_apple(text: str) -> str:
+    """Normalize text to the ASCII subset Apple Intelligence can process.
 
     Three-pass approach:
 
     1. Replace common typographic Unicode with ASCII equivalents (curly quotes
        → straight, em/en dash → hyphen, ellipsis → three dots).  Apple's
        autocorrect inserts these into virtually every English note, so without
-       this step words like "it's" or phrases like "cost—benefit" are split at
-       the typographic char rather than preserved.
+       this step words like "it's" or phrases like "cost—benefit" are corrupted
+       rather than preserved.
 
     2. NFD-decompose accented Latin characters, then drop the resulting
        combining marks (Unicode category Mn).  This maps "café" → "cafe",
-       "naïve" → "naive", "résumé" → "resume" rather than corrupting the words
-       into "caf", "na ve", "r sum".
+       "naïve" → "naive", "résumé" → "resume" — the base word is kept intact.
 
     3. Replace any remaining non-ASCII and non-printable characters with spaces
-       (keeps printable ASCII U+0020-U+007E plus tab/newline/CR); collapse runs
-       of spaces; strip leading/trailing whitespace.  CJK, Arabic, Cyrillic,
-       and other non-Latin scripts become spaces (no transliteration in Python —
-       the Swift bridge's sanitizeForAppleIntelligence does that via
-       CFStringTransform on its own retry path).
+       (keeps printable ASCII U+0020–U+007E plus tab/newline/CR); collapse runs
+       of spaces.  CJK, Arabic, Cyrillic, and other non-Latin scripts become
+       spaces (no transliteration in Python — the Swift bridge's
+       sanitizeForAppleIntelligence does that via CFStringTransform).
     """
     if not text:
         return text
-    # Pass 1: typographic normalisation
+    # Pass 1: typographic substitution
     text = text.translate(_TYPOGRAPHIC_TABLE)
-    # Pass 2: diacritic stripping via NFD decomposition
+    # Pass 2: diacritic normalization via NFD decomposition
     nfd = unicodedata.normalize("NFD", text)
     chars: list[str] = []
     for ch in nfd:
@@ -115,3 +136,24 @@ def strip_unsupported_chars(text: str) -> str:
         else:
             chars.append(" ")
     return re.sub(r" {2,}", " ", "".join(chars)).strip()
+
+
+def normalize_slug_title(title: str) -> str:
+    """Rewrite YYYY-MM-DD-slug titles to natural English for Apple's language detector.
+
+    "2019-04-02-Legislative-Conference"  →  "Legislative Conference (April 2, 2019)"
+    "2018-08-28-L839-AMPTP"              →  "L839 AMPTP (August 28, 2018)"
+
+    Returns the title unchanged when it does not match the pattern or the month
+    component is out of the 1–12 range.  Apply after normalize_for_apple so
+    the regex always operates on clean ASCII input.
+    """
+    m = _ISO_SLUG_RE.match(title)
+    if not m:
+        return title
+    year, month_str, day_str, slug = m.groups()
+    month = int(month_str)
+    if not 1 <= month <= 12:
+        return title
+    words = slug.replace("-", " ")
+    return f"{words} ({_MONTH_NAMES[month - 1]} {int(day_str)}, {year})"

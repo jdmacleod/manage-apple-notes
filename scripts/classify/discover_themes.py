@@ -38,7 +38,8 @@ from scripts.json_utils import (
     extract_json_object,
     is_context_overflow,
     is_locale_error,
-    strip_unsupported_chars,
+    normalize_for_apple,
+    normalize_slug_title,
 )
 from scripts.providers import LLMProvider, get_max_tokens, get_provider
 from scripts.run_logger import RunLogger, estimate_duration, logs_dir_path
@@ -192,13 +193,13 @@ def inject_discover_taxonomy(
 
 
 def _sanitize_batch_for_locale(batch: list[dict]) -> list[dict]:
-    """Strip unsupported characters from user-visible text fields in a discover batch."""
+    """Strip unsupported characters and normalise slug titles for Apple Intelligence."""
     return [
         {
             **item,
-            "title": strip_unsupported_chars(item.get("title") or ""),
-            "excerpt": strip_unsupported_chars(item.get("excerpt") or ""),
-            "folder_path": strip_unsupported_chars(item.get("folder_path") or ""),
+            "title": normalize_slug_title(normalize_for_apple(item.get("title") or "")),
+            "excerpt": normalize_for_apple(item.get("excerpt") or ""),
+            "folder_path": normalize_for_apple(item.get("folder_path") or ""),
         }
         for item in batch
     ]
@@ -237,6 +238,83 @@ def _non_ascii_sample(text: str, n: int = 6) -> str:
     return "".join(seen)
 
 
+def _python_dedup_themes(themes: list[dict]) -> list[dict]:
+    """Merge themes with identical suggested_path, summing estimated_count.
+
+    First-occurrence wins for all other fields (name, description, reasoning,
+    appears_in_categories).  Used as a pre-filter before Apple synthesis to
+    collapse the many near-identical per-batch themes down to distinct paths,
+    making the payload small enough for Apple's 4096-token context budget.
+    """
+    by_path: dict[str, dict] = {}
+    for theme in themes:
+        path = theme.get("suggested_path") or ""
+        if path in by_path:
+            by_path[path]["estimated_count"] = (by_path[path].get("estimated_count") or 0) + (
+                theme.get("estimated_count") or 0
+            )
+        else:
+            by_path[path] = dict(theme)
+    return list(by_path.values())
+
+
+def _strip_for_synthesis(themes: list[dict]) -> list[dict]:
+    """Reduce themes to the 3 fields the LLM needs to merge/dedup.
+
+    Strips description, reasoning, and appears_in_categories so each theme
+    is ~25 tokens instead of ~90, letting the synthesis payload fit comfortably
+    within Apple's 4096-token context.  Use _reattach_theme_details afterwards
+    to restore the full fields from the original raw themes.
+    """
+    return [
+        {
+            "name": t.get("name") or "",
+            "estimated_count": t.get("estimated_count") or 0,
+            "suggested_path": t.get("suggested_path") or "",
+        }
+        for t in themes
+    ]
+
+
+def _reattach_theme_details(merged: list[dict], originals: list[dict]) -> list[dict]:
+    """Re-attach description/reasoning/appears_in_categories after Apple synthesis.
+
+    Synthesis returns only the 3 stripped fields; this function restores the
+    remaining fields by matching each merged theme to its best original via
+    suggested_path.  If no match is found the stripped theme is kept as-is.
+    """
+    by_path: dict[str, dict] = {}
+    for t in originals:
+        path = t.get("suggested_path") or ""
+        if path and path not in by_path:
+            by_path[path] = t
+    result = []
+    for theme in merged:
+        path = theme.get("suggested_path") or ""
+        original = by_path.get(path)
+        if original:
+            # Overlay merged name/count/path on the original's full field set
+            result.append({**original, **theme})
+        else:
+            result.append(theme)
+    return result
+
+
+def _apple_synthesis_prompt(category_names: list[str]) -> str:
+    """Minimal synthesis prompt for Apple's tight 4096-token context budget.
+
+    ~80 tokens vs ~1000 for the full synthesis prompt.  Detailed taxonomy
+    anchoring is omitted because the themes already have correct suggested_path
+    values from the batch pass (which used the full discover prompt).
+    """
+    folders = ", ".join(category_names)
+    return (
+        "Merge and deduplicate these themes. Combine similar themes, sum estimated_counts, "
+        f"and keep the best suggested_path. Top-level folders: {folders}. "
+        'Return JSON: {"themes": [{"name": "...", "estimated_count": N, "suggested_path": "..."}]}'
+    )
+
+
 def _discover_batch(
     provider: LLMProvider,
     system_prompt: str,
@@ -245,13 +323,13 @@ def _discover_batch(
     max_tokens: int = 4096,
     debug: bool = False,
 ) -> list:
-    """Send one batch to the LLM; on context overflow or locale error, split recursively."""
+    """Send one batch to the LLM; on context overflow split; on locale error probe individually."""
     _con = con or console
 
-    # For Apple Intelligence, strip non-ASCII content before the first call.
-    # The locale filter triggers on any non-ASCII character; stripping proactively avoids
-    # the fail/retry cycle for every batch containing accented letters, curly quotes, or
-    # other characters that Apple autocorrect inserts into ordinary English notes.
+    # For Apple Intelligence, normalize content for locale compatibility before the first
+    # call.  Normalizing proactively avoids the fail/retry cycle for every batch
+    # containing accented letters, curly quotes, or other characters that Apple autocorrect
+    # inserts into ordinary English notes.
     if provider.name == "apple":
         if debug:
             raw_payload = _build_discover_payload(batch)
@@ -264,7 +342,7 @@ def _discover_batch(
                     f"prompt non-ASCII={orig_prompt_non_ascii}[/dim]"
                 )
         batch = _sanitize_batch_for_locale(batch)
-        system_prompt = strip_unsupported_chars(system_prompt)
+        system_prompt = normalize_for_apple(system_prompt)
 
     user_payload = _build_discover_payload(batch)
 
@@ -295,9 +373,8 @@ def _discover_batch(
         result = extract_json_object(response)
         return list(result.get("themes") or [])
     except (ValueError, json.JSONDecodeError) as exc:
-        if debug and response:
-            _con.print(f"[dim][debug]   raw response (first 400 chars): {response[:400]!r}[/dim]")
-        _con.print(f"[yellow]Warning:[/yellow] batch parse error — {exc}")
+        preview = f"\n  Response: {response[:300]!r}" if response else ""
+        _con.print(f"[yellow]Warning:[/yellow] batch parse error — {exc}{preview}")
         return []
     except Exception as exc:
         if is_context_overflow(exc) and len(batch) > 1:
@@ -311,115 +388,60 @@ def _discover_batch(
                 provider, system_prompt, batch[mid:], con=_con, max_tokens=max_tokens, debug=debug
             )
         if is_locale_error(exc):
-            if len(batch) > 1:
-                # Retry the whole batch first (sanitized), which handles the common case
-                # of a few non-ASCII notes in an otherwise English batch.
-                sanitized = _sanitize_batch_for_locale(batch)
-                sanitized_payload = _build_discover_payload(sanitized)
-                sanitized_prompt = strip_unsupported_chars(system_prompt)
-                has_content = any(
-                    (item.get("title") or "").strip() or (item.get("excerpt") or "").strip()
-                    for item in sanitized
-                )
-                if debug:
-                    _con.print(
-                        f"[dim][debug]   locale error on {len(batch)}-note batch; "
-                        f"has_content={has_content}[/dim]"
-                    )
-                if has_content:
-                    _con.print(
-                        f"[yellow]Locale error — retrying {len(batch)}-note batch"
-                        " with unsupported characters stripped[/yellow]"
-                    )
-                    try:
-                        response = provider.classify_messages(
-                            sanitized_prompt,
-                            sanitized_payload,
-                            max_tokens=max_tokens,
-                        )
-                        result = extract_json_object(response)
-                        return list(result.get("themes") or [])
-                    except Exception as retry_exc:
-                        _con.print(
-                            f"[yellow]Warning:[/yellow] locale retry also failed"
-                            f" — {type(retry_exc).__name__}: {retry_exc}"
-                        )
-                        if is_locale_error(retry_exc):
-                            # Sanitized retry still failed: the aggregate language of this
-                            # batch is triggering the locale filter even with ASCII-only
-                            # content.  Split and process each half independently so that
-                            # English-dominant sub-batches can succeed while non-English
-                            # notes are isolated and skipped individually.
-                            mid = len(batch) // 2
-                            _con.print(
-                                f"[yellow]Locale error persists — splitting batch "
-                                f"({len(batch)} → {mid}+{len(batch) - mid})[/yellow]"
-                            )
-                            if debug:
-                                _con.print(
-                                    "[dim][debug]   language detection triggered on ASCII "
-                                    "content; splitting to isolate non-English notes[/dim]"
-                                )
-                            return _discover_batch(
-                                provider,
-                                system_prompt,
-                                batch[:mid],
-                                con=_con,
-                                max_tokens=max_tokens,
-                                debug=debug,
-                            ) + _discover_batch(
-                                provider,
-                                system_prompt,
-                                batch[mid:],
-                                con=_con,
-                                max_tokens=max_tokens,
-                                debug=debug,
-                            )
+            # Pre-sanitization already ran for Apple, so a locale error here means the
+            # content itself triggers the filter (e.g. dense acronyms, structured data that
+            # the language detector scores as non-English).  A "sanitized retry" on the
+            # whole batch is a no-op and will always fail — skip it.
+            #
+            # Instead, probe each note individually in O(n) calls.  Notes that pass the
+            # locale filter contribute their themes directly; notes that fail are skipped.
+            # This replaces the prior O(n log n) binary-split cascade.
+            if len(batch) == 1:
+                note_title = (batch[0].get("title") or "").strip()[:60]
                 _con.print(
-                    f"[yellow]Warning:[/yellow] skipping discover batch of {len(batch)}"
+                    f"[yellow]Warning:[/yellow] skipping note '{note_title}'"
                     " — Apple Intelligence locale error (unsupported language)"
                 )
                 return []
-            # Single note: one last sanitized attempt, then give up.
-            sanitized = _sanitize_batch_for_locale(batch)
-            has_content = any(
-                (item.get("title") or "").strip() or (item.get("excerpt") or "").strip()
-                for item in sanitized
-            )
-            if has_content:
-                _con.print(
-                    "[yellow]Locale error — retrying single note with chars stripped[/yellow]"
-                )
-                try:
-                    response = provider.classify_messages(
-                        strip_unsupported_chars(system_prompt),
-                        _build_discover_payload(sanitized),
-                        max_tokens=max_tokens,
-                    )
-                    result = extract_json_object(response)
-                    return list(result.get("themes") or [])
-                except Exception as retry_exc:
-                    _con.print(
-                        f"[yellow]Warning:[/yellow] locale retry also failed"
-                        f" — {type(retry_exc).__name__}: {retry_exc}"
-                    )
-                    if debug and is_locale_error(retry_exc):
-                        _con.print(
-                            "[dim][debug]   note still fails locale filter after stripping "
-                            "— language detection triggered on ASCII content[/dim]"
-                        )
-            note_title = (batch[0].get("title") or "").strip()[:60] if batch else "?"
             _con.print(
-                f"[yellow]Warning:[/yellow] skipping note '{note_title}'"
-                " — Apple Intelligence locale error (unsupported language)"
+                f"[yellow]Locale error — probing {len(batch)} notes individually "
+                "to isolate failures[/yellow]"
             )
-            return []
+            # A single-note probe needs at most 2–3 themes; cap response tokens tightly
+            # so verbose reasoning doesn't overflow Apple's 4096-token context budget.
+            probe_max_tokens = min(400, max_tokens)
+            themes: list = []
+            for note in batch:
+                note_payload = _build_discover_payload([note])
+                try:
+                    note_response = provider.classify_messages(
+                        system_prompt, note_payload, max_tokens=probe_max_tokens
+                    )
+                    note_result = extract_json_object(note_response)
+                    themes.extend(note_result.get("themes") or [])
+                except Exception as note_exc:
+                    if is_locale_error(note_exc):
+                        note_title = (note.get("title") or "").strip()[:60]
+                        _con.print(
+                            f"[yellow]Warning:[/yellow] skipping note '{note_title}'"
+                            " — Apple Intelligence locale error (unsupported language)"
+                        )
+                    elif debug:
+                        _con.print(
+                            f"[dim][debug]   note probe failed "
+                            f"({type(note_exc).__name__}): {note_exc}[/dim]"
+                        )
+            return themes
         _con.print(f"[yellow]Warning:[/yellow] skipping discover batch of {len(batch)} — {exc}")
         return []
 
 
 def run_discover(
-    export_file: str | None, dry_run: bool, json_output: bool = False, debug: bool = False
+    export_file: str | None,
+    dry_run: bool,
+    json_output: bool = False,
+    debug: bool = False,
+    limit: int | None = None,
 ) -> None:
     con = Console(stderr=True) if json_output else console
     settings = load_settings()
@@ -459,6 +481,8 @@ def run_discover(
         for n in all_notes
         if (n.get("title") or "").strip() or (n.get("body") or "").strip()
     ]
+    if limit is not None:
+        summaries = summaries[:limit]
 
     batches = [summaries[i : i + sample_size] for i in range(0, len(summaries), sample_size)]
 
@@ -475,7 +499,8 @@ def run_discover(
 
         con.print("[bold]Dry run — no API calls will be made.[/bold]\n")
         con.print(f"Export:         {export_path}")
-        con.print(f"Notes sampled:  {len(summaries)}")
+        notes_label = f"{len(summaries)}" + (f"  (limited to {limit})" if limit is not None else "")
+        con.print(f"Notes sampled:  {notes_label}")
         con.print(f"Batches:        {len(batches)}  (sample size: {sample_size})")
         con.print("+ 1 synthesis call\n")
         con.print(f"Provider:       {provider.name}")
@@ -510,7 +535,10 @@ def run_discover(
         return
 
     logger = RunLogger("discover", logs_dir_path(settings))
-    con.print(f"[dim]Mode: {reorganization_mode(settings)}  ·  {provider.name} / {model}[/dim]")
+    limit_note = f"  ·  {len(summaries)} notes (limit={limit})" if limit is not None else ""
+    con.print(
+        f"[dim]Mode: {reorganization_mode(settings)}  ·  {provider.name} / {model}{limit_note}[/dim]"
+    )
     estimate = estimate_duration("discover", len(summaries), logs_dir_path(settings))
     if estimate:
         con.print(f"[dim]Estimated duration: {estimate}[/dim]")
@@ -608,7 +636,6 @@ def run_discover(
         console=con,
         speed_estimate_period=3600.0,
     ) as progress:
-        # total=len(batches)+1 accounts for the synthesis call after discovery
         task = progress.add_task("Discovering themes...", total=len(batches) + 1)
 
         for i, batch in enumerate(batches):
@@ -624,24 +651,62 @@ def run_discover(
             progress.advance(task)
 
         if raw_theme_lists:
-            progress.update(task, description="Synthesizing themes...")
             all_raw = [theme for batch_list in raw_theme_lists for theme in batch_list]
-            try:
-                synthesis_response = provider.classify_messages(
-                    synthesis_prompt,
-                    json.dumps(all_raw, indent=2, ensure_ascii=False),
-                    max_tokens=max_tokens,
-                )
-                synthesized = extract_json_object(synthesis_response)
-                final_themes = synthesized.get("themes", all_raw)
-            except Exception as exc:
-                if is_context_overflow(exc):
-                    con.print(
-                        "[yellow]Synthesis context overflow — skipping dedup, using raw theme list.[/yellow]"
+            progress.update(task, description="Synthesizing themes...")
+            if provider.name == "apple":
+                # Two-step synthesis for Apple's 4096-token context budget:
+                #
+                # Step 1 (Python, no API cost): exact dedup by suggested_path.
+                #   Many batches produce the same path (e.g. "Resources/Health").
+                #   Collapsing identical paths first shrinks ~200 raw themes to
+                #   ~30-50 distinct-path themes before any LLM call.
+                #
+                # Step 2 (LLM, 1 API call): semantic dedup using a stripped
+                #   payload (name + count + path only, ~25 tokens each vs ~90
+                #   for the full schema) and a minimal system prompt (~80 tokens).
+                #   Token budget: 80 system + 50 themes × 25 = 1330 input,
+                #   leaving ~2766 for response (capped at 1600) — fits 4096 ✓
+                deduped = _python_dedup_themes(all_raw)
+                stripped = _strip_for_synthesis(deduped)
+                apple_prompt = _apple_synthesis_prompt(category_names)
+                try:
+                    response = provider.classify_messages(
+                        apple_prompt,
+                        json.dumps(stripped, indent=2, ensure_ascii=False),
+                        max_tokens=max_tokens,
                     )
-                else:
-                    con.print(f"[yellow]Synthesis error — using raw theme list. ({exc})[/yellow]")
-                final_themes = all_raw
+                    merged = extract_json_object(response).get("themes", stripped)
+                    final_themes = _reattach_theme_details(merged, all_raw)
+                except Exception as exc:
+                    if is_context_overflow(exc):
+                        con.print(
+                            "[yellow]Synthesis context overflow — using Python-deduped themes.[/yellow]"
+                        )
+                    else:
+                        con.print(
+                            f"[yellow]Synthesis error ({type(exc).__name__})"
+                            " — using Python-deduped themes.[/yellow]"
+                        )
+                    final_themes = deduped
+            else:
+                try:
+                    synthesis_response = provider.classify_messages(
+                        synthesis_prompt,
+                        json.dumps(all_raw, indent=2, ensure_ascii=False),
+                        max_tokens=max_tokens,
+                    )
+                    synthesized = extract_json_object(synthesis_response)
+                    final_themes = synthesized.get("themes", all_raw)
+                except Exception as exc:
+                    if is_context_overflow(exc):
+                        con.print(
+                            "[yellow]Synthesis context overflow — skipping dedup, using raw theme list.[/yellow]"
+                        )
+                    else:
+                        con.print(
+                            f"[yellow]Synthesis error — using raw theme list. ({exc})[/yellow]"
+                        )
+                    final_themes = all_raw
             progress.advance(task)
 
     if not raw_theme_lists:

@@ -22,9 +22,6 @@ For each theme, estimate:
 - Which of the above categories it might appear in
 - A one-sentence description
 
-Also note any existing folder names from the input that suggest structural
-groupings worth preserving as subfolders.
-
 **Important** - the goal is to _improve_ organization, not just change it. Proposed theme changes should be _better_ than the current categorization.
 The rationale for themes should be given in the response with the "reasoning" parameter.
 
@@ -44,12 +41,6 @@ Return a JSON object:
       "description": "<one sentence>",
       "suggested_path": "<required: full folder path using an established path if one fits, e.g. 'Resources/Programming'>",
       "reasoning": "<one sentence describing the basis for the theme>"
-    }
-  ],
-  "folder_observations": [
-    {
-      "folder_path": "<existing folder path from input>",
-      "observation": "<note about this folder's contents or suggested mapping>"
     }
   ]
 }

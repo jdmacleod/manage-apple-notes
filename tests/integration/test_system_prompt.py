@@ -3,7 +3,7 @@
 Verifies that the system prompt built from inject_taxonomy():
 1. Stays within Apple's 4096-token context budget (leaving room for notes + response).
 2. Is accepted by Apple Intelligence without a locale error.
-3. Does not lose its essential structure after strip_unsupported_chars().
+3. Does not lose its essential structure after normalize_for_apple().
 
 Run with:  uv run pytest tests/integration/test_system_prompt.py --real-providers -v
 """
@@ -16,7 +16,7 @@ import pytest
 
 from scripts.classify.classify_notes import inject_taxonomy, load_prompt_template
 from scripts.config import load_settings, load_taxonomy
-from scripts.json_utils import is_locale_error, strip_unsupported_chars
+from scripts.json_utils import is_locale_error, normalize_for_apple
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -40,7 +40,7 @@ def real_system_prompt() -> str:
 
 class TestSystemPromptBudget:
     def test_system_prompt_fits_token_budget(self, real_system_prompt: str) -> None:
-        sanitized = strip_unsupported_chars(real_system_prompt)
+        sanitized = normalize_for_apple(real_system_prompt)
         estimated = _estimate_tokens(sanitized)
         assert estimated <= _MAX_SYSTEM_PROMPT_TOKENS, (
             f"System prompt is ~{estimated} tokens after sanitization "
@@ -49,10 +49,10 @@ class TestSystemPromptBudget:
         )
 
     def test_sanitization_preserves_structure(self, real_system_prompt: str) -> None:
-        sanitized = strip_unsupported_chars(real_system_prompt)
-        # System prompt should retain substantial content after stripping
+        sanitized = normalize_for_apple(real_system_prompt)
+        # System prompt should retain substantial content after normalization
         assert len(sanitized) >= len(real_system_prompt) * 0.85, (
-            f"Sanitization removed more than 15% of the system prompt "
+            f"Normalization removed more than 15% of the system prompt "
             f"({len(real_system_prompt)} → {len(sanitized)} chars). "
             "Taxonomy folder names may contain significant non-ASCII content."
         )
@@ -62,10 +62,10 @@ class TestSystemPromptBudget:
 
 
 class TestSystemPromptApple:
-    def test_stripped_system_prompt_accepted(
+    def test_normalized_system_prompt_accepted(
         self, apple_provider: object, real_system_prompt: str
     ) -> None:
-        sanitized = strip_unsupported_chars(real_system_prompt)
+        sanitized = normalize_for_apple(real_system_prompt)
         try:
             apple_provider.classify_messages(  # type: ignore[attr-defined]
                 sanitized,
