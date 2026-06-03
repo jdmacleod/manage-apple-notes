@@ -17,7 +17,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from scripts.config import CONFIG_DIR, find_latest_export
+from scripts.config import CONFIG_DIR, find_latest_export, load_settings
 from scripts.setup.frameworks import FRAMEWORKS, framework_choices, get_framework
 from scripts.setup.scorer import score
 
@@ -927,6 +927,25 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
     if winner == "EXISTING":
         if export_path is not None:
             all_paths, note_counts = _extract_folders_from_export(export_path)
+
+            # The export strips "Container/..." prefixes from folder_path, but
+            # notes sitting directly IN the container keep folder_path == container_name
+            # (the strip uses startswith("Library/"), not an exact match on "Library").
+            # Exclude those paths so the container doesn't appear as a taxonomy category.
+            effective_container = container  # from Phase 0 AppleScript detection
+            if effective_container is None:
+                _tlf = load_settings().get("toplevel_folder") or {}
+                if _tlf.get("enabled"):
+                    effective_container = _tlf.get("name") or None
+            if effective_container is not None and effective_container in note_counts:
+                n_direct = note_counts[effective_container]
+                all_paths = [p for p in all_paths if p != effective_container]
+                note_counts = {k: v for k, v in note_counts.items() if k != effective_container}
+                con.print(
+                    f"\n  [dim]{n_direct} note(s) found directly in "
+                    f"'{effective_container}' (container folder) — excluded from taxonomy.[/dim]"
+                )
+
             tree = _group_paths_into_tree(all_paths)
             role_map = _auto_map_roles(list(tree.keys()))
             role_reverse = {v: k for k, v in role_map.items()}

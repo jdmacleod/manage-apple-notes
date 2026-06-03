@@ -55,7 +55,9 @@ class AwsLlmStack(cdk.Stack):
         persistent_storage: bool = bool(aws_config.get("persistent_model_storage", False))
         s3_bucket_name: str = aws_config.get("s3_model_bucket", "")
         allowed_cidr: str = (
-            os.environ.get("AWS_ALLOWED_CIDR") or aws_config.get("allowed_cidr", "") or _detect_public_ip()
+            os.environ.get("AWS_ALLOWED_CIDR")
+            or aws_config.get("allowed_cidr", "")
+            or _detect_public_ip()
         )
 
         # ── VPC ───────────────────────────────────────────────────────────────

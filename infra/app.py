@@ -9,7 +9,6 @@ from pathlib import Path
 
 import aws_cdk as cdk
 import yaml
-
 from aws_llm_stack import AwsLlmStack
 
 REPO_ROOT = Path(__file__).resolve().parent.parent

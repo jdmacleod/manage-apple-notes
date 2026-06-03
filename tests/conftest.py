@@ -18,6 +18,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="Run integration tests that call live Apple Intelligence or Ollama.",
     )
 
+
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 RESPONSES_DIR = FIXTURES_DIR / "responses"
 NOTES_DIR = FIXTURES_DIR / "notes"

@@ -9,8 +9,8 @@ from scripts.json_utils import (
     extract_json_object,
     is_context_overflow,
     is_locale_error,
-    normalize_slug_title,
     normalize_for_apple,
+    normalize_slug_title,
 )
 
 

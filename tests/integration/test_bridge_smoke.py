@@ -90,7 +90,9 @@ class TestOllamaBridge:
             # without the array wrapper.  This is a model formatting quirk, not a
             # bridge failure.
             obj = extract_json_object(response)
-            assert isinstance(obj, dict), f"Response contained neither a JSON array nor object: {response!r}"
+            assert isinstance(obj, dict), (
+                f"Response contained neither a JSON array nor object: {response!r}"
+            )
 
     def test_returns_json_object_when_asked(self, ollama_provider: object) -> None:
         # Token budget: thinking models need room to complete their reasoning chain first.
