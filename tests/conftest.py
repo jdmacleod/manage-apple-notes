@@ -9,6 +9,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--real-providers",
+        action="store_true",
+        default=False,
+        help="Run integration tests that call live Apple Intelligence or Ollama.",
+    )
+
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 RESPONSES_DIR = FIXTURES_DIR / "responses"
 NOTES_DIR = FIXTURES_DIR / "notes"

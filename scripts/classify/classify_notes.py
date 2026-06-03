@@ -191,6 +191,44 @@ def _sanitize_notes_for_locale(notes_batch: list[dict]) -> list[dict]:
     ]
 
 
+def _build_classify_payload(
+    notes_batch: list[dict],
+    max_body: int,
+    for_apple: bool,
+) -> tuple[str, dict[str, str]]:
+    """Build the user-content payload and an ID-remapping table for classify_batch.
+
+    For Apple Intelligence, replaces x-coredata:// IDs with short placeholders
+    ("note_0", "note_1", ...) so Apple's language detector does not misclassify
+    the UUID-heavy URL strings as non-English, and prepends a plain-English
+    preamble to anchor language detection.  The returned dict maps each placeholder
+    back to the original ID.  For other providers the map is empty and IDs pass
+    through unchanged.
+    """
+    index_to_id: dict[str, str] = {}
+    payload = []
+    for i, n in enumerate(notes_batch):
+        real_id = str(n.get("id", ""))
+        note_id = f"note_{i}" if for_apple else real_id
+        if for_apple:
+            index_to_id[note_id] = real_id
+        payload.append(
+            {
+                "id": note_id,
+                "title": n.get("title", ""),
+                "body": n.get("body", "")[:max_body],
+                "current_folder": n.get("folder_path") or n.get("folder", ""),
+            }
+        )
+    if for_apple:
+        payload_str = "Classify these notes:\n\n" + json.dumps(
+            payload, indent=2, ensure_ascii=False
+        )
+    else:
+        payload_str = json.dumps(payload, indent=2, ensure_ascii=False)
+    return payload_str, index_to_id
+
+
 def classify_batch(
     provider: LLMProvider,
     notes_batch: list[dict],
@@ -198,23 +236,21 @@ def classify_batch(
     settings: dict,
 ) -> list[dict]:
     max_body = settings.get("export", {}).get("max_body_chars", 2000)
-
-    batch_payload = [
-        {
-            "id": n["id"],
-            "title": n.get("title", ""),
-            "body": n.get("body", "")[:max_body],
-            "current_folder": n.get("folder_path") or n.get("folder", ""),
-        }
-        for n in notes_batch
-    ]
-
+    payload_str, index_to_id = _build_classify_payload(
+        notes_batch, max_body, for_apple=provider.name == "apple"
+    )
     text = provider.classify_messages(
         system_prompt,
-        json.dumps(batch_payload, indent=2, ensure_ascii=False),
+        payload_str,
         max_tokens=get_max_tokens(settings, provider),
     )
-    return extract_json_array(text)
+    results = extract_json_array(text)
+    if index_to_id:
+        for result in results:
+            placeholder = result.get("id", "")
+            if placeholder in index_to_id:
+                result["id"] = index_to_id[placeholder]
+    return results
 
 
 def classify_batch_resilient(
@@ -228,6 +264,11 @@ def classify_batch_resilient(
     _con = con or console
     if not notes_batch:
         return []
+    # For Apple Intelligence, strip non-ASCII before the first call to avoid triggering
+    # the locale filter on every batch (discover_themes uses the same pattern).
+    if provider.name == "apple":
+        notes_batch = _sanitize_notes_for_locale(notes_batch)
+        system_prompt = strip_unsupported_chars(system_prompt)
     try:
         return classify_batch(provider, notes_batch, system_prompt, settings)
     except Exception as exc:

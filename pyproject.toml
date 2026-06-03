@@ -80,6 +80,9 @@ indent-style = "space"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=scripts --cov-report=term-missing --cov-report=xml --cov-fail-under=90"
+markers = [
+    "real_providers: marks tests that call live Apple Intelligence or Ollama (skip in CI; pass --real-providers to run)",
+]
 
 [tool.coverage.run]
 omit = ["scripts/dev_*.py"]

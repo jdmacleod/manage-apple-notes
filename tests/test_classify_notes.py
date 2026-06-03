@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from scripts.classify.classify_notes import (
+    _build_classify_payload,
     _build_folder_path,
     _sanitize_notes_for_locale,
     _subfolder_str,
@@ -485,6 +486,63 @@ class TestSanitizeNotesForLocale:
         result = _sanitize_notes_for_locale([note])
         assert result[0]["id"] == "abc-123"
         assert result[0]["extra"] == 42
+
+
+class TestBuildClassifyPayload:
+    def test_non_apple_ids_pass_through_unchanged(self) -> None:
+        notes = [{"id": "x-coredata://uuid/ICNote/p1", "title": "A", "body": "B", "folder": "Inbox"}]
+        payload_str, index_to_id = _build_classify_payload(notes, max_body=2000, for_apple=False)
+        assert index_to_id == {}
+        items = json.loads(payload_str)
+        assert items[0]["id"] == "x-coredata://uuid/ICNote/p1"
+
+    def test_apple_replaces_ids_with_placeholders(self) -> None:
+        notes = [
+            {"id": "x-coredata://uuid/ICNote/p1", "title": "A", "body": "B", "folder": "Inbox"},
+            {"id": "x-coredata://uuid/ICNote/p2", "title": "C", "body": "D", "folder": "Archive"},
+        ]
+        payload_str, index_to_id = _build_classify_payload(notes, max_body=2000, for_apple=True)
+        assert index_to_id == {
+            "note_0": "x-coredata://uuid/ICNote/p1",
+            "note_1": "x-coredata://uuid/ICNote/p2",
+        }
+        # payload is "Classify these notes:\n\n[...]"
+        json_part = payload_str.split("\n\n", 1)[-1]
+        items = json.loads(json_part)
+        assert items[0]["id"] == "note_0"
+        assert items[1]["id"] == "note_1"
+
+    def test_apple_payload_has_english_preamble(self) -> None:
+        notes = [{"id": "x-coredata://uuid/p1", "title": "A", "body": "B", "folder": "Inbox"}]
+        payload_str, _ = _build_classify_payload(notes, max_body=2000, for_apple=True)
+        assert payload_str.startswith("Classify these notes:\n\n")
+
+    def test_non_apple_payload_has_no_preamble(self) -> None:
+        notes = [{"id": "1", "title": "A", "body": "B", "folder": "Inbox"}]
+        payload_str, _ = _build_classify_payload(notes, max_body=2000, for_apple=False)
+        assert payload_str.startswith("[")  # plain JSON array
+
+    def test_body_truncated_to_max_body(self) -> None:
+        notes = [{"id": "1", "title": "A", "body": "x" * 5000, "folder": "Inbox"}]
+        payload_str, _ = _build_classify_payload(notes, max_body=100, for_apple=False)
+        items = json.loads(payload_str)
+        assert len(items[0]["body"]) == 100
+
+    def test_folder_path_preferred_over_folder(self) -> None:
+        notes = [{"id": "1", "title": "A", "body": "B", "folder": "Inbox", "folder_path": "Inbox/Sub"}]
+        payload_str, _ = _build_classify_payload(notes, max_body=2000, for_apple=False)
+        items = json.loads(payload_str)
+        assert items[0]["current_folder"] == "Inbox/Sub"
+
+    def test_classify_batch_remaps_apple_ids_in_results(self, mock_llm_provider: MagicMock) -> None:
+        # classify_batch should remap note_N placeholders back to real IDs when provider is Apple.
+        mock_llm_provider.name = "apple"
+        notes = [{"id": "x-coredata://uuid/p1", "title": "Hello", "body": "World", "folder": "Inbox"}]
+        mock_llm_provider.classify_messages.return_value = json.dumps(
+            [{"id": "note_0", "proposed_folder": "Resources", "confidence": "high"}]
+        )
+        results = classify_batch(mock_llm_provider, notes, "prompt", {})
+        assert results[0]["id"] == "x-coredata://uuid/p1"
 
 
 class TestRunClassify:

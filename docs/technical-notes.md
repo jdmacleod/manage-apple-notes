@@ -630,9 +630,14 @@ language classifier on the user content. Triggers that look non-English to the c
   mostly JSON structure and empty fields, which are ambiguous)
 - Dense technical content (URLs, code, hex strings)
 
-The batch user payload now excludes the `id` field entirely (the discover action never
-references note IDs in its output) and prepends `"Notes sample:\n\n"` so the language
-classifier sees English prose at the start of the content.
+**Discover action** — `id` field excluded entirely (discover never references IDs in
+its output), and `"Notes sample:\n\n"` preamble prepended so the classifier sees
+English prose first.
+
+**Classify action** — `id` field cannot be stripped because the LLM response must echo
+it back for note matching. Instead, `x-coredata://UUID/ICNote/pN` IDs are replaced with
+short placeholders (`note_0`, `note_1`, …) before sending, and remapped back to real IDs
+after parsing the response. A `"Classify these notes:\n\n"` preamble is also prepended.
 
 **Two-level retry:** `apple-llm` (Swift) retries automatically, and the Python pipeline
 retries if the Swift-level retry also fails. Both strip to printable ASCII + standard
@@ -645,7 +650,7 @@ Swift-level (`apple-llm`):
 3. If ≥ 5 ASCII words remain in user content: retry
 4. Retry succeeds → exit 0; fails or too short → exit 4
 
-Python-level (`discover` action, on receiving exit 4):
+Python-level (`discover` and `classify` actions, on receiving exit 4):
 
 **Pre-sanitization (Apple provider only):** Before the first API call, both the batch
 payload and system prompt are stripped to ASCII. This prevents the fail/retry cycle for
