@@ -264,7 +264,7 @@ _ROLE_KEYWORDS: dict[str, list[str]] = {
     "permanent": ["permanent", "evergreen", "zettel"],
     "projects": ["project"],
     "areas": ["area"],
-    "resources": ["resource", "reference", "library"],
+    "resources": ["resource", "reference"],
     "archive": ["archive"],
     "review": ["review", "triage"],
 }
