@@ -476,6 +476,80 @@ def _write_env_line(key: str, value: str, dry_run: bool) -> None:
     con.print(f"  Wrote [green]{key}[/green] to .env")
 
 
+def _write_reorganization_mode_to_settings(mode: str, dry_run: bool) -> None:
+    settings_path = CONFIG_DIR / "settings.local.yaml"
+    if not settings_path.exists():
+        return
+    content = settings_path.read_text(encoding="utf-8")
+    new_content = re.sub(
+        r"^reorganization_mode:.*$",
+        f'reorganization_mode: "{mode}"',
+        content,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if dry_run:
+        con.print(f'  [dim]Would set reorganization_mode: "{mode}" in settings.local.yaml[/dim]')
+        return
+    settings_path.write_text(new_content, encoding="utf-8")
+    con.print(f'  Set [green]reorganization_mode: "{mode}"[/green] in settings.local.yaml')
+
+
+def _write_subfolder_threshold_to_settings(threshold: int, dry_run: bool) -> None:
+    settings_path = CONFIG_DIR / "settings.local.yaml"
+    if not settings_path.exists():
+        return
+    content = settings_path.read_text(encoding="utf-8")
+    new_content = re.sub(
+        r"^(\s+min_notes_for_subfolder:)\s+\d+",
+        rf"\g<1> {threshold}",
+        content,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if dry_run:
+        con.print(
+            f"  [dim]Would set thresholds.min_notes_for_subfolder: {threshold}"
+            " in settings.local.yaml[/dim]"
+        )
+        return
+    settings_path.write_text(new_content, encoding="utf-8")
+    con.print(
+        f"  Set [green]thresholds.min_notes_for_subfolder: {threshold}[/green]"
+        " in settings.local.yaml"
+    )
+
+
+def _ask_organization_style(dry_run: bool) -> None:
+    """Ask how aggressively the AI should reorganize, and the subfolder threshold."""
+    con.print("\n[bold]Organization style[/bold]")
+
+    mode_choice = _ask_numbered(
+        "How should the AI treat your existing folder structure?",
+        [
+            "Suggest improvements — reorganize where content clearly warrants it",
+            "Respect my structure — prefer existing folders; add subfolders sparingly",
+            "Keep structure fixed — classify notes into existing folders only",
+        ],
+        default=2,
+    )
+    mode_map = {1: "standard", 2: "conservative", 3: "static"}
+    _write_reorganization_mode_to_settings(mode_map[mode_choice], dry_run)
+
+    con.print()
+    threshold_choice = _ask_numbered(
+        "How many notes on a topic before creating a new subfolder?",
+        [
+            "A few (5)   — more granular; good for large collections",
+            "Several (8) — balanced [recommended]",
+            "Many (15)  — fewer folders; simpler; better for small libraries or iPhone",
+        ],
+        default=2,
+    )
+    threshold_map = {1: 5, 2: 8, 3: 15}
+    _write_subfolder_threshold_to_settings(threshold_map[threshold_choice], dry_run)
+
+
 def _write_toplevel_folder_to_settings(enabled: bool, name: str, dry_run: bool) -> None:
     settings_path = CONFIG_DIR / "settings.local.yaml"
     if not settings_path.exists():
@@ -780,12 +854,16 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
             )
         )
 
-    # ── Phase 7: LLM provider selection ───────────────────────────────────────
+    # ── Phase 7: Organization style preferences ───────────────────────────────
+    if settings_created:
+        _ask_organization_style(dry_run)
+
+    # ── Phase 8: LLM provider selection ───────────────────────────────────────
     provider_configured = False
     if settings_created:
         provider_configured = _select_provider(dry_run)
 
-    # ── Phase 8: Container folder structure ───────────────────────────────────
+    # ── Phase 9: Container folder structure ───────────────────────────────────
     # EXISTING path: taxonomy has full paths already — skip container setting entirely.
     # New framework + container confirmed in Phase 0.5: write directly, no question needed.
     # New framework + user explicitly opted out: leave default (enabled: false) in place.
@@ -796,7 +874,7 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
         elif not container_question_shown:
             _ask_container(dry_run)
 
-    # ── Phase 9: Primary account ───────────────────────────────────────────────
+    # ── Phase 10: Primary account ──────────────────────────────────────────────
     if settings_created and selected_account is not None:
         _write_primary_account_to_settings(selected_account, dry_run)
 

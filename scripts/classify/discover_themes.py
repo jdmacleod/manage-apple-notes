@@ -68,12 +68,17 @@ def load_discover_prompt() -> str:
 
 _CONSERVATISM_GUIDANCE: dict[str, str] = {
     "conservative": (
-        "Most notes in this library are deliberately organized in their current folders. "
-        "Only propose a new theme or subfolder path when you see a strong cluster of notes "
-        "that genuinely lacks a good home in the existing structure. "
-        "Do not propose reorganization of notes already in stable, purposeful locations. "
-        "Strong evidence — many notes, a clear and distinct topic — is required before "
-        "suggesting any new path."
+        "Most notes in this library are deliberately organized. "
+        "You MUST map each theme to one of the existing folder paths listed above. "
+        "Only use a path not in that list when the theme is clearly distinct and large "
+        "enough to warrant a genuinely new folder — this should be rare. "
+        "When in doubt, use the closest existing path."
+    ),
+    "static": (
+        "This library's folder structure is FIXED and must not change. "
+        "You MUST use only the existing folder paths listed above for suggested_path. "
+        "Do not propose any new folder or subfolder under any circumstances. "
+        "Map every theme to the most appropriate existing path."
     ),
     "standard": "",
     "full": (
@@ -160,14 +165,21 @@ def inject_discover_taxonomy(
 
         if paths:
             path_list = "\n".join(f"  - {p}" for p in paths)
-            if reorg_mode == "conservative":
+            if reorg_mode == "static":
+                established_block = (
+                    "The following folders currently exist in your Apple Notes library:\n"
+                    f"{path_list}\n\n"
+                    "Your folder structure is FIXED. You MUST use only these exact paths "
+                    "for suggested_path. Using any other path is an error."
+                )
+            elif reorg_mode == "conservative":
                 established_block = (
                     "The following folders currently exist in your Apple Notes library:\n"
                     f"{path_list}\n\n"
                     "These represent your deliberate organizational structure. "
-                    "For each theme, prefer a suggested_path that maps to one of these existing paths. "
-                    "Only propose a new path when the theme clearly has no appropriate home "
-                    "among these existing folders."
+                    "For each theme you MUST use one of these paths as the suggested_path. "
+                    "Only use a path not listed above if the theme is clearly distinct and "
+                    "has no appropriate home in any existing folder."
                 )
             else:
                 established_block = (
@@ -300,14 +312,27 @@ def _reattach_theme_details(merged: list[dict], originals: list[dict]) -> list[d
     return result
 
 
-def _apple_synthesis_prompt(category_names: list[str]) -> str:
+def _apple_synthesis_prompt(
+    category_names: list[str],
+    reorg_mode: str = "standard",
+    established_paths: list[str] | None = None,
+) -> str:
     """Minimal synthesis prompt for Apple's tight 4096-token context budget.
 
-    ~80 tokens vs ~1000 for the full synthesis prompt.  Detailed taxonomy
-    anchoring is omitted because the themes already have correct suggested_path
-    values from the batch pass (which used the full discover prompt).
+    ~80-130 tokens vs ~1000 for the full synthesis prompt.  Conservative and
+    static modes include the established paths list as a compact hint so the
+    synthesis step is anchored to existing structure, not just category names.
     """
     folders = ", ".join(category_names)
+    if reorg_mode in ("conservative", "static"):
+        path_hint = ", ".join(established_paths[:20]) if established_paths else ""
+        return (
+            "Merge and deduplicate these themes. Only merge themes that are clearly similar. "
+            "Preserve the suggested_path values already present — do not rename or replace them. "
+            f"Top-level folders: {folders}. "
+            + (f"Existing paths (use only these): {path_hint}. " if path_hint else "")
+            + 'Return JSON: {"themes": [{"name": "...", "estimated_count": N, "suggested_path": "..."}]}'
+        )
     return (
         "Merge and deduplicate these themes. Combine similar themes, sum estimated_counts, "
         f"and keep the best suggested_path. Top-level folders: {folders}. "
@@ -373,6 +398,21 @@ def _discover_batch(
         result = extract_json_object(response)
         return list(result.get("themes") or [])
     except (ValueError, json.JSONDecodeError) as exc:
+        # Apple Intelligence caps output at 1600 tokens and truncates silently —
+        # it never raises a context-overflow exception, so truncated batches
+        # surface here as parse errors instead.  Split and retry rather than
+        # dropping the whole batch; single-note failures are skipped as usual.
+        if len(batch) > 1:
+            mid = len(batch) // 2
+            _con.print(
+                f"[yellow]Parse error — splitting batch "
+                f"({len(batch)} → {mid}+{len(batch) - mid})[/yellow]"
+            )
+            return _discover_batch(
+                provider, system_prompt, batch[:mid], con=_con, max_tokens=max_tokens, debug=debug
+            ) + _discover_batch(
+                provider, system_prompt, batch[mid:], con=_con, max_tokens=max_tokens, debug=debug
+            )
         preview = f"\n  Response: {response[:300]!r}" if response else ""
         _con.print(f"[yellow]Warning:[/yellow] batch parse error — {exc}{preview}")
         return []
@@ -598,11 +638,17 @@ def run_discover(
     export_folders = _export_folder_tree(all_notes)
     if export_folders and reorg_mode != "full":
         folder_list = ", ".join(export_folders[:30])
-        folder_anchor = (
-            f"The existing Apple Notes folder structure is: {folder_list}. "
-            "Prefer suggested_path values drawn from this list. "
-            "Only deviate when a strong theme cluster genuinely lacks an appropriate home here."
-        )
+        if reorg_mode == "static":
+            folder_anchor = (
+                f"The existing Apple Notes folder structure is: {folder_list}. "
+                "You MUST use only these paths for suggested_path — no exceptions."
+            )
+        else:
+            folder_anchor = (
+                f"The existing Apple Notes folder structure is: {folder_list}. "
+                "Prefer suggested_path values drawn from this list. "
+                "Only deviate when a strong theme cluster genuinely lacks an appropriate home here."
+            )
     else:
         folder_anchor = ""
 
@@ -668,7 +714,9 @@ def run_discover(
                 #   leaving ~2766 for response (capped at 1600) — fits 4096 ✓
                 deduped = _python_dedup_themes(all_raw)
                 stripped = _strip_for_synthesis(deduped)
-                apple_prompt = _apple_synthesis_prompt(category_names)
+                apple_prompt = _apple_synthesis_prompt(
+                    category_names, reorg_mode=reorg_mode, established_paths=established
+                )
                 try:
                     response = provider.classify_messages(
                         apple_prompt,

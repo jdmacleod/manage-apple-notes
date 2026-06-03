@@ -30,6 +30,8 @@ from scripts.setup.run_setup import (
     _write_env_line,
     _write_primary_account_to_settings,
     _write_provider_to_settings,
+    _write_reorganization_mode_to_settings,
+    _write_subfolder_threshold_to_settings,
     _write_taxonomy,
     _write_toplevel_folder_to_settings,
     analyze_corpus,
@@ -690,6 +692,7 @@ class TestRunSetup:
         )
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
+        mocker.patch("scripts.setup.run_setup._ask_organization_style")
         select_mock = mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
         mocker.patch("scripts.setup.run_setup._ask_container")
         run_setup(dry_run=False, no_corpus=True)
@@ -733,6 +736,7 @@ class TestRunSetup:
         )
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
+        mocker.patch("scripts.setup.run_setup._ask_organization_style")
         mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
         container_mock = mocker.patch("scripts.setup.run_setup._ask_container")
         run_setup(dry_run=False, no_corpus=True)
@@ -762,6 +766,7 @@ class TestRunSetup:
         )
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
+        mocker.patch("scripts.setup.run_setup._ask_organization_style")
         mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
         ask_mock = mocker.patch("scripts.setup.run_setup._ask_container")
         write_mock = mocker.patch("scripts.setup.run_setup._write_toplevel_folder_to_settings")
@@ -794,6 +799,7 @@ class TestRunSetup:
         )
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
+        mocker.patch("scripts.setup.run_setup._ask_organization_style")
         mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
         ask_mock = mocker.patch("scripts.setup.run_setup._ask_container")
         run_setup(dry_run=False, no_corpus=True)
@@ -810,6 +816,7 @@ class TestRunSetup:
         )
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
+        mocker.patch("scripts.setup.run_setup._ask_organization_style")
         mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
         ask_mock = mocker.patch("scripts.setup.run_setup._ask_container")
         write_mock = mocker.patch("scripts.setup.run_setup._write_toplevel_folder_to_settings")
@@ -1198,6 +1205,66 @@ class TestWritePrimaryAccountToSettings:
         assert not (tmp_path / "settings.local.yaml").exists()
 
 
+class TestWriteReorganizationModeToSettings:
+    def test_writes_conservative(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text('reorganization_mode: "standard"\nother: setting\n')
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_reorganization_mode_to_settings("conservative", dry_run=False)
+        assert 'reorganization_mode: "conservative"' in settings.read_text()
+        assert "other: setting" in settings.read_text()
+
+    def test_writes_static(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text('reorganization_mode: "standard"\n')
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_reorganization_mode_to_settings("static", dry_run=False)
+        assert 'reorganization_mode: "static"' in settings.read_text()
+
+    def test_dry_run_does_not_write(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        original = 'reorganization_mode: "standard"\n'
+        settings.write_text(original)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_reorganization_mode_to_settings("static", dry_run=True)
+        assert settings.read_text() == original
+
+    def test_no_op_when_file_missing(self, tmp_path: Path) -> None:
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_reorganization_mode_to_settings("conservative", dry_run=False)
+        assert not (tmp_path / "settings.local.yaml").exists()
+
+
+class TestWriteSubfolderThresholdToSettings:
+    def test_writes_threshold_value(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text("thresholds:\n  min_notes_for_subfolder: 8\nother: setting\n")
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_subfolder_threshold_to_settings(15, dry_run=False)
+        assert "min_notes_for_subfolder: 15" in settings.read_text()
+        assert "other: setting" in settings.read_text()
+
+    def test_writes_low_threshold(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text("thresholds:\n  min_notes_for_subfolder: 8\n")
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_subfolder_threshold_to_settings(5, dry_run=False)
+        assert "min_notes_for_subfolder: 5" in settings.read_text()
+
+    def test_dry_run_does_not_write(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        original = "thresholds:\n  min_notes_for_subfolder: 8\n"
+        settings.write_text(original)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_subfolder_threshold_to_settings(15, dry_run=True)
+        assert settings.read_text() == original
+
+    def test_no_op_when_file_missing(self, tmp_path: Path) -> None:
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_subfolder_threshold_to_settings(10, dry_run=False)
+        assert not (tmp_path / "settings.local.yaml").exists()
+
+
 class TestRunSetupAccountIntegration:
     """Integration tests for account detection wired into run_setup."""
 
@@ -1219,6 +1286,7 @@ class TestRunSetupAccountIntegration:
         )
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
+        mocker.patch("scripts.setup.run_setup._ask_organization_style")
         mocker.patch("scripts.setup.run_setup._select_provider", return_value=False)
         mocker.patch("scripts.setup.run_setup._ask_container")
 

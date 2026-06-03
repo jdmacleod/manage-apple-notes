@@ -138,6 +138,20 @@ class TestInjectTaxonomy:
         result = inject_taxonomy("{RELOCATION_GUIDANCE}", minimal_taxonomy)
         assert result.strip() == ""
 
+    def test_relocation_guidance_static_has_content(self, minimal_taxonomy: dict) -> None:
+        result = inject_taxonomy(
+            "{RELOCATION_GUIDANCE}", minimal_taxonomy, {"reorganization_mode": "static"}
+        )
+        assert "HIGH confidence" in result
+        assert "{RELOCATION_GUIDANCE}" not in result
+
+    def test_relocation_guidance_static_differs_from_standard(self, minimal_taxonomy: dict) -> None:
+        standard = inject_taxonomy("{RELOCATION_GUIDANCE}", minimal_taxonomy)
+        static = inject_taxonomy(
+            "{RELOCATION_GUIDANCE}", minimal_taxonomy, {"reorganization_mode": "static"}
+        )
+        assert standard != static
+
 
 class TestConservativeModePostProcessing:
     """Tests for the conservative-mode safety net in run_classify()."""
@@ -407,39 +421,19 @@ class TestClassifyBatchResilient:
         result = classify_batch_resilient(mock_llm_provider, notes, "prompt", {})
         assert result == []
 
-    def test_locale_error_all_cjk_skips_retry_returns_empty(
-        self, mock_llm_provider: MagicMock
-    ) -> None:
-        # All content is CJK → sanitized title and body are "" → no retry
+    def test_locale_error_single_note_skips_immediately(self, mock_llm_provider: MagicMock) -> None:
+        # Single-note batch: locale error → skip immediately, no split or retry.
         notes = [{"id": "1", "title": "日本語タイトル", "body": "本文", "folder": "Inbox"}]
         mock_llm_provider.classify_messages.side_effect = RuntimeError("apple_unsupported_locale")
         result = classify_batch_resilient(mock_llm_provider, notes, "prompt", {})
         assert result == []
         mock_llm_provider.classify_messages.assert_called_once()
 
-    def test_locale_error_retries_with_sanitized_content(
+    def test_locale_error_multi_note_batch_splits_to_probe(
         self, mock_llm_provider: MagicMock
     ) -> None:
-        # Mixed batch: first call fails; retry with sanitized content succeeds.
-        call_count = 0
-
-        def side_effect(system: str, user: str, **kwargs: object) -> str:
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                raise RuntimeError("apple_unsupported_locale")
-            return json.dumps([{"id": "1", "proposed_folder": "Resources", "confidence": "high"}])
-
-        mock_llm_provider.classify_messages.side_effect = side_effect
-        notes = [{"id": "1", "title": "Tech note 日本語", "body": "Hello world", "folder": "Inbox"}]
-        result = classify_batch_resilient(mock_llm_provider, notes, "prompt", {})
-        assert result == [{"id": "1", "proposed_folder": "Resources", "confidence": "high"}]
-        assert call_count == 2
-
-    def test_locale_error_retry_also_fails_returns_empty(
-        self, mock_llm_provider: MagicMock
-    ) -> None:
-        # Mixed batch: both original and sanitized retry fail; batch is skipped.
+        # Multi-note batch: locale error → split into 1-note probes; both fail → skip both.
+        # 3 total calls: 1 original batch + 2 individual probes.
         mock_llm_provider.classify_messages.side_effect = RuntimeError("apple_unsupported_locale")
         notes = [
             {"id": "1", "title": "A", "body": "B", "folder": "Inbox"},
@@ -447,8 +441,30 @@ class TestClassifyBatchResilient:
         ]
         result = classify_batch_resilient(mock_llm_provider, notes, "prompt", {})
         assert result == []
-        # Original call + one sanitized retry — no recursive splitting
-        assert mock_llm_provider.classify_messages.call_count == 2
+        assert mock_llm_provider.classify_messages.call_count == 3
+
+    def test_locale_error_multi_note_batch_rescues_clean_notes(
+        self, mock_llm_provider: MagicMock
+    ) -> None:
+        # Multi-note batch: first note fails locale; second note succeeds after split.
+        call_count = 0
+
+        def side_effect(system: str, user: str, **kwargs: object) -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                # Original 2-note call + probe of first note both fail
+                raise RuntimeError("apple_unsupported_locale")
+            return json.dumps([{"id": "2", "proposed_folder": "Resources", "confidence": "high"}])
+
+        mock_llm_provider.classify_messages.side_effect = side_effect
+        notes = [
+            {"id": "1", "title": "日本語タイトル", "body": "本文", "folder": "Inbox"},
+            {"id": "2", "title": "Tech meeting notes", "body": "Q3 planning", "folder": "Inbox"},
+        ]
+        result = classify_batch_resilient(mock_llm_provider, notes, "prompt", {})
+        assert result == [{"id": "2", "proposed_folder": "Resources", "confidence": "high"}]
+        assert call_count == 3
 
 
 class TestSanitizeNotesForLocale:
@@ -490,7 +506,9 @@ class TestSanitizeNotesForLocale:
 
 class TestBuildClassifyPayload:
     def test_non_apple_ids_pass_through_unchanged(self) -> None:
-        notes = [{"id": "x-coredata://uuid/ICNote/p1", "title": "A", "body": "B", "folder": "Inbox"}]
+        notes = [
+            {"id": "x-coredata://uuid/ICNote/p1", "title": "A", "body": "B", "folder": "Inbox"}
+        ]
         payload_str, index_to_id = _build_classify_payload(notes, max_body=2000, for_apple=False)
         assert index_to_id == {}
         items = json.loads(payload_str)
@@ -529,7 +547,9 @@ class TestBuildClassifyPayload:
         assert len(items[0]["body"]) == 100
 
     def test_folder_path_preferred_over_folder(self) -> None:
-        notes = [{"id": "1", "title": "A", "body": "B", "folder": "Inbox", "folder_path": "Inbox/Sub"}]
+        notes = [
+            {"id": "1", "title": "A", "body": "B", "folder": "Inbox", "folder_path": "Inbox/Sub"}
+        ]
         payload_str, _ = _build_classify_payload(notes, max_body=2000, for_apple=False)
         items = json.loads(payload_str)
         assert items[0]["current_folder"] == "Inbox/Sub"
@@ -537,7 +557,9 @@ class TestBuildClassifyPayload:
     def test_classify_batch_remaps_apple_ids_in_results(self, mock_llm_provider: MagicMock) -> None:
         # classify_batch should remap note_N placeholders back to real IDs when provider is Apple.
         mock_llm_provider.name = "apple"
-        notes = [{"id": "x-coredata://uuid/p1", "title": "Hello", "body": "World", "folder": "Inbox"}]
+        notes = [
+            {"id": "x-coredata://uuid/p1", "title": "Hello", "body": "World", "folder": "Inbox"}
+        ]
         mock_llm_provider.classify_messages.return_value = json.dumps(
             [{"id": "note_0", "proposed_folder": "Resources", "confidence": "high"}]
         )

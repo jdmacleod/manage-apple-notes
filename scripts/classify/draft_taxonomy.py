@@ -13,7 +13,13 @@ import typer
 import yaml
 from rich.console import Console
 
-from scripts.config import get_category_meta, load_settings, load_taxonomy, local_taxonomy_exists
+from scripts.config import (
+    get_category_meta,
+    load_settings,
+    load_taxonomy,
+    local_taxonomy_exists,
+    reorganization_mode,
+)
 from scripts.folder_utils import enumerate_paths
 from scripts.json_output import emit_result
 from scripts.json_utils import extract_json_object
@@ -462,6 +468,16 @@ def run_draft(theme_map_file: str | None, dry_run: bool, json_output: bool = Fal
         return (export_order.get(p, len(ordered_export_paths)), p)
 
     new_paths = sorted(candidate_set - established, key=_export_key)
+
+    if reorganization_mode(settings) == "static":
+        con.print("[dim]Static mode: folder structure is fixed — no new paths added.[/dim]")
+        if json_output:
+            emit_result(
+                "draft",
+                dry_run=dry_run,
+                summary={"added": 0, "already_present": 0, "no_match": 0},
+            )
+        return
 
     if not new_paths:
         con.print("[dim]No new paths to add — taxonomy is already up to date.[/dim]")

@@ -148,7 +148,7 @@ def inject_taxonomy(
 
     # Relocation guidance for conservative mode: name the actual transit folders
     reorg = reorganization_mode(settings)
-    if reorg == "conservative":
+    if reorg in ("conservative", "static"):
         transit_names = [
             folder_name(fn[k])
             for k, v in cat_meta.items()
@@ -274,30 +274,25 @@ def classify_batch_resilient(
         return classify_batch(provider, notes_batch, system_prompt, settings)
     except Exception as exc:
         if is_locale_error(exc):
-            sanitized = _sanitize_notes_for_locale(notes_batch)
-            has_content = any(
-                (note.get("title") or "").strip() or (note.get("body") or "").strip()
-                for note in sanitized
+            # Proactive normalization already ran for Apple (lines above), so a locale
+            # error here means a specific note's content still triggers the filter after
+            # normalization.  Sanitizing again is a no-op — split to isolate and skip
+            # only the affected note(s), mirroring discover's linear-probe behaviour.
+            if len(notes_batch) > 1:
+                mid = len(notes_batch) // 2
+                _con.print(
+                    f"[yellow]Locale error — splitting batch "
+                    f"({len(notes_batch)} → {mid}+{len(notes_batch) - mid})[/yellow]"
+                )
+                return classify_batch_resilient(
+                    provider, notes_batch[:mid], system_prompt, settings, con=_con
+                ) + classify_batch_resilient(
+                    provider, notes_batch[mid:], system_prompt, settings, con=_con
+                )
+            _con.print(
+                f"[yellow]Warning:[/yellow] skipping note '{notes_batch[0].get('title', '')}'"
+                " — Apple Intelligence locale error (unsupported language)"
             )
-            if has_content:
-                _con.print(
-                    f"[yellow]Locale error — retrying {len(notes_batch)}-note batch"
-                    " with content normalized for Apple Intelligence[/yellow]"
-                )
-                try:
-                    return classify_batch(provider, sanitized, system_prompt, settings)
-                except Exception:
-                    pass
-            if len(notes_batch) == 1:
-                _con.print(
-                    f"[yellow]Warning:[/yellow] skipping note '{notes_batch[0].get('title', '')}'"
-                    " — Apple Intelligence locale error (unsupported characters)"
-                )
-            else:
-                _con.print(
-                    f"[yellow]Warning:[/yellow] skipping batch of {len(notes_batch)}"
-                    " — Apple Intelligence locale error; rerun with batch_size: 1 to skip only affected notes"
-                )
             return []
         is_recoverable = is_context_overflow(exc) or isinstance(
             exc, (ValueError, json.JSONDecodeError)

@@ -5,6 +5,8 @@
 #                 notes outside Inbox/Fleeting; only propose new subfolders with strong evidence
 # "standard":     default behavior - classify all notes; anchor to existing taxonomy paths
 # "full":         treat the library as raw material; reclassify from scratch
+# "static":       folder structure is fixed; classify notes into existing folders only;
+#                 never propose new subfolders (discover still runs for audit/triage purposes)
 reorganization_mode: "standard"
 
 # Operating mode: "loose" (folders + classification only) or

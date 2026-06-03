@@ -72,6 +72,17 @@ class TestInjectDiscoverTaxonomy:
             {"reorganization_mode": "conservative"},
         )
         assert "deliberately organized" in result
+        assert "MUST" in result
+        assert "{CONSERVATISM_GUIDANCE}" not in result
+
+    def test_conservatism_guidance_static_has_fixed_language(self, minimal_taxonomy: dict) -> None:
+        result = inject_discover_taxonomy(
+            "{CONSERVATISM_GUIDANCE}",
+            minimal_taxonomy,
+            {"reorganization_mode": "static"},
+        )
+        assert "FIXED" in result
+        assert "MUST" in result
         assert "{CONSERVATISM_GUIDANCE}" not in result
 
     def test_conservatism_guidance_full_has_content(self, minimal_taxonomy: dict) -> None:
@@ -121,7 +132,21 @@ class TestInjectDiscoverTaxonomy:
             notes=notes,
         )
         assert "deliberate organizational structure" in result
+        assert "MUST" in result
         assert "Areas/Finance" in result
+
+    def test_notes_provided_static_uses_fixed_framing(self, minimal_taxonomy: dict) -> None:
+        notes = [{"folder_path": "Areas/Finance"}, {"folder_path": "Resources/Cooking"}]
+        result = inject_discover_taxonomy(
+            "{ESTABLISHED_PATHS}",
+            minimal_taxonomy,
+            {"reorganization_mode": "static"},
+            notes=notes,
+        )
+        assert "FIXED" in result
+        assert "MUST" in result
+        assert "Areas/Finance" in result
+        assert "error" in result.lower()
 
     def test_notes_provided_full_mode_ignores_notes(self, minimal_taxonomy: dict) -> None:
         notes = [{"folder_path": "Areas/Finance"}, {"folder_path": "Resources/Cooking"}]
@@ -265,9 +290,7 @@ class TestDiscoverBatch:
         assert mock_llm_provider.classify_messages.call_count == 1
         assert "日本語" not in received_user[0]
 
-    def test_apple_presanitize_strips_system_prompt_too(
-        self, mock_llm_provider: MagicMock
-    ) -> None:
+    def test_apple_presanitize_strips_system_prompt_too(self, mock_llm_provider: MagicMock) -> None:
         # System prompt non-Latin chars (e.g. CJK folder paths from {ESTABLISHED_PATHS})
         # are stripped before the first call for the Apple provider.
         received_prompts: list[str] = []
@@ -378,7 +401,9 @@ class TestSanitizeBatchForLocale:
 
 class TestBuildDiscoverPayload:
     def test_excludes_id_field(self) -> None:
-        batch = [{"id": "x-coredata://ABC/p1", "title": "Budget", "excerpt": "Q4", "folder_path": "Work"}]
+        batch = [
+            {"id": "x-coredata://ABC/p1", "title": "Budget", "excerpt": "Q4", "folder_path": "Work"}
+        ]
         payload = _build_discover_payload(batch)
         assert "x-coredata" not in payload
         assert "id" not in payload
@@ -397,7 +422,9 @@ class TestBuildDiscoverPayload:
         assert "id" not in items[0]
 
     def test_preserves_title_excerpt_folder_path(self) -> None:
-        batch = [{"id": "x", "title": "Meeting", "excerpt": "Budget", "folder_path": "Work/Finance"}]
+        batch = [
+            {"id": "x", "title": "Meeting", "excerpt": "Budget", "folder_path": "Work/Finance"}
+        ]
         payload = _build_discover_payload(batch)
         items = json.loads(payload.split("\n\n", 1)[-1])
         assert items[0] == {"title": "Meeting", "excerpt": "Budget", "folder_path": "Work/Finance"}
@@ -501,7 +528,11 @@ class TestAppleSynthesisHelpers:
     def test_python_dedup_merges_same_path(self) -> None:
         themes = [
             {"name": "Health", "estimated_count": 3, "suggested_path": "Resources/Health"},
-            {"name": "Health & Fitness", "estimated_count": 5, "suggested_path": "Resources/Health"},
+            {
+                "name": "Health & Fitness",
+                "estimated_count": 5,
+                "suggested_path": "Resources/Health",
+            },
         ]
         result = _python_dedup_themes(themes)
         assert len(result) == 1
@@ -558,7 +589,9 @@ class TestAppleSynthesisHelpers:
             }
         ]
         result = _strip_for_synthesis(themes)
-        assert result == [{"name": "Health", "estimated_count": 5, "suggested_path": "Resources/Health"}]
+        assert result == [
+            {"name": "Health", "estimated_count": 5, "suggested_path": "Resources/Health"}
+        ]
 
     def test_strip_for_synthesis_handles_missing_fields(self) -> None:
         result = _strip_for_synthesis([{}])
@@ -567,7 +600,9 @@ class TestAppleSynthesisHelpers:
     # ── _reattach_theme_details ───────────────────────────────────────────────
 
     def test_reattach_finds_original_by_path(self) -> None:
-        merged = [{"name": "Health & Fitness", "estimated_count": 8, "suggested_path": "Resources/Health"}]
+        merged = [
+            {"name": "Health & Fitness", "estimated_count": 8, "suggested_path": "Resources/Health"}
+        ]
         originals = [
             {
                 "name": "Health",
@@ -588,12 +623,19 @@ class TestAppleSynthesisHelpers:
         merged = [{"name": "New Theme", "estimated_count": 5, "suggested_path": "Areas/New"}]
         originals = [{"name": "Other", "suggested_path": "Resources/Other", "description": "X"}]
         result = _reattach_theme_details(merged, originals)
-        assert result == [{"name": "New Theme", "estimated_count": 5, "suggested_path": "Areas/New"}]
+        assert result == [
+            {"name": "New Theme", "estimated_count": 5, "suggested_path": "Areas/New"}
+        ]
 
     def test_reattach_merged_overrides_original_core_fields(self) -> None:
         merged = [{"name": "Merged Name", "estimated_count": 99, "suggested_path": "Projects"}]
         originals = [
-            {"name": "Original Name", "estimated_count": 10, "suggested_path": "Projects", "description": "Desc"}
+            {
+                "name": "Original Name",
+                "estimated_count": 10,
+                "suggested_path": "Projects",
+                "description": "Desc",
+            }
         ]
         result = _reattach_theme_details(merged, originals)
         assert result[0]["name"] == "Merged Name"
@@ -617,3 +659,60 @@ class TestAppleSynthesisHelpers:
         prompt = _apple_synthesis_prompt([])
         assert isinstance(prompt, str)
         assert len(prompt) > 0
+
+    def test_apple_synthesis_prompt_conservative_preserves_paths(self) -> None:
+        prompt = _apple_synthesis_prompt(["Inbox", "Resources"], reorg_mode="conservative")
+        assert "Preserve" in prompt or "preserve" in prompt
+        assert "suggested_path" in prompt
+        assert "Inbox" in prompt
+
+    def test_apple_synthesis_prompt_conservative_differs_from_standard(self) -> None:
+        standard = _apple_synthesis_prompt(["Inbox"], reorg_mode="standard")
+        conservative = _apple_synthesis_prompt(["Inbox"], reorg_mode="conservative")
+        assert standard != conservative
+
+    def test_apple_synthesis_prompt_standard_is_default(self) -> None:
+        assert _apple_synthesis_prompt(["Inbox"]) == _apple_synthesis_prompt(
+            ["Inbox"], reorg_mode="standard"
+        )
+
+    def test_apple_synthesis_prompt_static_has_fixed_language(self) -> None:
+        prompt = _apple_synthesis_prompt(["Inbox", "Resources"], reorg_mode="static")
+        assert "Preserve" in prompt or "preserve" in prompt
+        assert "suggested_path" in prompt
+
+    def test_apple_synthesis_prompt_static_differs_from_standard(self) -> None:
+        standard = _apple_synthesis_prompt(["Inbox"], reorg_mode="standard")
+        static = _apple_synthesis_prompt(["Inbox"], reorg_mode="static")
+        assert standard != static
+
+    def test_apple_synthesis_prompt_established_paths_included_for_conservative(self) -> None:
+        paths = ["Resources/Health", "Areas/Work"]
+        prompt = _apple_synthesis_prompt(
+            ["Resources", "Areas"], reorg_mode="conservative", established_paths=paths
+        )
+        assert "Resources/Health" in prompt
+        assert "Areas/Work" in prompt
+
+    def test_apple_synthesis_prompt_established_paths_included_for_static(self) -> None:
+        paths = ["Resources/Health", "Areas/Work"]
+        prompt = _apple_synthesis_prompt(
+            ["Resources", "Areas"], reorg_mode="static", established_paths=paths
+        )
+        assert "Resources/Health" in prompt
+        assert "Areas/Work" in prompt
+
+    def test_apple_synthesis_prompt_established_paths_absent_for_standard(self) -> None:
+        paths = ["Resources/Health", "Areas/Work"]
+        prompt = _apple_synthesis_prompt(
+            ["Resources", "Areas"], reorg_mode="standard", established_paths=paths
+        )
+        assert "Resources/Health" not in prompt
+
+    def test_apple_synthesis_prompt_caps_established_paths_at_20(self) -> None:
+        paths = [f"Resources/Topic{i}" for i in range(30)]
+        prompt = _apple_synthesis_prompt(
+            ["Resources"], reorg_mode="conservative", established_paths=paths
+        )
+        assert "Resources/Topic19" in prompt
+        assert "Resources/Topic20" not in prompt
