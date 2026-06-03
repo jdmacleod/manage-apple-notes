@@ -1,4 +1,4 @@
-# GTD (Getting Things Done) folder taxonomy — template.
+# GTD (Getting Things Done) folder taxonomy - template.
 # Copy to taxonomy.local.yaml and fill in your actual Apple Notes folder names.
 #
 # GTD organises by actionability: every item is either something to act on,
@@ -15,7 +15,7 @@
 
 taxonomy:
   inbox:
-    folder: "[YOUR_INBOX_FOLDER]"         # raw captures — process to empty at least weekly
+    folder: "[YOUR_INBOX_FOLDER]"         # raw captures - process to empty at least weekly
 
   next_actions:
     folder: "[YOUR_NEXT_ACTIONS_FOLDER]"  # concrete single tasks to do ASAP

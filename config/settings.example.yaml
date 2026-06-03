@@ -1,9 +1,9 @@
-# General settings — copy to settings.local.yaml and customize.
+# General settings - copy to settings.local.yaml and customize.
 
 # How aggressively discover and classify propose changes to your library.
 # "conservative": most notes are already organized; require high confidence before moving
 #                 notes outside Inbox/Fleeting; only propose new subfolders with strong evidence
-# "standard":     default behavior — classify all notes; anchor to existing taxonomy paths
+# "standard":     default behavior - classify all notes; anchor to existing taxonomy paths
 # "full":         treat the library as raw material; reclassify from scratch
 reorganization_mode: "standard"
 
@@ -15,18 +15,18 @@ reorganization_mode: "standard"
 forever_notes_mode: "loose"
 
 # How deep the classifier and discover pass suggest folder nesting.
-# "flat"    — top-level category folders only; no subfolders suggested
-# "natural" — respect depth already present in your taxonomy (default)
-# "deep"    — suggest additional nesting tiers up to max_folder_depth
+# "flat"    - top-level category folders only; no subfolders suggested
+# "natural" - respect depth already present in your taxonomy (default)
+# "deep"    - suggest additional nesting tiers up to max_folder_depth
 folder_nesting: "natural"
 
 # When enabled, all taxonomy folders are created inside a single top-level
 # container folder rather than at the account root. Leave disabled (the default)
-# unless you specifically want this structure — it has no effect on discovery or
+# unless you specifically want this structure - it has no effect on discovery or
 # classification, only on where `notes move` places folders in Apple Notes.
 #
 # When to enable: you want the Apple Notes sidebar to show one "Library" entry
-# instead of 8–9 top-level category folders, or your notes are already organised
+# instead of 8-9 top-level category folders, or your notes are already organised
 # this way.
 #
 # Migration path: do your initial classification run with enabled: false. Once
@@ -38,7 +38,7 @@ toplevel_folder:
   enabled: false         # true = nest all taxonomy folders inside `name` at account root
   name: "Library"        # container folder name (only used when enabled: true)
 
-# LLM provider — choose one of: "anthropic", "ollama", "aws-ollama", "apple"
+# LLM provider - choose one of: "anthropic", "ollama", "aws-ollama", "apple"
 # Set this single value to switch providers. All other LLM settings (model, batch_size,
 # context_size, etc.) are filled automatically from the llm_providers block below.
 llm_provider: "apple"
@@ -48,7 +48,7 @@ llm_provider: "apple"
 #   model: "claude-sonnet-4-6"
 #   batch_size: 5
 
-# Per-provider defaults — loaded automatically based on llm_provider.
+# Per-provider defaults - loaded automatically based on llm_provider.
 # Edit a provider's block here to change its baseline, or use llm_overrides for
 # one-off tweaks without altering the defaults.
 llm_providers:
@@ -82,10 +82,10 @@ llm_providers:
     context_size: 4096
     apple_llm_binary: "swift/apple-llm/.build/release/apple-llm"  # path to compiled Swift bridge
 
-# AWS EC2 Ollama deployment — required by `cd infra && cdk deploy` when using provider: "aws-ollama".
+# AWS EC2 Ollama deployment - required by `cd infra && cdk deploy` when using provider: "aws-ollama".
 # See docs/aws-infrastructure.md for full prerequisites and setup steps.
 # aws.ssh_key_path and aws.allowed_cidr can also be set via AWS_SSH_KEY_PATH and AWS_ALLOWED_CIDR
-# in .env — env vars take precedence over settings values.
+# in .env - env vars take precedence over settings values.
 # aws:
 #   region: "us-east-1"
 #   instance_type: "g5.xlarge"          # GPU instance; adjust for cost vs performance
@@ -103,7 +103,7 @@ paths:
   proposals_dir: "data/proposals"
   dedup_proposals_dir: "data/dedup-proposals"
   reports_dir: "data/reports"
-  logs_dir: "data/logs"           # run logs — one JSON file per command execution
+  logs_dir: "data/logs"           # run logs - one JSON file per command execution
 
 export:
   include_body: true
@@ -117,8 +117,8 @@ classify:
                           # Set to false to include Archive notes in a full library re-organization
 
 deduplication:
-  fuzzy_title_threshold: 85      # thefuzz token_sort_ratio threshold (0–100)
-  jaccard_content_threshold: 80  # thefuzz token_set_ratio threshold (0–100)
+  fuzzy_title_threshold: 85      # thefuzz token_sort_ratio threshold (0-100)
+  jaccard_content_threshold: 80  # thefuzz token_set_ratio threshold (0-100)
   content_preview_chars: 300     # characters of each note shown in the dedup proposal
   semantic_sweep: false          # full LLM pass over theme clusters (expensive; off by default)
   default_resolution: "review"   # conservative default: flag for human, don't auto-delete
@@ -126,8 +126,8 @@ deduplication:
 thresholds:
   min_notes_for_subfolder: 8     # minimum note count before a NEW subfolder is proposed (discover/draft)
                                   # folders that already exist in your library are always honoured regardless
-                                  # of this value — the threshold only gates creation of new structure
-                                  # audit uses this inversely: flat folders ABOVE this count → subfolder candidate
+                                  # of this value - the threshold only gates creation of new structure
+                                  # audit uses this inversely: flat folders ABOVE this count -> subfolder candidate
                                   # (subfolder candidate check is suppressed when reorganization_mode: conservative)
   min_notes_for_hub: 1           # minimum notes for a subfolder to get its own Hub note in sync-hubs
   min_notes_for_home_link: 1    # minimum notes for a subfolder to appear on the ✱ Home note
@@ -135,24 +135,24 @@ thresholds:
                                   # subfolders below min_notes_for_hub appear as plain text (no Hub
                                   # note to link to) and gain a Hub once they cross that threshold
   max_folder_depth: 3            # absolute ceiling on proposed nesting (Apple Notes max: 5)
-  stub_words: 5                  # notes with ≤ this many combined title+body words AND no attachments → flag as stub
+  stub_words: 5                  # notes with <= this many combined title+body words AND no attachments -> flag as stub
 
-# Per-category metadata — controls classifier behaviour and audit checks.
+# Per-category metadata - controls classifier behaviour and audit checks.
 # Any key you define in taxonomy.local.yaml can have an entry here.
 # Keys not listed here inherit defaults from the nine built-in roles (see config.py).
 #
 # Supported flags (all optional):
-#   description           — text sent to the LLM alongside the folder name during classification
-#   transit: true         — conservative mode: notes here are "in-flight" and may be freely moved
-#   stale_days: N         — audit: flag notes not modified within N days
-#   active_days: N        — audit: flag notes not modified FOR N days (e.g. inactive projects)
-#   exclude_from_classify — skip notes in this folder during `notes classify`
-#   exclude_from_discover — skip notes in this folder during `notes discover`
-#   catchall: true        — route notes the LLM cannot confidently classify here
+#   description           - text sent to the LLM alongside the folder name during classification
+#   transit: true         - conservative mode: notes here are "in-flight" and may be freely moved
+#   stale_days: N         - audit: flag notes not modified within N days
+#   active_days: N        - audit: flag notes not modified FOR N days (e.g. inactive projects)
+#   exclude_from_classify - skip notes in this folder during `notes classify`
+#   exclude_from_discover - skip notes in this folder during `notes discover`
+#   catchall: true        - route notes the LLM cannot confidently classify here
 #
 # Example for a PARA taxonomy (see also config/taxonomy.para.yaml):
 #   inbox:
-#     description: "capture — unprocessed notes to be filed"
+#     description: "capture - unprocessed notes to be filed"
 #     transit: true
 #     stale_days: 7
 #   projects:
@@ -206,19 +206,19 @@ categories:
 
 # Settings below apply only when forever_notes_mode is "strict".
 strict_mode:
-  heavy_asterisk: "✱"            # Unicode U+2731 — do not change
+  heavy_asterisk: "✱"            # Unicode U+2731 - do not change
   home_note_title: "✱ Home"
   home_note_folder: null         # null = iCloud root; or specify a folder name
   hub_title_prefix: "✱ "
   hub_note_folder: null          # null = same folder as home note
   internal_links: "text"         # "text" = plain title list (safe, default)
-                                  # "html" = applenotes:// links (experimental — may break
+                                  # "html" = applenotes:// links (experimental - may break
                                   #          after iCloud sync; see docs/forever-notes-framework.md)
 
-  # ── Future / unreleased settings ─────────────────────────────────────────
+  # -- Future / unreleased settings -----------------------------------------
   # These keys are reserved for upcoming features and are NOT yet read by any script.
   # Enabling them now has no effect.
-  tag_all_notes: false           # NOT YET IMPLEMENTED — append #ForeverNotes to every classified note
-  tag_theme_notes: false         # NOT YET IMPLEMENTED — append #[theme] tag to notes on classification
-  tag_hub_notes: false           # NOT YET IMPLEMENTED — append #hub tag to all hub notes
-  update_hubs_after_classify: false  # NOT YET IMPLEMENTED — auto-run sync-hubs after classify
+  tag_all_notes: false           # NOT YET IMPLEMENTED - append #ForeverNotes to every classified note
+  tag_theme_notes: false         # NOT YET IMPLEMENTED - append #[theme] tag to notes on classification
+  tag_hub_notes: false           # NOT YET IMPLEMENTED - append #hub tag to all hub notes
+  update_hubs_after_classify: false  # NOT YET IMPLEMENTED - auto-run sync-hubs after classify

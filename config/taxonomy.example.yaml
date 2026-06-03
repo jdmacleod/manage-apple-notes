@@ -18,7 +18,7 @@ taxonomy:
   literature:
     folder: "[YOUR_LITERATURE_FOLDER]"
     subfolders: []                         # e.g. ["Health", "Technology", "History"]
-    # Strict mode with hub overrides (optional — only needed if auto-derived names are wrong):
+    # Strict mode with hub overrides (optional - only needed if auto-derived names are wrong):
     # subfolders:
     #   - name: "Health"
     #     hub_title: "✱ Health"            # defaults to "✱ Health" if omitted

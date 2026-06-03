@@ -1,10 +1,10 @@
-# Zettelkasten / Forever Notes folder taxonomy — template.
+# Zettelkasten / Forever Notes folder taxonomy - template.
 # Copy to taxonomy.local.yaml and fill in your actual folder names and subfolders.
 #
 # This template follows the Zettelkasten slip-box method as adapted for Apple Notes,
 # with an optional Forever Notes (Hub/Home) layer when forever_notes_mode is "strict".
-# Nine categories: Inbox → Fleeting → Literature → Permanent → Projects → Areas →
-#                  Resources → Archive → Review
+# Nine categories: Inbox -> Fleeting -> Literature -> Permanent -> Projects -> Areas ->
+#                  Resources -> Archive -> Review
 #
 # Subfolders are discovered during the theme discovery pass (notes discover).
 # Add them to taxonomy.local.yaml before running notes classify.
@@ -16,8 +16,8 @@
 #   resources:
 #     folder: "Resources"
 #     subfolders:
-#       - "Cooking"                    # simple string leaf — one level deep
-#       - name: "Programming"          # dict with nested subfolders — two levels deep
+#       - "Cooking"                    # simple string leaf - one level deep
+#       - name: "Programming"          # dict with nested subfolders - two levels deep
 #         subfolders:
 #           - "Python"
 #           - name: "Systems"
@@ -47,7 +47,7 @@ taxonomy:
   literature:
     folder: "[YOUR_LITERATURE_FOLDER]"
     subfolders: []                         # e.g. ["Health", "Technology", "History"]
-    # Strict mode with hub overrides (optional — only needed if auto-derived names are wrong):
+    # Strict mode with hub overrides (optional - only needed if auto-derived names are wrong):
     # subfolders:
     #   - name: "Health"
     #     hub_title: "✱ Health"            # defaults to "✱ Health" if omitted

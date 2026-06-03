@@ -1,4 +1,4 @@
-# PARA Method folder taxonomy — template.
+# PARA Method folder taxonomy - template.
 # Copy to taxonomy.local.yaml and fill in your actual Apple Notes folder names.
 #
 # This template uses the PARA method (Projects, Areas, Resources, Archive) as
@@ -9,10 +9,10 @@
 # Two designs are shown below. Choose one and delete the other before copying
 # to taxonomy.local.yaml:
 #
-#   Minimalist  — Projects and Resources stay flat; navigate by search and
+#   Minimalist  - Projects and Resources stay flat; navigate by search and
 #                 disciplined note titling. Five top-level folders total.
 #
-#   Expanded    — Projects gets one subfolder per active project; Resources is
+#   Expanded    - Projects gets one subfolder per active project; Resources is
 #                 split into three lanes; Archive mirrors the top-level structure.
 #                 Better for larger libraries or when you prefer visual navigation.
 #
@@ -27,18 +27,18 @@
 # For the Zettelkasten-influenced alternative (Inbox, Fleeting, Literature,
 # Permanent, Projects, Areas, Resources, Archive, Review), see taxonomy.zettelkasten.yaml.
 
-# ── MINIMALIST PARA ──────────────────────────────────────────────────────────
+# -- MINIMALIST PARA ----------------------------------------------------------
 # Five top-level folders. Projects and Resources are flat; navigate by search.
 # Recommended starting point when migrating a large existing library.
 
 taxonomy:
   inbox:
-    folder: "[YOUR_INBOX_FOLDER]"         # keep flat — process regularly
+    folder: "[YOUR_INBOX_FOLDER]"         # keep flat - process regularly
 
   projects:
     folder: "[YOUR_PROJECTS_FOLDER]"
     subfolders: []                        # keep flat; prefix note titles with project name
-    # e.g. "Home Renovation — Materials List", "Home Renovation — Contractor Notes"
+    # e.g. "Home Renovation - Materials List", "Home Renovation - Contractor Notes"
 
   areas:
     folder: "[YOUR_AREAS_FOLDER]"
@@ -57,7 +57,7 @@ taxonomy:
     subfolders: []                        # keep flat; project/area name in note title suffices
 
 
-# ── EXPANDED PARA ─────────────────────────────────────────────────────────────
+# -- EXPANDED PARA -------------------------------------------------------------
 # Uncomment and use this block instead if you prefer per-project subfolders,
 # a differentiated Resources layer, and a mirrored Archive structure.
 # Delete the minimalist block above if using this one.
