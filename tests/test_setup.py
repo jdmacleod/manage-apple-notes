@@ -14,13 +14,16 @@ from scripts.setup.frameworks import FRAMEWORKS, framework_choices, get_framewor
 from scripts.setup.run_setup import (
     _ask_container,
     _ask_numbered,
+    _auto_map_roles,
     _build_existing_taxonomy_yaml,
+    _build_taxonomy_from_export,
     _build_taxonomy_yaml,
     _collect_existing_folders,
     _collect_folder_names,
     _detect_accounts,
     _detect_container,
     _ensure_settings,
+    _extract_folders_from_export,
     _fetch_subfolders,
     _fetch_top_level_folders,
     _find_export_optional,
@@ -383,6 +386,117 @@ class TestBuildExistingTaxonomyYaml:
         assert "Custom" in result or "existing" in result.lower()
 
 
+class TestExtractFoldersFromExport:
+    def test_returns_sorted_unique_folders(self, tmp_path: Path) -> None:
+        export = tmp_path / "notes.json"
+        export.write_text(
+            json.dumps(
+                [
+                    {"folder": "Projects", "body": ""},
+                    {"folder": "Inbox", "body": ""},
+                    {"folder": "Projects", "body": ""},
+                    {"folder": "Archive", "body": ""},
+                ]
+            )
+        )
+        folders, counts = _extract_folders_from_export(export)
+        assert folders == ["Archive", "Inbox", "Projects"]
+
+    def test_note_counts_are_accurate(self, tmp_path: Path) -> None:
+        export = tmp_path / "notes.json"
+        export.write_text(
+            json.dumps(
+                [
+                    {"folder": "Inbox", "body": ""},
+                    {"folder": "Inbox", "body": ""},
+                    {"folder": "Projects", "body": ""},
+                ]
+            )
+        )
+        _, counts = _extract_folders_from_export(export)
+        assert counts["Inbox"] == 2
+        assert counts["Projects"] == 1
+
+    def test_skips_notes_with_no_folder(self, tmp_path: Path) -> None:
+        export = tmp_path / "notes.json"
+        export.write_text(json.dumps([{"body": "no folder"}, {"folder": "", "body": "empty"}]))
+        folders, counts = _extract_folders_from_export(export)
+        assert folders == []
+
+    def test_subfolder_paths_preserved(self, tmp_path: Path) -> None:
+        export = tmp_path / "notes.json"
+        export.write_text(json.dumps([{"folder": "Library/Inbox", "body": ""}]))
+        folders, _ = _extract_folders_from_export(export)
+        assert folders == ["Library/Inbox"]
+
+
+class TestAutoMapRoles:
+    def test_maps_inbox_by_name(self) -> None:
+        mapping = _auto_map_roles(["Inbox", "Projects"])
+        assert mapping.get("inbox") == "Inbox"
+
+    def test_maps_archive_by_name(self) -> None:
+        mapping = _auto_map_roles(["Archive", "Notes"])
+        assert mapping.get("archive") == "Archive"
+
+    def test_maps_projects_by_partial_match(self) -> None:
+        mapping = _auto_map_roles(["My Projects"])
+        assert mapping.get("projects") == "My Projects"
+
+    def test_matches_subfolder_by_leaf(self) -> None:
+        mapping = _auto_map_roles(["Library/Inbox", "Library/Projects"])
+        assert mapping.get("inbox") == "Library/Inbox"
+        assert mapping.get("projects") == "Library/Projects"
+
+    def test_does_not_double_assign_same_folder(self) -> None:
+        mapping = _auto_map_roles(["Inbox"])
+        assert "inbox" in mapping
+        assigned = list(mapping.values())
+        assert len(assigned) == len(set(assigned))
+
+    def test_unrecognised_folder_not_in_mapping(self) -> None:
+        mapping = _auto_map_roles(["XYZ Random Folder"])
+        assert "XYZ Random Folder" not in mapping.values()
+
+    def test_empty_list_returns_empty(self) -> None:
+        assert _auto_map_roles([]) == {}
+
+
+class TestBuildTaxonomyFromExport:
+    def test_produces_valid_yaml(self) -> None:
+        result = _build_taxonomy_from_export(["Inbox", "Projects"], {"inbox": "Inbox"})
+        parsed = yaml.safe_load(result)
+        assert "taxonomy" in parsed
+
+    def test_role_mapped_folder_uses_semantic_key(self) -> None:
+        result = _build_taxonomy_from_export(["Inbox"], {"inbox": "Inbox"})
+        parsed = yaml.safe_load(result)
+        assert parsed["taxonomy"]["inbox"]["folder"] == "Inbox"
+
+    def test_unmapped_folder_gets_sanitized_key(self) -> None:
+        result = _build_taxonomy_from_export(["Health Notes"], {})
+        parsed = yaml.safe_load(result)
+        assert "health_notes" in parsed["taxonomy"]
+
+    def test_collision_handled_with_suffix(self) -> None:
+        result = _build_taxonomy_from_export(["A/Notes", "B/Notes"], {})
+        parsed = yaml.safe_load(result)
+        keys = list(parsed["taxonomy"].keys())
+        assert len(keys) == len(set(keys)), "Collision produced duplicate keys"
+
+    def test_all_folders_included(self) -> None:
+        folders = ["Inbox", "Projects", "Health", "Finance"]
+        role_map = {"inbox": "Inbox", "projects": "Projects"}
+        result = _build_taxonomy_from_export(folders, role_map)
+        parsed = yaml.safe_load(result)
+        stored = {v["folder"] for v in parsed["taxonomy"].values()}
+        assert stored == set(folders)
+
+    def test_header_mentions_export(self) -> None:
+        result = _build_taxonomy_from_export(["Inbox"], {})
+        assert "export" in result.lower()
+
+
 class TestGtdCategoriesSnippet:
     def test_returns_valid_yaml(self) -> None:
         snippet = _gtd_categories_snippet()
@@ -533,11 +647,13 @@ class TestRunSetup:
         _yaml_arg, dry_run_arg = write_mock.call_args[0]
         assert dry_run_arg is True
 
-    def test_existing_path_q1_4(self, mocker: MagicMock, tmp_path: Path) -> None:
+    def test_existing_path_q1_4_no_export_uses_manual_mapping(
+        self, mocker: MagicMock, tmp_path: Path
+    ) -> None:
         mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
         mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=4)
         mocker.patch("typer.confirm", return_value=True)
-        mocker.patch(
+        collect_mock = mocker.patch(
             "scripts.setup.run_setup._collect_existing_folders",
             return_value={"inbox": "My Inbox", "archive": "Archive"},
         )
@@ -545,6 +661,51 @@ class TestRunSetup:
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
         run_setup(dry_run=False, no_corpus=True)
         write_mock.assert_called_once()
+        collect_mock.assert_called_once()
+
+    def test_existing_path_with_export_auto_generates_taxonomy(
+        self, mocker: MagicMock, tmp_path: Path
+    ) -> None:
+        export = tmp_path / "notes-2024-01-01.json"
+        export.write_text(
+            json.dumps(
+                [
+                    {"folder": "Inbox", "body": ""},
+                    {"folder": "Projects", "body": ""},
+                ]
+            )
+        )
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=export)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=4)
+        mocker.patch("typer.confirm", side_effect=[True, True])  # proceed + generate
+        collect_mock = mocker.patch("scripts.setup.run_setup._collect_existing_folders")
+        write_mock = mocker.patch("scripts.setup.run_setup._write_taxonomy")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
+        run_setup(dry_run=False, no_corpus=True)
+        write_mock.assert_called_once()
+        collect_mock.assert_not_called()
+        taxonomy_yaml, _ = write_mock.call_args[0]
+        parsed = yaml.safe_load(taxonomy_yaml)
+        stored = {v["folder"] for v in parsed["taxonomy"].values()}
+        assert "Inbox" in stored
+        assert "Projects" in stored
+
+    def test_existing_path_with_export_fallback_to_manual_when_declined(
+        self, mocker: MagicMock, tmp_path: Path
+    ) -> None:
+        export = tmp_path / "notes-2024-01-01.json"
+        export.write_text(json.dumps([{"folder": "Inbox", "body": ""}]))
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=export)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=4)
+        mocker.patch("typer.confirm", side_effect=[True, False])  # proceed + decline generate
+        collect_mock = mocker.patch(
+            "scripts.setup.run_setup._collect_existing_folders",
+            return_value={"inbox": "Inbox"},
+        )
+        mocker.patch("scripts.setup.run_setup._write_taxonomy")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
+        run_setup(dry_run=False, no_corpus=True)
+        collect_mock.assert_called_once()
 
     def test_gtd_path_shows_snippet(self, mocker: MagicMock, tmp_path: Path) -> None:
         mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
@@ -636,8 +797,9 @@ class TestRunSetup:
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
         run_setup(dry_run=False, no_corpus=False)  # no export → else branch at line 262
 
-    def test_no_corpus_flag_skips_export(self, mocker: MagicMock, tmp_path: Path) -> None:
-        find_mock = mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
+    def test_no_corpus_flag_skips_corpus_analysis(self, mocker: MagicMock, tmp_path: Path) -> None:
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
+        analyze_mock = mocker.patch("scripts.setup.run_setup.analyze_corpus")
         mocker.patch("scripts.setup.run_setup._ask_numbered", side_effect=[2, 1, 2])
         mocker.patch("typer.confirm", return_value=True)
         mocker.patch(
@@ -653,7 +815,7 @@ class TestRunSetup:
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
         run_setup(dry_run=False, no_corpus=True)
-        find_mock.assert_not_called()
+        analyze_mock.assert_not_called()
 
     def test_existing_path_decline_uses_framework_choice(
         self, mocker: MagicMock, tmp_path: Path
