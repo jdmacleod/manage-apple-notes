@@ -27,6 +27,7 @@ from scripts.setup.run_setup import (
     _fetch_subfolders,
     _fetch_top_level_folders,
     _find_export_optional,
+    _group_paths_into_tree,
     _gtd_categories_snippet,
     _handle_multiple_accounts,
     _select_provider,
@@ -387,29 +388,43 @@ class TestBuildExistingTaxonomyYaml:
 
 
 class TestExtractFoldersFromExport:
-    def test_returns_sorted_unique_folders(self, tmp_path: Path) -> None:
+    def test_prefers_folder_path_over_folder(self, tmp_path: Path) -> None:
+        export = tmp_path / "notes.json"
+        export.write_text(
+            json.dumps([{"folder": "Finance", "folder_path": "Areas/Finance", "body": ""}])
+        )
+        folders, _ = _extract_folders_from_export(export)
+        assert folders == ["Areas/Finance"]
+
+    def test_falls_back_to_folder_when_no_folder_path(self, tmp_path: Path) -> None:
+        export = tmp_path / "notes.json"
+        export.write_text(json.dumps([{"folder": "Inbox", "body": ""}]))
+        folders, _ = _extract_folders_from_export(export)
+        assert folders == ["Inbox"]
+
+    def test_returns_sorted_unique_paths(self, tmp_path: Path) -> None:
         export = tmp_path / "notes.json"
         export.write_text(
             json.dumps(
                 [
-                    {"folder": "Projects", "body": ""},
-                    {"folder": "Inbox", "body": ""},
-                    {"folder": "Projects", "body": ""},
-                    {"folder": "Archive", "body": ""},
+                    {"folder_path": "Projects", "body": ""},
+                    {"folder_path": "Inbox", "body": ""},
+                    {"folder_path": "Projects", "body": ""},
+                    {"folder_path": "Archive/Old", "body": ""},
                 ]
             )
         )
-        folders, counts = _extract_folders_from_export(export)
-        assert folders == ["Archive", "Inbox", "Projects"]
+        folders, _ = _extract_folders_from_export(export)
+        assert folders == ["Archive/Old", "Inbox", "Projects"]
 
     def test_note_counts_are_accurate(self, tmp_path: Path) -> None:
         export = tmp_path / "notes.json"
         export.write_text(
             json.dumps(
                 [
-                    {"folder": "Inbox", "body": ""},
-                    {"folder": "Inbox", "body": ""},
-                    {"folder": "Projects", "body": ""},
+                    {"folder_path": "Inbox", "body": ""},
+                    {"folder_path": "Inbox", "body": ""},
+                    {"folder_path": "Projects", "body": ""},
                 ]
             )
         )
@@ -420,14 +435,39 @@ class TestExtractFoldersFromExport:
     def test_skips_notes_with_no_folder(self, tmp_path: Path) -> None:
         export = tmp_path / "notes.json"
         export.write_text(json.dumps([{"body": "no folder"}, {"folder": "", "body": "empty"}]))
-        folders, counts = _extract_folders_from_export(export)
+        folders, _ = _extract_folders_from_export(export)
         assert folders == []
 
-    def test_subfolder_paths_preserved(self, tmp_path: Path) -> None:
-        export = tmp_path / "notes.json"
-        export.write_text(json.dumps([{"folder": "Library/Inbox", "body": ""}]))
-        folders, _ = _extract_folders_from_export(export)
-        assert folders == ["Library/Inbox"]
+
+class TestGroupPathsIntoTree:
+    def test_top_level_only_paths(self) -> None:
+        tree = _group_paths_into_tree(["Inbox", "Projects", "Archive"])
+        assert tree == {"Archive": [], "Inbox": [], "Projects": []}
+
+    def test_subfolder_paths_grouped_under_top_level(self) -> None:
+        tree = _group_paths_into_tree(["Areas/Finance", "Areas/Health", "Projects"])
+        assert tree["Areas"] == ["Finance", "Health"]
+        assert tree["Projects"] == []
+
+    def test_subfolders_sorted(self) -> None:
+        tree = _group_paths_into_tree(["Areas/Zzz", "Areas/Aaa"])
+        assert tree["Areas"] == ["Aaa", "Zzz"]
+
+    def test_top_level_folders_sorted(self) -> None:
+        tree = _group_paths_into_tree(["Zeta", "Alpha"])
+        assert list(tree.keys()) == ["Alpha", "Zeta"]
+
+    def test_deeper_paths_collapsed_to_two_levels(self) -> None:
+        tree = _group_paths_into_tree(["Areas/Work/Projects"])
+        assert "Areas" in tree
+        assert "Work" in tree["Areas"]
+
+    def test_no_duplicate_subfolders(self) -> None:
+        tree = _group_paths_into_tree(["Areas/Finance", "Areas/Finance"])
+        assert tree["Areas"].count("Finance") == 1
+
+    def test_empty_list(self) -> None:
+        assert _group_paths_into_tree([]) == {}
 
 
 class TestAutoMapRoles:
@@ -443,10 +483,12 @@ class TestAutoMapRoles:
         mapping = _auto_map_roles(["My Projects"])
         assert mapping.get("projects") == "My Projects"
 
-    def test_matches_subfolder_by_leaf(self) -> None:
-        mapping = _auto_map_roles(["Library/Inbox", "Library/Projects"])
-        assert mapping.get("inbox") == "Library/Inbox"
-        assert mapping.get("projects") == "Library/Projects"
+    def test_maps_standard_para_top_level_folders(self) -> None:
+        mapping = _auto_map_roles(["Areas", "Archive", "Projects", "Resources"])
+        assert mapping.get("areas") == "Areas"
+        assert mapping.get("archive") == "Archive"
+        assert mapping.get("projects") == "Projects"
+        assert mapping.get("resources") == "Resources"
 
     def test_does_not_double_assign_same_folder(self) -> None:
         mapping = _auto_map_roles(["Inbox"])
@@ -464,36 +506,49 @@ class TestAutoMapRoles:
 
 class TestBuildTaxonomyFromExport:
     def test_produces_valid_yaml(self) -> None:
-        result = _build_taxonomy_from_export(["Inbox", "Projects"], {"inbox": "Inbox"})
+        tree = {"Inbox": [], "Projects": []}
+        result = _build_taxonomy_from_export(tree, {"inbox": "Inbox"})
         parsed = yaml.safe_load(result)
         assert "taxonomy" in parsed
 
     def test_role_mapped_folder_uses_semantic_key(self) -> None:
-        result = _build_taxonomy_from_export(["Inbox"], {"inbox": "Inbox"})
+        result = _build_taxonomy_from_export({"Inbox": []}, {"inbox": "Inbox"})
         parsed = yaml.safe_load(result)
         assert parsed["taxonomy"]["inbox"]["folder"] == "Inbox"
 
+    def test_subfolders_included_in_entry(self) -> None:
+        tree = {"Areas": ["Finance", "Health"]}
+        result = _build_taxonomy_from_export(tree, {"areas": "Areas"})
+        parsed = yaml.safe_load(result)
+        assert parsed["taxonomy"]["areas"]["subfolders"] == ["Finance", "Health"]
+
+    def test_top_level_with_no_subfolders_has_no_subfolders_key(self) -> None:
+        result = _build_taxonomy_from_export({"Projects": []}, {"projects": "Projects"})
+        parsed = yaml.safe_load(result)
+        assert "subfolders" not in parsed["taxonomy"]["projects"]
+
     def test_unmapped_folder_gets_sanitized_key(self) -> None:
-        result = _build_taxonomy_from_export(["Health Notes"], {})
+        result = _build_taxonomy_from_export({"Health Notes": []}, {})
         parsed = yaml.safe_load(result)
         assert "health_notes" in parsed["taxonomy"]
 
     def test_collision_handled_with_suffix(self) -> None:
-        result = _build_taxonomy_from_export(["A/Notes", "B/Notes"], {})
+        # Two folders that both sanitize to the same key
+        result = _build_taxonomy_from_export({"Test Folder": [], "Test_Folder": []}, {})
         parsed = yaml.safe_load(result)
         keys = list(parsed["taxonomy"].keys())
         assert len(keys) == len(set(keys)), "Collision produced duplicate keys"
 
-    def test_all_folders_included(self) -> None:
-        folders = ["Inbox", "Projects", "Health", "Finance"]
+    def test_all_top_level_folders_included(self) -> None:
+        tree = {"Inbox": [], "Projects": [], "Health": [], "Finance": []}
         role_map = {"inbox": "Inbox", "projects": "Projects"}
-        result = _build_taxonomy_from_export(folders, role_map)
+        result = _build_taxonomy_from_export(tree, role_map)
         parsed = yaml.safe_load(result)
         stored = {v["folder"] for v in parsed["taxonomy"].values()}
-        assert stored == set(folders)
+        assert stored == {"Inbox", "Projects", "Health", "Finance"}
 
     def test_header_mentions_export(self) -> None:
-        result = _build_taxonomy_from_export(["Inbox"], {})
+        result = _build_taxonomy_from_export({"Inbox": []}, {})
         assert "export" in result.lower()
 
 
@@ -670,8 +725,10 @@ class TestRunSetup:
         export.write_text(
             json.dumps(
                 [
-                    {"folder": "Inbox", "body": ""},
-                    {"folder": "Projects", "body": ""},
+                    {"folder": "Inbox", "folder_path": "Inbox", "body": ""},
+                    {"folder": "Finance", "folder_path": "Areas/Finance", "body": ""},
+                    {"folder": "Health", "folder_path": "Areas/Health", "body": ""},
+                    {"folder": "Projects", "folder_path": "Projects", "body": ""},
                 ]
             )
         )
@@ -686,9 +743,15 @@ class TestRunSetup:
         collect_mock.assert_not_called()
         taxonomy_yaml, _ = write_mock.call_args[0]
         parsed = yaml.safe_load(taxonomy_yaml)
-        stored = {v["folder"] for v in parsed["taxonomy"].values()}
-        assert "Inbox" in stored
-        assert "Projects" in stored
+        # Top-level folders appear at the root of the taxonomy
+        stored_top = {v["folder"] for v in parsed["taxonomy"].values()}
+        assert "Inbox" in stored_top
+        assert "Areas" in stored_top
+        assert "Projects" in stored_top
+        # Subfolders are nested under Areas
+        areas_entry = next(v for v in parsed["taxonomy"].values() if v["folder"] == "Areas")
+        assert "Finance" in areas_entry.get("subfolders", [])
+        assert "Health" in areas_entry.get("subfolders", [])
 
     def test_existing_path_with_export_fallback_to_manual_when_declined(
         self, mocker: MagicMock, tmp_path: Path
