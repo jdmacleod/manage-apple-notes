@@ -927,6 +927,7 @@ def _check_apple_intelligence_prerequisites() -> None:
     all_ok = True
 
     # 1. Xcode developer tools (required to build the Swift bridge)
+    xcode_needs_install = False
     try:
         xcode = subprocess.run(
             ["xcodebuild", "-version"],
@@ -947,16 +948,31 @@ def _check_apple_intelligence_prerequisites() -> None:
                 con.print(f"  [yellow]![/yellow] {first_line} — Xcode 26 required")
                 con.print("    [dim]Download Xcode 26: developer.apple.com/xcode[/dim]")
                 all_ok = False
+                xcode_needs_install = True
         else:
             con.print("  [red]✗[/red] Xcode not installed or not licensed")
             con.print("    [dim]Download Xcode 26: developer.apple.com/xcode[/dim]")
             all_ok = False
+            xcode_needs_install = True
     except FileNotFoundError:
         con.print("  [red]✗[/red] Xcode not found")
         con.print("    [dim]Download Xcode 26: developer.apple.com/xcode[/dim]")
         all_ok = False
+        xcode_needs_install = True
     except subprocess.TimeoutExpired:
         con.print("  [yellow]![/yellow] Xcode check timed out — skipped")
+
+    if xcode_needs_install:
+        _GB = 1024**3
+        _XCODE_MIN_GB = 50
+        free_gb = shutil.disk_usage("/").free / _GB
+        if free_gb < _XCODE_MIN_GB:
+            con.print(
+                f"  [yellow]![/yellow] {free_gb:.1f} GB free — Xcode needs ~30 GB to download and install"
+            )
+            con.print(
+                "    [dim]You can try the install anyway; it may fail if space runs low.[/dim]"
+            )
 
     # 2. Swift bridge binary
     if _APPLE_LLM_BINARY.is_file():
