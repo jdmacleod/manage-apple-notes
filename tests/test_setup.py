@@ -16,8 +16,6 @@ from scripts.setup.run_setup import (
     _ask_forever_notes,
     _ask_numbered,
     _auto_map_roles,
-    _infer_framework,
-    _relevant_missing_roles,
     _build_existing_taxonomy_yaml,
     _build_taxonomy_from_export,
     _build_taxonomy_yaml,
@@ -33,14 +31,16 @@ from scripts.setup.run_setup import (
     _group_paths_into_tree,
     _gtd_categories_snippet,
     _handle_multiple_accounts,
+    _infer_framework,
+    _relevant_missing_roles,
     _select_provider,
+    _write_classify_exclude_archive_to_settings,
     _write_env_line,
+    _write_folder_nesting_to_settings,
     _write_forever_notes_to_settings,
+    _write_ollama_model_to_settings,
     _write_primary_account_to_settings,
     _write_provider_to_settings,
-    _write_classify_exclude_archive_to_settings,
-    _write_folder_nesting_to_settings,
-    _write_ollama_model_to_settings,
     _write_reorganization_mode_to_settings,
     _write_subfolder_threshold_to_settings,
     _write_taxonomy,
@@ -944,9 +944,7 @@ class TestRunSetup:
         assert "MyLib" not in top_folders, "Container from settings must not appear in taxonomy"
         assert "Projects" in top_folders
 
-    def test_absent_inbox_detected_and_added(
-        self, mocker: MagicMock, tmp_path: Path
-    ) -> None:
+    def test_absent_inbox_detected_and_added(self, mocker: MagicMock, tmp_path: Path) -> None:
         """Missing PARA-relevant folders are offered individually and added when confirmed."""
         # Projects + Archive → PARA inferred → missing PARA roles: Inbox, Areas, Resources
         export = tmp_path / "notes-2024-01-01.json"
@@ -978,9 +976,7 @@ class TestRunSetup:
         assert "Projects" in top_folders
         assert "Archive" in top_folders
 
-    def test_absent_folders_declined_not_added(
-        self, mocker: MagicMock, tmp_path: Path
-    ) -> None:
+    def test_absent_folders_declined_not_added(self, mocker: MagicMock, tmp_path: Path) -> None:
         """Declining an individual role skips only that folder."""
         # Projects + Archive → PARA → missing: Inbox, Areas, Resources
         export = tmp_path / "notes-2024-01-01.json"
@@ -1011,9 +1007,7 @@ class TestRunSetup:
         assert "Projects" in top_folders
         assert "Archive" in top_folders
 
-    def test_no_missing_folders_no_absent_prompt(
-        self, mocker: MagicMock, tmp_path: Path
-    ) -> None:
+    def test_no_missing_folders_no_absent_prompt(self, mocker: MagicMock, tmp_path: Path) -> None:
         """When all standard roles are covered, the absent-folder prompt does not appear."""
         # Export covers all 9 standard roles so role_map is complete
         export = tmp_path / "notes-2024-01-01.json"
@@ -1908,8 +1902,8 @@ class TestWriteForeverNotesToSettings:
             _write_forever_notes_to_settings("strict", dry_run=False)
         content = settings.read_text()
         # Without explicit overrides, original naming values are preserved
-        assert '✱ Home' in content
-        assert '✱ ' in content
+        assert "✱ Home" in content
+        assert "✱ " in content
 
     def test_dry_run_does_not_write(self, tmp_path: Path) -> None:
         settings = tmp_path / "settings.local.yaml"
@@ -1956,9 +1950,7 @@ class TestAskForeverNotes:
         prompt_mock.assert_not_called()
         assert 'forever_notes_mode: "loose"' in settings.read_text()
 
-    def test_forever_notes_called_when_settings_created(
-        self, mocker: MagicMock
-    ) -> None:
+    def test_forever_notes_called_when_settings_created(self, mocker: MagicMock) -> None:
         mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
         mocker.patch("scripts.setup.run_setup._detect_accounts", return_value=[])
         mocker.patch("scripts.setup.run_setup._detect_container", return_value=(None, []))
@@ -1966,8 +1958,13 @@ class TestAskForeverNotes:
         mocker.patch("typer.confirm", return_value=True)
         mocker.patch(
             "scripts.setup.run_setup._collect_folder_names",
-            return_value={"inbox": "Inbox", "projects": "P", "areas": "A",
-                          "resources": "R", "archive": "Arc"},
+            return_value={
+                "inbox": "Inbox",
+                "projects": "P",
+                "areas": "A",
+                "resources": "R",
+                "archive": "Arc",
+            },
         )
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
@@ -1978,9 +1975,7 @@ class TestAskForeverNotes:
         run_setup(dry_run=False, no_corpus=True)
         fn_mock.assert_called_once()
 
-    def test_forever_notes_skipped_when_settings_already_exist(
-        self, mocker: MagicMock
-    ) -> None:
+    def test_forever_notes_skipped_when_settings_already_exist(self, mocker: MagicMock) -> None:
         mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
         mocker.patch("scripts.setup.run_setup._detect_accounts", return_value=[])
         mocker.patch("scripts.setup.run_setup._detect_container", return_value=(None, []))
@@ -1988,8 +1983,13 @@ class TestAskForeverNotes:
         mocker.patch("typer.confirm", return_value=True)
         mocker.patch(
             "scripts.setup.run_setup._collect_folder_names",
-            return_value={"inbox": "Inbox", "projects": "P", "areas": "A",
-                          "resources": "R", "archive": "Arc"},
+            return_value={
+                "inbox": "Inbox",
+                "projects": "P",
+                "areas": "A",
+                "resources": "R",
+                "archive": "Arc",
+            },
         )
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)

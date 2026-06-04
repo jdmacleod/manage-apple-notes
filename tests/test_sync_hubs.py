@@ -205,9 +205,7 @@ class TestGenerateHubBody:
         }
         # Taxonomy: inbox (pos 0) before areas (pos 1)
         cat_order = {"Inbox": 0, "Areas": 1}
-        body = _generate_hub_body(
-            sf_def, categories, "✱ ", use_links=False, cat_order=cat_order
-        )
+        body = _generate_hub_body(sf_def, categories, "✱ ", use_links=False, cat_order=cat_order)
         inbox_pos = body.index("Inbox")
         areas_pos = body.index("Areas")
         assert inbox_pos < areas_pos, "Inbox section must precede Areas when taxonomy so dictates"
