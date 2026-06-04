@@ -350,7 +350,9 @@ def _build_taxonomy_from_export(
         "# Framework: Custom (derived from export)\n"
         "# Edit this file to rename folders or add subfolders.\n\n"
     )
-    return header + yaml.dump(data, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    return header + str(
+        yaml.dump(data, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    )
 
 
 def _gtd_categories_snippet() -> str:
