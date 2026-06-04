@@ -770,6 +770,77 @@ class TestRunSetup:
         run_setup(dry_run=False, no_corpus=True)
         collect_mock.assert_called_once()
 
+    def test_container_folder_excluded_from_taxonomy(
+        self, mocker: MagicMock, tmp_path: Path
+    ) -> None:
+        """Notes directly in the container folder are excluded; only taxonomy categories kept."""
+        export = tmp_path / "notes-2024-01-01.json"
+        export.write_text(
+            json.dumps(
+                [
+                    # Notes directly in the container (should be excluded)
+                    {"folder": "Library", "folder_path": "Library", "body": ""},
+                    {"folder": "Library", "folder_path": "Library", "body": ""},
+                    # Notes in taxonomy categories (should appear in taxonomy)
+                    {"folder": "Finance", "folder_path": "Areas/Finance", "body": ""},
+                    {"folder": "Projects", "folder_path": "Projects", "body": ""},
+                ]
+            )
+        )
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=export)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=4)
+        mocker.patch("typer.confirm", side_effect=[True, True])  # proceed + generate
+        mocker.patch("scripts.setup.run_setup._collect_existing_folders")
+        write_mock = mocker.patch("scripts.setup.run_setup._write_taxonomy")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
+        # Simulate container="Library" returned from Phase 0 AppleScript detection
+        mocker.patch(
+            "scripts.setup.run_setup._detect_container",
+            return_value=("Library", ["Areas", "Projects"]),
+        )
+        run_setup(dry_run=False, no_corpus=True)
+        write_mock.assert_called_once()
+        taxonomy_yaml, _ = write_mock.call_args[0]
+        parsed = yaml.safe_load(taxonomy_yaml)
+        top_folders = {v["folder"] for v in parsed["taxonomy"].values()}
+        assert "Library" not in top_folders, "Container folder must not appear in taxonomy"
+        assert "Areas" in top_folders
+        assert "Projects" in top_folders
+
+    def test_container_from_settings_used_when_phase0_detection_unavailable(
+        self, mocker: MagicMock, tmp_path: Path
+    ) -> None:
+        """Falls back to settings.local.yaml for container name when Phase 0 returns None."""
+        export = tmp_path / "notes-2024-01-01.json"
+        export.write_text(
+            json.dumps(
+                [
+                    {"folder": "MyLib", "folder_path": "MyLib", "body": ""},
+                    {"folder": "Projects", "folder_path": "Projects", "body": ""},
+                ]
+            )
+        )
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=export)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=4)
+        mocker.patch("typer.confirm", side_effect=[True, True])
+        mocker.patch("scripts.setup.run_setup._collect_existing_folders")
+        write_mock = mocker.patch("scripts.setup.run_setup._write_taxonomy")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
+        # Phase 0 detects no folders → container=None
+        mocker.patch("scripts.setup.run_setup._detect_container", return_value=(None, []))
+        # Settings fallback identifies "MyLib" as the container
+        mocker.patch(
+            "scripts.setup.run_setup.load_settings",
+            return_value={"toplevel_folder": {"enabled": True, "name": "MyLib"}},
+        )
+        run_setup(dry_run=False, no_corpus=True)
+        write_mock.assert_called_once()
+        taxonomy_yaml, _ = write_mock.call_args[0]
+        parsed = yaml.safe_load(taxonomy_yaml)
+        top_folders = {v["folder"] for v in parsed["taxonomy"].values()}
+        assert "MyLib" not in top_folders, "Container from settings must not appear in taxonomy"
+        assert "Projects" in top_folders
+
     def test_gtd_path_shows_snippet(self, mocker: MagicMock, tmp_path: Path) -> None:
         mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
         # Q1=1 (tasks), Q2=2, Q3=1 → GTD
