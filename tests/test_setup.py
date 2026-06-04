@@ -19,6 +19,7 @@ from scripts.setup.run_setup import (
     _build_existing_taxonomy_yaml,
     _build_taxonomy_from_export,
     _build_taxonomy_yaml,
+    _check_apple_intelligence_prerequisites,
     _collect_existing_folders,
     _collect_folder_names,
     _detect_accounts,
@@ -1401,6 +1402,7 @@ class TestSelectProvider:
     def test_apple_writes_provider_returns_true(self, mocker: MagicMock, tmp_path: Path) -> None:
         config_dir = self._setup_config(tmp_path)
         mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=1)
+        mocker.patch("scripts.setup.run_setup._check_apple_intelligence_prerequisites")
         with patch("scripts.setup.run_setup.CONFIG_DIR", config_dir):
             result = _select_provider(dry_run=False)
         assert result is True
@@ -1476,10 +1478,109 @@ class TestSelectProvider:
         config_dir = self._setup_config(tmp_path)
         # Simulate user pressing Enter (empty input) → default=1 → Apple
         mocker.patch("typer.prompt", return_value="")
+        mocker.patch("scripts.setup.run_setup._check_apple_intelligence_prerequisites")
         with patch("scripts.setup.run_setup.CONFIG_DIR", config_dir):
             result = _select_provider(dry_run=False)
         assert result is True
         assert 'llm_provider: "apple"' in (config_dir / "settings.local.yaml").read_text()
+
+
+# ── run_setup.py — Apple Intelligence prerequisites ───────────────────────────
+
+
+class TestCheckAppleIntelligencePrerequisites:
+    """Unit tests for _check_apple_intelligence_prerequisites."""
+
+    import subprocess as _subprocess
+
+    def _mock_binary(self, mocker: MagicMock, exists: bool) -> MagicMock:
+        mock = MagicMock()
+        mock.is_file.return_value = exists
+        mock.__str__ = MagicMock(return_value="/fake/apple-llm")
+        mocker.patch("scripts.setup.run_setup._APPLE_LLM_BINARY", mock)
+        return mock
+
+    def test_all_ok_xcode26_binary_available(self, mocker: MagicMock) -> None:
+        xcode_ok = MagicMock(returncode=0, stdout="Xcode 26.0\nBuild version 26A123\n")
+        probe_ok = MagicMock(returncode=0, stdout="ok\n", stderr="")
+        mocker.patch("scripts.setup.run_setup.subprocess.run", side_effect=[xcode_ok, probe_ok])
+        self._mock_binary(mocker, exists=True)
+        _check_apple_intelligence_prerequisites()  # should not raise
+
+    def test_xcode_not_found_file_not_found(self, mocker: MagicMock) -> None:
+        mocker.patch("scripts.setup.run_setup.subprocess.run", side_effect=FileNotFoundError)
+        self._mock_binary(mocker, exists=False)
+        _check_apple_intelligence_prerequisites()
+
+    def test_xcode_old_version_warns(self, mocker: MagicMock) -> None:
+        xcode_old = MagicMock(returncode=0, stdout="Xcode 15.4\nBuild version 15F31d\n")
+        mocker.patch("scripts.setup.run_setup.subprocess.run", return_value=xcode_old)
+        self._mock_binary(mocker, exists=False)
+        _check_apple_intelligence_prerequisites()
+
+    def test_xcode_nonzero_returncode(self, mocker: MagicMock) -> None:
+        xcode_fail = MagicMock(returncode=1, stdout="", stderr="xcodebuild: error\n")
+        mocker.patch("scripts.setup.run_setup.subprocess.run", return_value=xcode_fail)
+        self._mock_binary(mocker, exists=False)
+        _check_apple_intelligence_prerequisites()
+
+    def test_xcode_timeout_skipped(self, mocker: MagicMock) -> None:
+        import subprocess as _sp
+
+        mocker.patch(
+            "scripts.setup.run_setup.subprocess.run",
+            side_effect=_sp.TimeoutExpired(cmd="xcodebuild", timeout=10),
+        )
+        self._mock_binary(mocker, exists=False)
+        _check_apple_intelligence_prerequisites()
+
+    def test_binary_missing_xcode_ok_shows_build_command(self, mocker: MagicMock) -> None:
+        xcode_ok = MagicMock(returncode=0, stdout="Xcode 26.0\n")
+        mocker.patch("scripts.setup.run_setup.subprocess.run", return_value=xcode_ok)
+        self._mock_binary(mocker, exists=False)
+        _check_apple_intelligence_prerequisites()
+
+    def test_binary_missing_xcode_not_found_shows_install_first(self, mocker: MagicMock) -> None:
+        mocker.patch("scripts.setup.run_setup.subprocess.run", side_effect=FileNotFoundError)
+        self._mock_binary(mocker, exists=False)
+        _check_apple_intelligence_prerequisites()
+
+    def test_ai_unavailable_exit2_shows_reason(self, mocker: MagicMock) -> None:
+        xcode_ok = MagicMock(returncode=0, stdout="Xcode 26.0\n")
+        probe_unavail = MagicMock(
+            returncode=2,
+            stderr="error: Apple Intelligence is not enabled — turn it on in System Settings\n",
+            stdout="",
+        )
+        mocker.patch(
+            "scripts.setup.run_setup.subprocess.run",
+            side_effect=[xcode_ok, probe_unavail],
+        )
+        self._mock_binary(mocker, exists=True)
+        _check_apple_intelligence_prerequisites()
+
+    def test_probe_timeout_treated_as_available(self, mocker: MagicMock) -> None:
+        import subprocess as _sp
+
+        xcode_ok = MagicMock(returncode=0, stdout="Xcode 26.0\n")
+        mocker.patch(
+            "scripts.setup.run_setup.subprocess.run",
+            side_effect=[xcode_ok, _sp.TimeoutExpired(cmd="apple-llm", timeout=20)],
+        )
+        self._mock_binary(mocker, exists=True)
+        _check_apple_intelligence_prerequisites()
+
+    def test_select_provider_apple_calls_prerequisites(
+        self, mocker: MagicMock, tmp_path: Path
+    ) -> None:
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "settings.local.yaml").write_text('llm_provider: "apple"\n')
+        mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=1)
+        check_mock = mocker.patch("scripts.setup.run_setup._check_apple_intelligence_prerequisites")
+        with patch("scripts.setup.run_setup.CONFIG_DIR", config_dir):
+            _select_provider(dry_run=False)
+        check_mock.assert_called_once()
 
 
 # ── run_setup.py — container question ─────────────────────────────────────────

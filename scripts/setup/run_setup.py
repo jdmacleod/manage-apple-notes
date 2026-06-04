@@ -443,6 +443,7 @@ _LIST_FOLDERS_SCRIPT = CONFIG_DIR.parent / "scripts" / "export" / "list-folders.
 _LIST_SUBFOLDERS_SCRIPT = CONFIG_DIR.parent / "scripts" / "export" / "list-subfolders.applescript"
 _SETUP_ACCOUNT_FILE = Path("/tmp/notes_setup_account.tmp")
 _SETUP_CONTAINER_FILE = Path("/tmp/notes_setup_container.tmp")
+_APPLE_LLM_BINARY = CONFIG_DIR.parent / "swift" / "apple-llm" / ".build" / "release" / "apple-llm"
 
 
 def _detect_accounts() -> list[str]:
@@ -920,6 +921,84 @@ def _ask_container(dry_run: bool) -> None:
         _write_toplevel_folder_to_settings(enabled=False, name="Library", dry_run=dry_run)
 
 
+def _check_apple_intelligence_prerequisites() -> None:
+    """Check Xcode, Swift bridge binary, and Apple Intelligence availability; print status."""
+    con.print("\n  Checking Apple Intelligence prerequisites...")
+    all_ok = True
+
+    # 1. Xcode developer tools (required to build the Swift bridge)
+    try:
+        xcode = subprocess.run(
+            ["xcodebuild", "-version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if xcode.returncode == 0:
+            first_line = xcode.stdout.strip().splitlines()[0]  # e.g. "Xcode 26.0"
+            parts = first_line.split()
+            try:
+                major = int(parts[1].split(".")[0]) if len(parts) >= 2 else 0
+            except (ValueError, IndexError):
+                major = 0
+            if major >= 26:
+                con.print(f"  [green]✓[/green] {first_line}")
+            else:
+                con.print(f"  [yellow]![/yellow] {first_line} — Xcode 26 required")
+                con.print("    [dim]Download Xcode 26: developer.apple.com/xcode[/dim]")
+                all_ok = False
+        else:
+            con.print("  [red]✗[/red] Xcode not installed or not licensed")
+            con.print("    [dim]Download Xcode 26: developer.apple.com/xcode[/dim]")
+            all_ok = False
+    except FileNotFoundError:
+        con.print("  [red]✗[/red] Xcode not found")
+        con.print("    [dim]Download Xcode 26: developer.apple.com/xcode[/dim]")
+        all_ok = False
+    except subprocess.TimeoutExpired:
+        con.print("  [yellow]![/yellow] Xcode check timed out — skipped")
+
+    # 2. Swift bridge binary
+    if _APPLE_LLM_BINARY.is_file():
+        con.print("  [green]✓[/green] Swift bridge binary found")
+    else:
+        con.print("  [red]✗[/red] Swift bridge not yet built")
+        if all_ok:
+            con.print("    [dim]Build it: make -C swift/apple-llm build[/dim]")
+        else:
+            con.print(
+                "    [dim]Build it after installing Xcode: make -C swift/apple-llm build[/dim]"
+            )
+        all_ok = False
+
+    # 3. Probe Apple Intelligence availability (fast: unavailable cases exit before inference)
+    if _APPLE_LLM_BINARY.is_file():
+        try:
+            probe = json.dumps({"system": "reply ok", "user": "ok", "max_tokens": 5})
+            probe_result = subprocess.run(
+                [str(_APPLE_LLM_BINARY)],
+                input=probe,
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+            if probe_result.returncode == 0:
+                con.print("  [green]✓[/green] Apple Intelligence available")
+            elif probe_result.returncode == 2:
+                msg = probe_result.stderr.strip().removeprefix("error: ")
+                con.print(f"  [yellow]![/yellow] Apple Intelligence: {msg}")
+                all_ok = False
+            # Exit 1/3/4: unexpected at probe stage but binary is functional; skip
+        except subprocess.TimeoutExpired:
+            # Inference is running — the device is eligible and AI is responding
+            con.print("  [green]✓[/green] Apple Intelligence available")
+
+    if not all_ok:
+        con.print(
+            "\n  [dim]See GUIDE.md → Apple Intelligence provider for full prerequisites.[/dim]"
+        )
+
+
 def _select_provider(dry_run: bool) -> bool:
     """Ask which LLM provider to use and write config. Returns True if a provider was selected."""
     con.print("\n[bold]LLM provider[/bold]")
@@ -937,11 +1016,7 @@ def _select_provider(dry_run: bool) -> bool:
 
     if choice == 1:
         _write_provider_to_settings("apple", dry_run)
-        con.print(
-            "\n[dim]Apple Intelligence requires the Swift bridge to be compiled first:\n"
-            "  make -C swift/apple-llm build\n"
-            "See GUIDE.md → Apple Intelligence provider for prerequisites.[/dim]"
-        )
+        _check_apple_intelligence_prerequisites()
         return True
     elif choice == 2:
         _write_provider_to_settings("anthropic", dry_run)
