@@ -269,11 +269,80 @@ _ROLE_KEYWORDS: dict[str, list[str]] = {
     "review": ["review", "triage"],
 }
 
+# Roles that belong to each paradigm — used for framework inference
+_PARA_ROLES: frozenset[str] = frozenset({"projects", "areas", "resources", "archive"})
+_ZK_ROLES: frozenset[str] = frozenset({"fleeting", "literature", "permanent"})
+# Roles surfaced regardless of inferred framework
+_UNIVERSAL_ROLES: frozenset[str] = frozenset({"inbox", "archive"})
+
+# Display order within each framework group (most to least important)
+_ROLE_DISPLAY_ORDER: list[str] = [
+    "inbox",
+    "archive",
+    "projects",
+    "areas",
+    "resources",
+    "fleeting",
+    "literature",
+    "permanent",
+    "review",
+]
+
+_ROLE_DESC: dict[str, str] = {
+    "inbox": "landing zone for new notes; required by `notes triage`",
+    "archive": "stores completed or inactive notes",
+    "projects": "active projects with a defined outcome",
+    "areas": "ongoing responsibilities without an end date",
+    "resources": "reference material and notes on topics of interest",
+    "fleeting": "quick captures before processing",
+    "literature": "reading notes and summaries",
+    "permanent": "permanent/evergreen knowledge notes",
+    "review": "notes awaiting triage or decision",
+}
+
+
+def _infer_framework(role_map: dict[str, str]) -> str:
+    """Infer the organisational framework from which roles are already present.
+
+    Returns "para", "zettelkasten", or "unknown".
+    """
+    covered = set(role_map.keys())
+    para_score = len(_PARA_ROLES & covered)
+    zk_score = len(_ZK_ROLES & covered)
+    if zk_score >= 2 and zk_score >= para_score:
+        return "zettelkasten"
+    if para_score >= 2:
+        return "para"
+    return "unknown"
+
+
+def _relevant_missing_roles(missing_roles: list[str], role_map: dict[str, str]) -> list[str]:
+    """Filter missing roles to those relevant for the inferred framework.
+
+    PARA users see PARA + universal roles; Zettelkasten users see ZK + universal roles.
+    When the framework is unclear, only universal roles (inbox, archive) are suggested —
+    the user can always add more by editing taxonomy.local.yaml.
+    """
+    framework = _infer_framework(role_map)
+    if framework == "para":
+        relevant = _PARA_ROLES | _UNIVERSAL_ROLES
+    elif framework == "zettelkasten":
+        relevant = _ZK_ROLES | _UNIVERSAL_ROLES
+    else:
+        relevant = _UNIVERSAL_ROLES
+    filtered = [r for r in missing_roles if r in relevant]
+    # Preserve _ROLE_DISPLAY_ORDER within the filtered set
+    ordered = [r for r in _ROLE_DISPLAY_ORDER if r in filtered]
+    ordered += [r for r in filtered if r not in _ROLE_DISPLAY_ORDER]
+    return ordered
+
 
 def _extract_folders_from_export(export_path: Path) -> tuple[list[str], dict[str, int]]:
-    """Return sorted unique folder_path values and per-path note counts from an export.
+    """Return unique folder_path values in first-seen order plus per-path note counts.
 
-    Uses folder_path (full slash-delimited path) in preference to folder (leaf only).
+    First-seen order reflects Apple Notes' sidebar arrangement because the export script
+    walks folders top-to-bottom. Uses folder_path (full slash-delimited path) in
+    preference to folder (leaf only).
     """
     with open(export_path) as f:
         notes = json.load(f)
@@ -282,14 +351,16 @@ def _extract_folders_from_export(export_path: Path) -> tuple[list[str], dict[str
         path = n.get("folder_path", "") or n.get("folder", "")
         if path:
             counts[path] = counts.get(path, 0) + 1
-    return sorted(counts.keys()), counts
+    return list(counts.keys()), counts
 
 
 def _group_paths_into_tree(full_paths: list[str]) -> dict[str, list[str]]:
     """Group full slash-delimited paths into {top_level: [direct_child_names]}.
 
-    Only the first two path components are used; deeper nesting is collapsed to
-    the second level since the taxonomy subfolders list is a flat list of names.
+    Preserves first-seen order for both top-level keys and children, reflecting
+    the user's Apple Notes sidebar arrangement (Apple Notes sidebar order is
+    preserved through the export). Only the first two path components are used;
+    deeper nesting is collapsed to the second level.
     """
     tree: dict[str, list[str]] = {}
     for path in full_paths:
@@ -301,7 +372,7 @@ def _group_paths_into_tree(full_paths: list[str]) -> dict[str, list[str]]:
             child = parts[1]
             if child not in tree[top]:
                 tree[top].append(child)
-    return {k: sorted(v) for k, v in sorted(tree.items())}
+    return {k: v for k, v in tree.items()}
 
 
 def _auto_map_roles(top_level_folders: list[str]) -> dict[str, str]:
@@ -620,21 +691,160 @@ def _write_subfolder_threshold_to_settings(threshold: int, dry_run: bool) -> Non
     )
 
 
+def _write_folder_nesting_to_settings(nesting: str, dry_run: bool) -> None:
+    settings_path = CONFIG_DIR / "settings.local.yaml"
+    if not settings_path.exists():
+        return
+    content = settings_path.read_text(encoding="utf-8")
+    new_content = re.sub(
+        r"^(folder_nesting:).*$",
+        f'\\1 "{nesting}"',
+        content,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if dry_run:
+        con.print(f'  [dim]Would set folder_nesting: "{nesting}" in settings.local.yaml[/dim]')
+        return
+    settings_path.write_text(new_content, encoding="utf-8")
+    con.print(f'  Set [green]folder_nesting: "{nesting}"[/green] in settings.local.yaml')
+
+
+def _write_classify_exclude_archive_to_settings(exclude: bool, dry_run: bool) -> None:
+    settings_path = CONFIG_DIR / "settings.local.yaml"
+    if not settings_path.exists():
+        return
+    content = settings_path.read_text(encoding="utf-8")
+    new_content = re.sub(
+        r"^(\s+exclude_archive:)\s+\S+",
+        rf"\g<1> {str(exclude).lower()}",
+        content,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if dry_run:
+        con.print(
+            f"  [dim]Would set classify.exclude_archive: {str(exclude).lower()}"
+            " in settings.local.yaml[/dim]"
+        )
+        return
+    settings_path.write_text(new_content, encoding="utf-8")
+    con.print(
+        f"  Set [green]classify.exclude_archive: {str(exclude).lower()}[/green]"
+        " in settings.local.yaml"
+    )
+
+
+def _write_ollama_model_to_settings(model: str, dry_run: bool) -> None:
+    settings_path = CONFIG_DIR / "settings.local.yaml"
+    if not settings_path.exists():
+        return
+    content = settings_path.read_text(encoding="utf-8")
+    # Match `model:` inside the `ollama:` block specifically to avoid clobbering
+    # the anthropic or aws-ollama model keys (which also use `model:`).
+    new_content = re.sub(
+        r'(  ollama:\n(?:    [^\n]*\n)*?    model:)\s+"[^"]*"',
+        rf'\1 "{model}"',
+        content,
+        count=1,
+    )
+    if dry_run:
+        con.print(
+            f'  [dim]Would set llm_providers.ollama.model: "{model}" in settings.local.yaml[/dim]'
+        )
+        return
+    settings_path.write_text(new_content, encoding="utf-8")
+    con.print(f'  Set [green]llm_providers.ollama.model: "{model}"[/green] in settings.local.yaml')
+
+
+def _write_forever_notes_to_settings(
+    mode: str,
+    dry_run: bool,
+    home_title: str | None = None,
+    hub_prefix: str | None = None,
+) -> None:
+    settings_path = CONFIG_DIR / "settings.local.yaml"
+    if not settings_path.exists():
+        return
+    content = settings_path.read_text(encoding="utf-8")
+    new_content = re.sub(
+        r"^(forever_notes_mode:).*$",
+        f'\\1 "{mode}"',
+        content,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if home_title is not None:
+        new_content = re.sub(
+            r"^(\s+home_note_title:).*$",
+            f'\\1 "{home_title}"',
+            new_content,
+            count=1,
+            flags=re.MULTILINE,
+        )
+    if hub_prefix is not None:
+        new_content = re.sub(
+            r"^(\s+hub_title_prefix:).*$",
+            f'\\1 "{hub_prefix}"',
+            new_content,
+            count=1,
+            flags=re.MULTILINE,
+        )
+    parts = [f'forever_notes_mode: "{mode}"']
+    if home_title is not None:
+        parts.append(f'home_note_title: "{home_title}"')
+    if hub_prefix is not None:
+        parts.append(f'hub_title_prefix: "{hub_prefix}"')
+    if dry_run:
+        con.print(f"  [dim]Would set {', '.join(parts)} in settings.local.yaml[/dim]")
+        return
+    settings_path.write_text(new_content, encoding="utf-8")
+    con.print(f"  Set [green]{', '.join(parts)}[/green] in settings.local.yaml")
+
+
+def _ask_forever_notes(dry_run: bool) -> None:
+    """Ask whether to enable Hub/Home structure and collect naming preferences."""
+    con.print("\n[bold]Forever Notes Hub structure[/bold]")
+    con.print(
+        "  Hub notes index all your notes on a topic across every folder.\n"
+        "  A ✱ Home note serves as a navigable overview of your entire library.\n"
+        "  Enable this after your taxonomy is stable; run [cyan]notes sync-hubs[/cyan]\n"
+        "  after each classify/move cycle to keep indexes current."
+    )
+    enable = typer.confirm("\nEnable Hub and Home structure?", default=False)
+    if not enable:
+        _write_forever_notes_to_settings("loose", dry_run)
+        return
+
+    con.print()
+    home_title = typer.prompt("  Home note title", default="✱ Home").strip() or "✱ Home"
+    hub_prefix = typer.prompt(
+        "  Hub note prefix (e.g. '✱ ' → '✱ Health', '✱ Projects')",
+        default="✱ ",
+    )
+    _write_forever_notes_to_settings(
+        "strict", dry_run, home_title=home_title, hub_prefix=hub_prefix
+    )
+
+
 def _ask_organization_style(dry_run: bool) -> None:
-    """Ask how aggressively the AI should reorganize, and the subfolder threshold."""
+    """Ask reorganization mode, subfolder threshold, and archive exclusion."""
     con.print("\n[bold]Organization style[/bold]")
 
     mode_choice = _ask_numbered(
         "How should the AI treat your existing folder structure?",
         [
-            "Suggest improvements — reorganize where content clearly warrants it",
+            "Suggest improvements — reorganize and add subfolders where content warrants it",
             "Respect my structure — prefer existing folders; add subfolders sparingly",
-            "Keep structure fixed — classify notes into existing folders only",
+            "Keep structure fixed — no new folders or subfolders",
         ],
         default=2,
     )
     mode_map = {1: "standard", 2: "conservative", 3: "static"}
-    _write_reorganization_mode_to_settings(mode_map[mode_choice], dry_run)
+    nesting_map = {"standard": "natural", "conservative": "natural", "static": "flat"}
+    selected_mode = mode_map[mode_choice]
+    _write_reorganization_mode_to_settings(selected_mode, dry_run)
+    _write_folder_nesting_to_settings(nesting_map[selected_mode], dry_run)
 
     con.print()
     threshold_choice = _ask_numbered(
@@ -648,6 +858,14 @@ def _ask_organization_style(dry_run: bool) -> None:
     )
     threshold_map = {1: 5, 2: 8, 3: 15}
     _write_subfolder_threshold_to_settings(threshold_map[threshold_choice], dry_run)
+
+    con.print()
+    exclude_archive = typer.confirm(
+        "Exclude Archive notes from classification?"
+        " (Recommended — keeps completed notes out of the reorganization cycle)",
+        default=True,
+    )
+    _write_classify_exclude_archive_to_settings(exclude_archive, dry_run)
 
 
 def _write_toplevel_folder_to_settings(enabled: bool, name: str, dry_run: bool) -> None:
@@ -747,6 +965,8 @@ def _select_provider(dry_run: bool) -> bool:
         ).strip()
         if url and url != "http://localhost:11434":
             _write_env_line("OLLAMA_BASE_URL", url, dry_run)
+        model = typer.prompt("\n  Ollama model name", default="llama3.2").strip() or "llama3.2"
+        _write_ollama_model_to_settings(model, dry_run)
         return True
     elif choice == 4:
         _write_provider_to_settings("aws-ollama", dry_run)
@@ -801,7 +1021,8 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
         Panel(
             "[bold]notes setup[/bold]\n\n"
             "This wizard picks a note organization framework for you, collects your "
-            "folder names, and writes [cyan]config/taxonomy.local.yaml[/cyan].\n\n"
+            "folder names, and writes [cyan]config/taxonomy.local.yaml[/cyan] and "
+            "(on first run) [cyan]config/settings.local.yaml[/cyan].\n\n"
             "It takes about 2 minutes.",
             title="Welcome",
             border_style="green",
@@ -976,14 +1197,44 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
                     role_label,
                 )
             con.print(folder_table)
+
+            # Detect standard roles with no matching folder in the export,
+            # filtered to roles relevant for the user's apparent framework.
+            missing_roles = [r for r in _ROLE_KEYWORDS if r not in role_map]
+            missing_in_order = _relevant_missing_roles(missing_roles, role_map)
+            added: list[str] = []
+            if missing_in_order:
+                con.print(
+                    "\n  [dim]Some standard folders weren't found in your export."
+                    " This can happen when Notes folders are empty —"
+                    " the export only includes folders that contain at least one note.[/dim]"
+                    "\n  [dim]You'll need to create any added folders in Apple Notes.[/dim]\n"
+                )
+                for role in missing_in_order:
+                    desc = _ROLE_DESC.get(role, "standard taxonomy folder")
+                    if typer.confirm(
+                        f"  Add '{role.title()}' ({desc})?",
+                        default=True,
+                    ):
+                        tree[role.title()] = []
+                        role_map[role] = role.title()
+                        added.append(role.title())
+                if added:
+                    con.print(
+                        f"\n  [dim]Added {len(added)} folder(s): {', '.join(added)}. "
+                        "Create them in Apple Notes before running `notes move`.[/dim]"
+                    )
+
             if typer.confirm(
                 f"\nGenerate taxonomy from these {len(tree)} top-level folder(s)?", default=True
             ):
                 taxonomy_yaml = _build_taxonomy_from_export(tree, role_map)
+                inbox_in_taxonomy = "inbox" in role_map
             else:
                 con.print("  Falling back to manual folder mapping.\n")
                 folder_map = _collect_existing_folders(existing_folders, container)
                 taxonomy_yaml = _build_existing_taxonomy_yaml(folder_map)
+                inbox_in_taxonomy = bool(folder_map.get("inbox", ""))
         else:
             con.print(
                 "\n[yellow]No export found.[/yellow]  "
@@ -994,9 +1245,11 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
             )
             folder_map = _collect_existing_folders(existing_folders, container)
             taxonomy_yaml = _build_existing_taxonomy_yaml(folder_map)
+            inbox_in_taxonomy = bool(folder_map.get("inbox", ""))
     else:
         folder_map = _collect_folder_names(winner, existing_folders)
         taxonomy_yaml = _build_taxonomy_yaml(winner, folder_map)
+        inbox_in_taxonomy = True  # all built-in frameworks include Inbox
 
     # ── Phase 6: Write config files ────────────────────────────────────────────
     con.print("\n[bold]Writing config files…[/bold]")
@@ -1022,6 +1275,7 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
     # ── Phase 7: Organization style preferences ───────────────────────────────
     if settings_created:
         _ask_organization_style(dry_run)
+        _ask_forever_notes(dry_run)
 
     # ── Phase 8: LLM provider selection ───────────────────────────────────────
     provider_configured = False
@@ -1043,6 +1297,36 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
     if settings_created and selected_account is not None:
         _write_primary_account_to_settings(selected_account, dry_run)
 
+    # ── Decision summary ──────────────────────────────────────────────────────
+    if not dry_run:
+        _fw_labels = {
+            "PARA": "PARA",
+            "GTD": "GTD",
+            "ZETTELKASTEN": "Zettelkasten",
+            "EXISTING": "Existing (custom)",
+        }
+        _reorg_labels = {
+            "standard": "Standard  (suggest improvements, add subfolders naturally)",
+            "conservative": "Conservative  (prefer existing folders, add subfolders sparingly)",
+            "static": "Static  (no new folders or subfolders)",
+            "full": "Full  (reorganize freely)",
+        }
+        summary_table = Table(show_header=False, box=None, padding=(0, 2))
+        summary_table.add_column("key", style="dim")
+        summary_table.add_column("val")
+        summary_table.add_row("Framework:", _fw_labels.get(winner, winner))
+        if settings_created:
+            _s = load_settings()
+            _provider = _s.get("llm_provider") or "—"
+            _reorg = _s.get("reorganization_mode", "standard")
+            _forever = _s.get("forever_notes_mode", "loose")
+            summary_table.add_row("AI Provider:", _provider)
+            summary_table.add_row("Reorganization:", _reorg_labels.get(_reorg, _reorg))
+            if _forever == "strict":
+                _home = (_s.get("strict_mode") or {}).get("home_note_title", "✱ Home")
+                summary_table.add_row("Hub/Home notes:", f"Enabled  ({_home})")
+        con.print(Panel(summary_table, title="Setup complete", border_style="green"))
+
     # ── Next steps ─────────────────────────────────────────────────────────────
     next_steps: list[str] = []
     if not provider_configured:
@@ -1061,12 +1345,17 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
         "uv run notes move      — apply the approved proposal",
     ]
     if winner == "EXISTING":
-        suggestions = FRAMEWORKS["EXISTING"]["improvement_suggestions"]
-        next_steps += [
-            "",
-            "Lightweight improvements to consider:",
-            *[f"  • {s}" for s in suggestions],
+        suggestions = [
+            s
+            for s in FRAMEWORKS["EXISTING"]["improvement_suggestions"]
+            if not (inbox_in_taxonomy and "Inbox" in s)
         ]
+        if suggestions:
+            next_steps += [
+                "",
+                "Lightweight improvements to consider:",
+                *[f"  • {s}" for s in suggestions],
+            ]
 
     steps_text = "\n".join(next_steps)
     con.print(

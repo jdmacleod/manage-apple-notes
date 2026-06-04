@@ -13,8 +13,11 @@ import yaml
 from scripts.setup.frameworks import FRAMEWORKS, framework_choices, get_framework
 from scripts.setup.run_setup import (
     _ask_container,
+    _ask_forever_notes,
     _ask_numbered,
     _auto_map_roles,
+    _infer_framework,
+    _relevant_missing_roles,
     _build_existing_taxonomy_yaml,
     _build_taxonomy_from_export,
     _build_taxonomy_yaml,
@@ -32,8 +35,12 @@ from scripts.setup.run_setup import (
     _handle_multiple_accounts,
     _select_provider,
     _write_env_line,
+    _write_forever_notes_to_settings,
     _write_primary_account_to_settings,
     _write_provider_to_settings,
+    _write_classify_exclude_archive_to_settings,
+    _write_folder_nesting_to_settings,
+    _write_ollama_model_to_settings,
     _write_reorganization_mode_to_settings,
     _write_subfolder_threshold_to_settings,
     _write_taxonomy,
@@ -402,7 +409,7 @@ class TestExtractFoldersFromExport:
         folders, _ = _extract_folders_from_export(export)
         assert folders == ["Inbox"]
 
-    def test_returns_sorted_unique_paths(self, tmp_path: Path) -> None:
+    def test_returns_first_seen_order(self, tmp_path: Path) -> None:
         export = tmp_path / "notes.json"
         export.write_text(
             json.dumps(
@@ -415,7 +422,8 @@ class TestExtractFoldersFromExport:
             )
         )
         folders, _ = _extract_folders_from_export(export)
-        assert folders == ["Archive/Old", "Inbox", "Projects"]
+        # Order reflects first appearance in the export, not alphabetical order
+        assert folders == ["Projects", "Inbox", "Archive/Old"]
 
     def test_note_counts_are_accurate(self, tmp_path: Path) -> None:
         export = tmp_path / "notes.json"
@@ -449,13 +457,15 @@ class TestGroupPathsIntoTree:
         assert tree["Areas"] == ["Finance", "Health"]
         assert tree["Projects"] == []
 
-    def test_subfolders_sorted(self) -> None:
+    def test_subfolders_preserve_first_seen_order(self) -> None:
         tree = _group_paths_into_tree(["Areas/Zzz", "Areas/Aaa"])
-        assert tree["Areas"] == ["Aaa", "Zzz"]
+        # First-seen order, not alphabetical
+        assert tree["Areas"] == ["Zzz", "Aaa"]
 
-    def test_top_level_folders_sorted(self) -> None:
+    def test_top_level_folders_preserve_first_seen_order(self) -> None:
         tree = _group_paths_into_tree(["Zeta", "Alpha"])
-        assert list(tree.keys()) == ["Alpha", "Zeta"]
+        # First-seen order, not alphabetical
+        assert list(tree.keys()) == ["Zeta", "Alpha"]
 
     def test_deeper_paths_collapsed_to_two_levels(self) -> None:
         tree = _group_paths_into_tree(["Areas/Work/Projects"])
@@ -502,6 +512,95 @@ class TestAutoMapRoles:
 
     def test_empty_list_returns_empty(self) -> None:
         assert _auto_map_roles([]) == {}
+
+
+class TestInferFramework:
+    def test_para_when_projects_and_areas_present(self) -> None:
+        assert _infer_framework({"projects": "Projects", "areas": "Areas"}) == "para"
+
+    def test_para_when_projects_resources_archive_present(self) -> None:
+        role_map = {"projects": "P", "resources": "R", "archive": "A"}
+        assert _infer_framework(role_map) == "para"
+
+    def test_zettelkasten_when_fleeting_literature_permanent_present(self) -> None:
+        role_map = {"fleeting": "Fleeting", "literature": "Literature", "permanent": "Permanent"}
+        assert _infer_framework(role_map) == "zettelkasten"
+
+    def test_zettelkasten_when_two_zk_roles_and_no_para(self) -> None:
+        role_map = {"fleeting": "Fleeting", "permanent": "Permanent"}
+        assert _infer_framework(role_map) == "zettelkasten"
+
+    def test_unknown_when_only_one_signal(self) -> None:
+        assert _infer_framework({"projects": "Projects"}) == "unknown"
+        assert _infer_framework({"fleeting": "Fleeting"}) == "unknown"
+
+    def test_unknown_when_empty(self) -> None:
+        assert _infer_framework({}) == "unknown"
+
+    def test_para_wins_when_para_score_exceeds_zk(self) -> None:
+        # 3 PARA roles vs 2 ZK roles → PARA wins (zk_score < para_score)
+        role_map = {
+            "projects": "P",
+            "areas": "A",
+            "resources": "R",
+            "fleeting": "F",
+            "literature": "L",
+        }
+        assert _infer_framework(role_map) == "para"
+
+    def test_zk_wins_on_equal_score_when_both_at_two(self) -> None:
+        # ZK score 2, PARA score 2 → ZK wins (zk_score >= para_score)
+        role_map = {"fleeting": "F", "literature": "L", "projects": "P", "areas": "A"}
+        assert _infer_framework(role_map) == "zettelkasten"
+
+
+class TestRelevantMissingRoles:
+    def test_para_user_sees_para_roles_not_zk(self) -> None:
+        role_map = {"projects": "Projects", "archive": "Archive"}
+        missing = ["inbox", "areas", "resources", "fleeting", "literature", "permanent"]
+        result = _relevant_missing_roles(missing, role_map)
+        assert "inbox" in result
+        assert "areas" in result
+        assert "resources" in result
+        # ZK roles suppressed for PARA user
+        assert "fleeting" not in result
+        assert "literature" not in result
+        assert "permanent" not in result
+
+    def test_zk_user_sees_zk_roles_not_para_specific(self) -> None:
+        role_map = {"fleeting": "F", "literature": "L"}
+        missing = ["inbox", "permanent", "projects", "areas", "resources"]
+        result = _relevant_missing_roles(missing, role_map)
+        assert "inbox" in result
+        assert "permanent" in result
+        # PARA-specific roles suppressed
+        assert "projects" not in result
+        assert "areas" not in result
+        assert "resources" not in result
+
+    def test_unknown_framework_shows_only_universal(self) -> None:
+        role_map = {"projects": "Projects"}  # only one PARA signal → unknown
+        missing = ["inbox", "archive", "areas", "fleeting", "literature"]
+        result = _relevant_missing_roles(missing, role_map)
+        assert "inbox" in result
+        assert "archive" in result
+        assert "areas" not in result
+        assert "fleeting" not in result
+        assert "literature" not in result
+
+    def test_preserves_display_order(self) -> None:
+        role_map = {"projects": "P", "areas": "A"}  # PARA
+        missing = ["resources", "inbox", "archive"]
+        result = _relevant_missing_roles(missing, role_map)
+        # inbox should come before archive, archive before resources per _ROLE_DISPLAY_ORDER
+        assert result.index("inbox") < result.index("archive")
+        assert result.index("archive") < result.index("resources")
+
+    def test_already_covered_roles_not_in_output(self) -> None:
+        role_map = {"projects": "P", "archive": "A", "inbox": "I"}
+        missing = ["areas", "resources"]  # inbox already covered so not in missing
+        result = _relevant_missing_roles(missing, role_map)
+        assert "inbox" not in result  # not in missing list, so not returned
 
 
 class TestBuildTaxonomyFromExport:
@@ -734,7 +833,8 @@ class TestRunSetup:
         )
         mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=export)
         mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=4)
-        mocker.patch("typer.confirm", side_effect=[True, True])  # proceed + generate
+        # proceed + decline Archive + decline Resources (PARA-inferred missing) + generate
+        mocker.patch("typer.confirm", side_effect=[True, False, False, True])
         collect_mock = mocker.patch("scripts.setup.run_setup._collect_existing_folders")
         write_mock = mocker.patch("scripts.setup.run_setup._write_taxonomy")
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
@@ -760,7 +860,8 @@ class TestRunSetup:
         export.write_text(json.dumps([{"folder": "Inbox", "body": ""}]))
         mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=export)
         mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=4)
-        mocker.patch("typer.confirm", side_effect=[True, False])  # proceed + decline generate
+        # proceed + decline Archive (universal missing, unknown framework) + decline generate
+        mocker.patch("typer.confirm", side_effect=[True, False, False])
         collect_mock = mocker.patch(
             "scripts.setup.run_setup._collect_existing_folders",
             return_value={"inbox": "Inbox"},
@@ -789,7 +890,8 @@ class TestRunSetup:
         )
         mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=export)
         mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=4)
-        mocker.patch("typer.confirm", side_effect=[True, True])  # proceed + generate
+        # proceed + decline Inbox + decline Archive + decline Resources (PARA missing) + generate
+        mocker.patch("typer.confirm", side_effect=[True, False, False, False, True])
         mocker.patch("scripts.setup.run_setup._collect_existing_folders")
         write_mock = mocker.patch("scripts.setup.run_setup._write_taxonomy")
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
@@ -822,7 +924,8 @@ class TestRunSetup:
         )
         mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=export)
         mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=4)
-        mocker.patch("typer.confirm", side_effect=[True, True])
+        # proceed + decline Inbox + decline Archive (universal missing, unknown framework) + generate
+        mocker.patch("typer.confirm", side_effect=[True, False, False, True])
         mocker.patch("scripts.setup.run_setup._collect_existing_folders")
         write_mock = mocker.patch("scripts.setup.run_setup._write_taxonomy")
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
@@ -840,6 +943,104 @@ class TestRunSetup:
         top_folders = {v["folder"] for v in parsed["taxonomy"].values()}
         assert "MyLib" not in top_folders, "Container from settings must not appear in taxonomy"
         assert "Projects" in top_folders
+
+    def test_absent_inbox_detected_and_added(
+        self, mocker: MagicMock, tmp_path: Path
+    ) -> None:
+        """Missing PARA-relevant folders are offered individually and added when confirmed."""
+        # Projects + Archive → PARA inferred → missing PARA roles: Inbox, Areas, Resources
+        export = tmp_path / "notes-2024-01-01.json"
+        export.write_text(
+            json.dumps(
+                [
+                    {"folder": "Projects", "folder_path": "Projects", "body": ""},
+                    {"folder": "Archive", "folder_path": "Archive", "body": ""},
+                ]
+            )
+        )
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=export)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=4)
+        # proceed + add Inbox + add Areas + add Resources + generate
+        mocker.patch("typer.confirm", side_effect=[True, True, True, True, True])
+        mocker.patch("scripts.setup.run_setup._collect_existing_folders")
+        write_mock = mocker.patch("scripts.setup.run_setup._write_taxonomy")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
+        run_setup(dry_run=False, no_corpus=True)
+        write_mock.assert_called_once()
+        taxonomy_yaml, _ = write_mock.call_args[0]
+        parsed = yaml.safe_load(taxonomy_yaml)
+        top_folders = {v["folder"] for v in parsed["taxonomy"].values()}
+        # All confirmed-missing PARA roles are added
+        assert "Inbox" in top_folders
+        assert "Areas" in top_folders
+        assert "Resources" in top_folders
+        # Original export folders still present
+        assert "Projects" in top_folders
+        assert "Archive" in top_folders
+
+    def test_absent_folders_declined_not_added(
+        self, mocker: MagicMock, tmp_path: Path
+    ) -> None:
+        """Declining an individual role skips only that folder."""
+        # Projects + Archive → PARA → missing: Inbox, Areas, Resources
+        export = tmp_path / "notes-2024-01-01.json"
+        export.write_text(
+            json.dumps(
+                [
+                    {"folder": "Projects", "folder_path": "Projects", "body": ""},
+                    {"folder": "Archive", "folder_path": "Archive", "body": ""},
+                ]
+            )
+        )
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=export)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=4)
+        # proceed + decline Inbox + add Areas + add Resources + generate
+        mocker.patch("typer.confirm", side_effect=[True, False, True, True, True])
+        mocker.patch("scripts.setup.run_setup._collect_existing_folders")
+        write_mock = mocker.patch("scripts.setup.run_setup._write_taxonomy")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
+        run_setup(dry_run=False, no_corpus=True)
+        write_mock.assert_called_once()
+        taxonomy_yaml, _ = write_mock.call_args[0]
+        parsed = yaml.safe_load(taxonomy_yaml)
+        top_folders = {v["folder"] for v in parsed["taxonomy"].values()}
+        # Inbox declined — must not appear; Areas and Resources accepted — must appear
+        assert "Inbox" not in top_folders
+        assert "Areas" in top_folders
+        assert "Resources" in top_folders
+        assert "Projects" in top_folders
+        assert "Archive" in top_folders
+
+    def test_no_missing_folders_no_absent_prompt(
+        self, mocker: MagicMock, tmp_path: Path
+    ) -> None:
+        """When all standard roles are covered, the absent-folder prompt does not appear."""
+        # Export covers all 9 standard roles so role_map is complete
+        export = tmp_path / "notes-2024-01-01.json"
+        export.write_text(
+            json.dumps(
+                [
+                    {"folder": "Inbox", "folder_path": "Inbox", "body": ""},
+                    {"folder": "Fleeting", "folder_path": "Fleeting", "body": ""},
+                    {"folder": "Literature", "folder_path": "Literature", "body": ""},
+                    {"folder": "Permanent", "folder_path": "Permanent", "body": ""},
+                    {"folder": "Projects", "folder_path": "Projects", "body": ""},
+                    {"folder": "Areas", "folder_path": "Areas", "body": ""},
+                    {"folder": "Resources", "folder_path": "Resources", "body": ""},
+                    {"folder": "Archive", "folder_path": "Archive", "body": ""},
+                    {"folder": "Review", "folder_path": "Review", "body": ""},
+                ]
+            )
+        )
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=export)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=4)
+        confirm_mock = mocker.patch("typer.confirm", side_effect=[True, True])
+        mocker.patch("scripts.setup.run_setup._collect_existing_folders")
+        mocker.patch("scripts.setup.run_setup._write_taxonomy")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
+        run_setup(dry_run=False, no_corpus=True)
+        # Only 2 confirms: "Proceed?" and "Generate taxonomy?" — no absent-folder prompt
+        assert confirm_mock.call_count == 2
 
     def test_gtd_path_shows_snippet(self, mocker: MagicMock, tmp_path: Path) -> None:
         mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
@@ -989,6 +1190,7 @@ class TestRunSetup:
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
         mocker.patch("scripts.setup.run_setup._ask_organization_style")
+        mocker.patch("scripts.setup.run_setup._ask_forever_notes")
         select_mock = mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
         mocker.patch("scripts.setup.run_setup._ask_container")
         run_setup(dry_run=False, no_corpus=True)
@@ -1033,6 +1235,7 @@ class TestRunSetup:
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
         mocker.patch("scripts.setup.run_setup._ask_organization_style")
+        mocker.patch("scripts.setup.run_setup._ask_forever_notes")
         mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
         container_mock = mocker.patch("scripts.setup.run_setup._ask_container")
         run_setup(dry_run=False, no_corpus=True)
@@ -1063,6 +1266,7 @@ class TestRunSetup:
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
         mocker.patch("scripts.setup.run_setup._ask_organization_style")
+        mocker.patch("scripts.setup.run_setup._ask_forever_notes")
         mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
         ask_mock = mocker.patch("scripts.setup.run_setup._ask_container")
         write_mock = mocker.patch("scripts.setup.run_setup._write_toplevel_folder_to_settings")
@@ -1096,6 +1300,7 @@ class TestRunSetup:
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
         mocker.patch("scripts.setup.run_setup._ask_organization_style")
+        mocker.patch("scripts.setup.run_setup._ask_forever_notes")
         mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
         ask_mock = mocker.patch("scripts.setup.run_setup._ask_container")
         run_setup(dry_run=False, no_corpus=True)
@@ -1113,6 +1318,7 @@ class TestRunSetup:
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
         mocker.patch("scripts.setup.run_setup._ask_organization_style")
+        mocker.patch("scripts.setup.run_setup._ask_forever_notes")
         mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
         ask_mock = mocker.patch("scripts.setup.run_setup._ask_container")
         write_mock = mocker.patch("scripts.setup.run_setup._write_toplevel_folder_to_settings")
@@ -1561,6 +1767,237 @@ class TestWriteSubfolderThresholdToSettings:
         assert not (tmp_path / "settings.local.yaml").exists()
 
 
+class TestWriteFolderNestingToSettings:
+    def test_writes_nesting_value(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text('folder_nesting: "natural"\nother: setting\n')
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_folder_nesting_to_settings("flat", dry_run=False)
+        assert 'folder_nesting: "flat"' in settings.read_text()
+        assert "other: setting" in settings.read_text()
+
+    def test_writes_natural(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text('folder_nesting: "flat"\n')
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_folder_nesting_to_settings("natural", dry_run=False)
+        assert 'folder_nesting: "natural"' in settings.read_text()
+
+    def test_dry_run_does_not_write(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        original = 'folder_nesting: "natural"\n'
+        settings.write_text(original)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_folder_nesting_to_settings("flat", dry_run=True)
+        assert settings.read_text() == original
+
+    def test_no_op_when_file_missing(self, tmp_path: Path) -> None:
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_folder_nesting_to_settings("flat", dry_run=False)
+        assert not (tmp_path / "settings.local.yaml").exists()
+
+
+class TestWriteClassifyExcludeArchiveToSettings:
+    def test_writes_false(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text("classify:\n  exclude_archive: true\nother: setting\n")
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_classify_exclude_archive_to_settings(False, dry_run=False)
+        assert "exclude_archive: false" in settings.read_text()
+        assert "other: setting" in settings.read_text()
+
+    def test_writes_true(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text("classify:\n  exclude_archive: false\n")
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_classify_exclude_archive_to_settings(True, dry_run=False)
+        assert "exclude_archive: true" in settings.read_text()
+
+    def test_dry_run_does_not_write(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        original = "classify:\n  exclude_archive: true\n"
+        settings.write_text(original)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_classify_exclude_archive_to_settings(False, dry_run=True)
+        assert settings.read_text() == original
+
+    def test_no_op_when_file_missing(self, tmp_path: Path) -> None:
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_classify_exclude_archive_to_settings(False, dry_run=False)
+        assert not (tmp_path / "settings.local.yaml").exists()
+
+
+class TestWriteOllamaModelToSettings:
+    _SETTINGS_TEMPLATE = (
+        "llm_providers:\n"
+        "  anthropic:\n"
+        '    model: "claude-opus-4-6"\n'
+        "\n"
+        "  ollama:\n"
+        '    model: "llama3"\n'
+        "    batch_size: 10\n"
+        "\n"
+        "  aws-ollama:\n"
+        '    model: "gpt-oss:20b"\n'
+    )
+
+    def test_writes_ollama_model(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(self._SETTINGS_TEMPLATE)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_ollama_model_to_settings("llama3.2", dry_run=False)
+        content = settings.read_text()
+        assert '    model: "llama3.2"' in content
+
+    def test_does_not_clobber_anthropic_or_aws_model(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(self._SETTINGS_TEMPLATE)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_ollama_model_to_settings("mistral", dry_run=False)
+        content = settings.read_text()
+        assert '"claude-opus-4-6"' in content
+        assert '"gpt-oss:20b"' in content
+        assert '"mistral"' in content
+
+    def test_dry_run_does_not_write(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(self._SETTINGS_TEMPLATE)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_ollama_model_to_settings("mistral", dry_run=True)
+        assert settings.read_text() == self._SETTINGS_TEMPLATE
+
+    def test_no_op_when_file_missing(self, tmp_path: Path) -> None:
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_ollama_model_to_settings("llama3.2", dry_run=False)
+        assert not (tmp_path / "settings.local.yaml").exists()
+
+
+class TestWriteForeverNotesToSettings:
+    _SETTINGS_TEMPLATE = (
+        'forever_notes_mode: "loose"\n'
+        "strict_mode:\n"
+        '  home_note_title: "✱ Home"\n'
+        '  hub_title_prefix: "✱ "\n'
+        "other: setting\n"
+    )
+
+    def test_writes_mode_to_strict(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(self._SETTINGS_TEMPLATE)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_forever_notes_to_settings("strict", dry_run=False)
+        assert 'forever_notes_mode: "strict"' in settings.read_text()
+        assert "other: setting" in settings.read_text()
+
+    def test_writes_home_title_and_hub_prefix(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(self._SETTINGS_TEMPLATE)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_forever_notes_to_settings(
+                "strict", dry_run=False, home_title="My Notes", hub_prefix="# "
+            )
+        content = settings.read_text()
+        assert 'forever_notes_mode: "strict"' in content
+        assert 'home_note_title: "My Notes"' in content
+        assert 'hub_title_prefix: "# "' in content
+
+    def test_omits_naming_when_not_supplied(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(self._SETTINGS_TEMPLATE)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_forever_notes_to_settings("strict", dry_run=False)
+        content = settings.read_text()
+        # Without explicit overrides, original naming values are preserved
+        assert '✱ Home' in content
+        assert '✱ ' in content
+
+    def test_dry_run_does_not_write(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(self._SETTINGS_TEMPLATE)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_forever_notes_to_settings(
+                "strict", dry_run=True, home_title="Test", hub_prefix="- "
+            )
+        assert settings.read_text() == self._SETTINGS_TEMPLATE
+
+    def test_no_op_when_file_missing(self, tmp_path: Path) -> None:
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_forever_notes_to_settings("strict", dry_run=False, home_title="X")
+        assert not (tmp_path / "settings.local.yaml").exists()
+
+
+class TestAskForeverNotes:
+    _SETTINGS_TEMPLATE = (
+        'forever_notes_mode: "loose"\n'
+        "strict_mode:\n"
+        '  home_note_title: "✱ Home"\n'
+        '  hub_title_prefix: "✱ "\n'
+    )
+
+    def test_strict_writes_mode_and_names(self, mocker: MagicMock, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(self._SETTINGS_TEMPLATE)
+        mocker.patch("typer.confirm", return_value=True)  # Enable Hub structure
+        mocker.patch("typer.prompt", side_effect=["My Notes", "# "])
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _ask_forever_notes(dry_run=False)
+        content = settings.read_text()
+        assert 'forever_notes_mode: "strict"' in content
+        assert 'home_note_title: "My Notes"' in content
+        assert 'hub_title_prefix: "# "' in content
+
+    def test_loose_does_not_prompt_for_names(self, mocker: MagicMock, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(self._SETTINGS_TEMPLATE)
+        mocker.patch("typer.confirm", return_value=False)  # Disable Hub structure
+        prompt_mock = mocker.patch("typer.prompt")
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _ask_forever_notes(dry_run=False)
+        prompt_mock.assert_not_called()
+        assert 'forever_notes_mode: "loose"' in settings.read_text()
+
+    def test_forever_notes_called_when_settings_created(
+        self, mocker: MagicMock
+    ) -> None:
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
+        mocker.patch("scripts.setup.run_setup._detect_accounts", return_value=[])
+        mocker.patch("scripts.setup.run_setup._detect_container", return_value=(None, []))
+        mocker.patch("scripts.setup.run_setup._ask_numbered", side_effect=[2, 1, 2])
+        mocker.patch("typer.confirm", return_value=True)
+        mocker.patch(
+            "scripts.setup.run_setup._collect_folder_names",
+            return_value={"inbox": "Inbox", "projects": "P", "areas": "A",
+                          "resources": "R", "archive": "Arc"},
+        )
+        mocker.patch("scripts.setup.run_setup._write_taxonomy")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
+        mocker.patch("scripts.setup.run_setup._ask_organization_style")
+        fn_mock = mocker.patch("scripts.setup.run_setup._ask_forever_notes")
+        mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
+        mocker.patch("scripts.setup.run_setup._ask_container")
+        run_setup(dry_run=False, no_corpus=True)
+        fn_mock.assert_called_once()
+
+    def test_forever_notes_skipped_when_settings_already_exist(
+        self, mocker: MagicMock
+    ) -> None:
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
+        mocker.patch("scripts.setup.run_setup._detect_accounts", return_value=[])
+        mocker.patch("scripts.setup.run_setup._detect_container", return_value=(None, []))
+        mocker.patch("scripts.setup.run_setup._ask_numbered", side_effect=[2, 1, 2])
+        mocker.patch("typer.confirm", return_value=True)
+        mocker.patch(
+            "scripts.setup.run_setup._collect_folder_names",
+            return_value={"inbox": "Inbox", "projects": "P", "areas": "A",
+                          "resources": "R", "archive": "Arc"},
+        )
+        mocker.patch("scripts.setup.run_setup._write_taxonomy")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
+        fn_mock = mocker.patch("scripts.setup.run_setup._ask_forever_notes")
+        run_setup(dry_run=False, no_corpus=True)
+        fn_mock.assert_not_called()
+
+
 class TestRunSetupAccountIntegration:
     """Integration tests for account detection wired into run_setup."""
 
@@ -1583,6 +2020,7 @@ class TestRunSetupAccountIntegration:
         mocker.patch("scripts.setup.run_setup._write_taxonomy")
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
         mocker.patch("scripts.setup.run_setup._ask_organization_style")
+        mocker.patch("scripts.setup.run_setup._ask_forever_notes")
         mocker.patch("scripts.setup.run_setup._select_provider", return_value=False)
         mocker.patch("scripts.setup.run_setup._ask_container")
 

@@ -216,19 +216,27 @@ def _generate_hub_body(
     hub_prefix: str,
     uuid_map: dict[str, str] | None = None,
     use_links: bool = False,
+    cat_order: dict[str, int] | None = None,
 ) -> str:
     """Generate HTML body for a Hub note directly from export data.
 
     When use_links=True (internal_links: "html" in settings), note titles are
     rendered as applenotes:// links using UUIDs from uuid_map when available.
     When use_links=False (default, internal_links: "text"), titles are plain text.
+    Category sections appear in taxonomy key order when cat_order is supplied;
+    alphabetical order is used as fallback (e.g. in tests that don't pass it).
     """
     tag = _hub_tag(sf_def)
     h_title = _hub_title(sf_def, hub_prefix)
     parts: list[str] = [f"<h1>{html.escape(h_title)}</h1>"]
 
     multi_cat = len(categories) > 1
-    for cat_display, note_pairs in sorted(categories.items()):
+    _order = cat_order or {}
+    n_cats = len(_order)
+    for cat_display, note_pairs in sorted(
+        categories.items(),
+        key=lambda x: (_order.get(x[0], n_cats), x[0]),
+    ):
         if multi_cat:
             parts.append(f"<h2>{html.escape(cat_display)}</h2>")
         parts.append("<ul>")
@@ -442,6 +450,11 @@ def run_sync_hubs(
     created = updated = errors = 0
     hub_ids: dict[str, str] = {}  # hub_title → local pNNN returned by AppleScript
 
+    # Build a position map from taxonomy key order so Hub note category sections
+    # appear in the user's sidebar order rather than alphabetically.
+    # cat_display = cat_key.capitalize() is how _build_theme_index sets display names.
+    cat_order = {k.capitalize(): i for i, k in enumerate(taxonomy.get("taxonomy", {}).keys())}
+
     for _theme_name, theme_data in sorted(hub_index.items()):
         sf_def = theme_data["_sf_def"]
         h_title = _hub_title(sf_def, hub_prefix)
@@ -453,7 +466,12 @@ def run_sync_hubs(
         )
 
         body = _generate_hub_body(
-            sf_def, categories, hub_prefix, uuid_map=note_uuid_map, use_links=use_links
+            sf_def,
+            categories,
+            hub_prefix,
+            uuid_map=note_uuid_map,
+            use_links=use_links,
+            cat_order=cat_order,
         )
         status, local_id = _write_note_applescript(
             h_title, body, hub_folder, dry_run, container=container, _con=_con

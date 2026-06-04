@@ -1,6 +1,6 @@
 # notes setup — interactive onboarding
 
-`notes setup` walks you through picking a note organization framework, names your Apple Notes folders, and writes the two config files you need before running the rest of the pipeline.
+`notes setup` walks you through picking a note organization framework, names your Apple Notes folders, and writes `config/taxonomy.local.yaml` and (on first run) `config/settings.local.yaml`.
 
 ## Usage
 
@@ -24,15 +24,19 @@ Run `notes setup` again any time you want to switch frameworks or rename folders
 
 4. **Recommendation** — setup shows the recommended framework with a rationale, a folder structure preview, and confidence level. You can accept or override.
 
-5. **Folder naming** — for each category in the chosen framework, setup prompts for a folder name (defaulting to the canonical name). Press Enter to accept.
+5. **Folder naming** — for each category in the chosen framework, setup prompts for a folder name (defaulting to the canonical name). Press Enter to accept. For the "use existing system" path, setup reads your export to show your current folders and auto-generate the taxonomy, then offers to add any standard folders that are missing.
 
 6. **Write config files** — `config/taxonomy.local.yaml` is written (existing file is backed up as `.bak`). If `config/settings.local.yaml` doesn't exist, it's copied from the example.
 
-7. **LLM provider selection** — if `config/settings.local.yaml` was just created, setup asks which LLM provider you want to use and writes `llm_provider` to `settings.local.yaml`. For Anthropic, it optionally collects your API key and writes it to `.env` (the key is never echoed to the terminal). This step is skipped if `settings.local.yaml` already existed (re-running setup to change taxonomy only).
+7. **Organization style** — if `settings.local.yaml` was just created, setup asks: how aggressively the AI should reorganize (standard / conservative / static), how many notes trigger a new subfolder, and whether Archive notes should be excluded from classification. Writes `reorganization_mode`, `folder_nesting`, `thresholds.min_notes_for_subfolder`, and `classify.exclude_archive`. Skipped on re-runs.
 
-8. **Container folder structure** — asks whether to nest all taxonomy folders inside a single container folder (e.g. `Library/`) or place them at the account root. Writes `toplevel_folder.enabled` and `toplevel_folder.name` to `settings.local.yaml`. Skipped on re-runs.
+8. **Forever Notes Hub structure** — asks whether to enable Hub and Home notes (the `sync-hubs` layer). If yes, collects the home note title and hub note prefix. Writes `forever_notes_mode` and related `strict_mode` keys. Skipped on re-runs.
 
-9. **Primary account** — if multiple accounts were detected in step 1 and `settings.local.yaml` was just created, writes the selected account as `primary_account` in `settings.local.yaml`.
+9. **LLM provider selection** — asks which LLM provider to use and writes `llm_provider` to `settings.local.yaml`. For Anthropic, optionally collects your API key and writes it to `.env` (never echoed). For Ollama, collects the base URL and model name. Skipped on re-runs.
+
+10. **Container folder structure** — asks whether to nest all taxonomy folders inside a single container folder (e.g. `Library/`) or place them at the account root. Writes `toplevel_folder.enabled` and `toplevel_folder.name`. Skipped on re-runs.
+
+11. **Primary account** — if multiple accounts were detected in step 1 and `settings.local.yaml` was just created, writes the selected account as `primary_account` in `settings.local.yaml`.
 
 ---
 
@@ -65,15 +69,15 @@ When a `notes-*.json` export is available, setup extracts these signals:
 
 ## After setup
 
-If you chose a provider during setup, you're ready to run the pipeline. If you skipped
-provider selection, set `llm_provider` in `config/settings.local.yaml` first:
+You're ready to run the pipeline. If you chose "Skip" for provider selection (or are
+re-running setup to change your taxonomy), set `llm_provider` manually first:
 
 ```yaml
 llm_provider: "apple"   # apple | anthropic | ollama | aws-ollama
 ```
 
-See [GUIDE.md](../GUIDE.md) for provider-specific prerequisites (API keys, Ollama install,
-Apple Intelligence Swift build).
+See [GUIDE.md](../GUIDE.md) for provider-specific prerequisites (Apple Intelligence Swift
+build, Ollama install and model pull, Anthropic API key).
 
 Then run the pipeline:
 

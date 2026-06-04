@@ -39,7 +39,7 @@ uv run notes move --dry-run
 uv run notes move
 ```
 
-`notes setup` asks 3 questions and writes `config/taxonomy.local.yaml` for you. It picks from PARA, GTD, or Zettelkasten based on your answers and (optionally) your existing note library.
+`notes setup` asks a few questions and writes `config/taxonomy.local.yaml` and `config/settings.local.yaml` for you. It picks from PARA, GTD, or Zettelkasten based on your answers and (optionally) your existing note library.
 
 Not on Apple Silicon or macOS 26+? See [GUIDE.md](GUIDE.md) for Anthropic API, Ollama, and AWS-Ollama provider options.
 

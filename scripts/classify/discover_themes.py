@@ -552,13 +552,18 @@ def run_discover(
         if estimate:
             con.print(f"Est. time:      {estimate}")
         con.print(f"\nOutput would be written to: {THEME_MAPS_DIR}/themes-{date_str}.json")
-        con.print("\nNext steps after reviewing the theme map:")
-        con.print("  1. Edit theme names, merge or split as needed")
-        con.print(
-            "  2. Run: uv run notes draft  — generates a draft taxonomy YAML from this theme map"
-        )
-        con.print("  3. Review the draft, then copy to config/taxonomy.local.yaml")
-        con.print("  4. Run: uv run notes classify")
+        _dr_reorg = reorganization_mode(settings)
+        con.print("\nTo proceed:")
+        if _dr_reorg == "static":
+            con.print("  1. uv run notes discover  — themes are informational in static mode")
+            con.print("  2. uv run notes classify")
+        else:
+            con.print("  1. uv run notes discover  — generates the theme map")
+            con.print(
+                "  2. uv run notes draft    — turns themes into an editable YAML draft;"
+                " review before applying"
+            )
+            con.print("  3. uv run notes classify")
         log_file = RunLogger("discover", logs_dir_path(settings)).finish(
             summary={"notes_processed": len(summaries), "batches": len(batches)},
             dry_run=True,
@@ -826,11 +831,35 @@ def run_discover(
             con.print(f"    {cat + ':':<20} {len(themes_in_cat)} theme(s){new_suffix}")
 
     con.print("\n[bold]Next steps:[/bold]")
-    con.print(f"  1. Review {output_path}")
-    con.print("  2. Edit theme names, merge or split as needed")
-    con.print("  3. Run: uv run notes draft  — generates a draft taxonomy YAML from this theme map")
-    con.print("  4. Review the draft, then copy to config/taxonomy.local.yaml")
-    con.print("  5. Run: uv run notes classify")
+    if reorg_mode == "static":
+        con.print(
+            "  [dim]Themes are informational in static mode — "
+            "your folder structure is fixed and no new subfolders will be proposed.[/dim]"
+        )
+        con.print("  1. Run: uv run notes classify")
+    elif len(above_threshold) == 0:
+        con.print(
+            f"  [dim]No themes reached the subfolder threshold ({min_subfolder} notes). "
+            "Running notes draft would add nothing — skip directly to classify.[/dim]"
+        )
+        con.print("  1. Run: uv run notes classify")
+    else:
+        if reorg_mode == "conservative":
+            con.print(
+                "  1. Run: uv run notes draft"
+                "  — proposes subfolders only where the evidence is strong"
+            )
+        else:
+            con.print("  1. Run: uv run notes draft  — turns themes into an editable YAML draft")
+        con.print(
+            "     [dim]The draft YAML shows exactly what would change"
+            " and is easy to edit — review it before applying.[/dim]"
+        )
+        con.print("  2. Run: uv run notes classify")
+        con.print(
+            f"  [dim]Advanced: inspect {output_path}"
+            " to rename or merge themes before drafting.[/dim]"
+        )
 
     summary: dict[str, object] = {
         "notes_processed": len(summaries),

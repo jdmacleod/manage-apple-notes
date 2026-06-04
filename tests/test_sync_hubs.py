@@ -195,6 +195,36 @@ class TestGenerateHubBody:
         body = _generate_hub_body(sf_def, categories, "✱ ", use_links=False)
         assert "<h2>" not in body
 
+    def test_cat_order_overrides_alphabetical(self) -> None:
+        """Categories appear in taxonomy key order, not alphabetically."""
+        sf_def = {"name": "Health"}
+        # Alphabetical order would be Areas before Inbox, but taxonomy has Inbox first.
+        categories = {
+            "Areas": [("Note A", "p1")],
+            "Inbox": [("Note B", "p2")],
+        }
+        # Taxonomy: inbox (pos 0) before areas (pos 1)
+        cat_order = {"Inbox": 0, "Areas": 1}
+        body = _generate_hub_body(
+            sf_def, categories, "✱ ", use_links=False, cat_order=cat_order
+        )
+        inbox_pos = body.index("Inbox")
+        areas_pos = body.index("Areas")
+        assert inbox_pos < areas_pos, "Inbox section must precede Areas when taxonomy so dictates"
+
+    def test_no_cat_order_falls_back_to_alphabetical(self) -> None:
+        """Without cat_order, categories fall back to alphabetical order."""
+        sf_def = {"name": "Health"}
+        categories = {
+            "Inbox": [("Note B", "p2")],
+            "Areas": [("Note A", "p1")],
+        }
+        body = _generate_hub_body(sf_def, categories, "✱ ", use_links=False)
+        # No cat_order → alphabetical: Areas before Inbox
+        areas_pos = body.index("Areas")
+        inbox_pos = body.index("Inbox")
+        assert areas_pos < inbox_pos
+
 
 class TestBuildHomeBody:
     def test_includes_category_headings(self, minimal_taxonomy: dict) -> None:

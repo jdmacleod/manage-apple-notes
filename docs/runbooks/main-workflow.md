@@ -11,7 +11,7 @@ Run this once to organize an existing library into the configured folder taxonom
 
 **Time estimate:** 30–60 min (plus review time for large libraries).
 
-**Prerequisites:** Setup complete (`uv sync`, `.env` configured, `taxonomy.local.yaml` filled in), Apple Notes open and synced. Terminal must have Automation permission to control Notes (System Settings → Privacy & Security → Automation).
+**Prerequisites:** `uv run notes setup` complete (`uv sync` run, `taxonomy.local.yaml` written, LLM provider configured), Apple Notes open and synced. Terminal must have Automation permission to control Notes (System Settings → Privacy & Security → Automation).
 
 ### Step 1 — Export
 
@@ -33,9 +33,19 @@ uv run notes discover             # → data/theme-maps/themes-YYYY-MM-DD.json
 ```
 
 Sends batches of note summaries to the LLM to map the thematic clusters in your library.
-No notes are changed.
+No notes are changed. At the end, `notes discover` prints mode-aware guidance based on
+your `reorganization_mode` setting — follow that rather than the generic steps below.
 
-Run `uv run notes draft` to turn the theme-map into an editable taxonomy YAML:
+**If `reorganization_mode` is `static`:** skip directly to Step 3 — discover is
+informational only and `notes draft` is a no-op.
+
+**If no themes reached the subfolder threshold:** `notes discover` will say so; skip
+`notes draft` and go straight to Step 3.
+
+**Otherwise:** run `notes draft` to turn the theme-map into an editable taxonomy YAML.
+The draft YAML is the right place to review what will change — it's readable and shows
+exactly which subfolders would be added. Edit it before applying; the raw theme-map JSON
+in `data/theme-maps/` is an advanced option for renaming or merging themes.
 
 ```bash
 uv run notes draft --dry-run   # preview proposed additions
