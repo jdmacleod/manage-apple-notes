@@ -339,6 +339,10 @@ instructed to map themes to established paths before proposing new ones. This me
   produces the same `suggested_path` values for unchanged note clusters — theme names stabilize
 - The console output labels themes as "existing" or "new", and the theme map JSON includes
   `established_paths` and `new_paths` keys for at-a-glance review
+- Each individual theme entry now carries a `"status"` field: `"use-existing"` when its
+  `suggested_path` is already present in the taxonomy, `"create-new"` when it proposes a
+  net-new subfolder. This makes the JSON self-documenting and lets tooling filter themes by
+  disposition without cross-referencing the top-level `established_paths` array
 - As the taxonomy matures, the "new proposals" count approaches zero — discover becomes a
   validation pass rather than a re-invention pass
 
@@ -743,13 +747,24 @@ collapse to ~30–50 distinct-path themes.
 
 **Step 2 — LLM semantic dedup (1 API call):** Themes are stripped to 3 fields (`name`,
 `estimated_count`, `suggested_path`, ~25 tokens each) before sending. A minimal synthesis
-prompt (~80 tokens) replaces the full prompt (~1000 tokens). Token budget:
+prompt (~80 tokens) replaces the full prompt (~1000 tokens). The user content is prepended
+with `"Themes to merge:\n\n"` so Apple's language detector sees English prose rather than a
+bare JSON array — without this preamble the language detector can score the input as
+non-English and raise an unsupported-locale error. Token budget:
 - System: ~80 tokens
 - User (50 stripped themes × 25): ~1,250 tokens
 - Total input: ~1,330 tokens — leaves 2,766 tokens for response, capped at 1,600 ✓
 
 After synthesis the full fields (`description`, `reasoning`, `appears_in_categories`) are
 re-attached from the original raw themes by matching on `suggested_path`.
+
+**Response format tolerance:** The synthesis step uses `extract_json_themes()`, which
+accepts both `{"themes": [...]}` (the canonical format requested in the prompt) and a bare
+`[...]` array (returned by some on-device model versions that echo the input array format).
+The same function is used for per-batch discovery calls. This prevents silent data loss
+that occurred when the object wrapper was missing: the old `extract_json_object` call
+parsed the first theme in the array as the object, got no `"themes"` key, and returned
+an empty list for the whole batch.
 
 **Fallback:** If synthesis overflows (>95 distinct-path themes — very large libraries), the
 Python-deduped list is used directly. Exact duplicates are still merged; only the semantic

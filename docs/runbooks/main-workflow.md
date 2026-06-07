@@ -11,7 +11,7 @@ Run this once to organize an existing library into the configured folder taxonom
 
 **Time estimate:** 30–60 min (plus review time for large libraries).
 
-**Prerequisites:** `uv run notes setup` complete (`uv sync` run, `taxonomy.local.yaml` written, LLM provider configured), Apple Notes open and synced. Terminal must have Automation permission to control Notes (System Settings → Privacy & Security → Automation).
+**Prerequisites:** `uv run notes export` then `uv run notes setup` complete (`uv sync` run, `taxonomy.local.yaml` written, LLM provider configured), Apple Notes open and synced. Terminal must have Automation permission to control Notes (System Settings → Privacy & Security → Automation). Running export before setup lets the wizard use your note corpus for framework recommendation and folder-structure detection — see [`docs/setup.md`](../setup.md) for details.
 
 ### Step 1 — Export
 

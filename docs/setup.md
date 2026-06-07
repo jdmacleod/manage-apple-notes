@@ -5,10 +5,13 @@
 ## Usage
 
 ```bash
+uv run notes export          # recommended first: corpus analysis and folder detection
 uv run notes setup           # full wizard — corpus analysis + 3 questions
 uv run notes setup --dry-run # preview what would be written without touching files
 uv run notes setup --no-corpus  # skip corpus analysis; rely on questions only
 ```
+
+**Run `notes export` before `notes setup`** if you have an existing library. The setup wizard uses the export for two things: the corpus analysis that powers the framework recommendation (note count, folder count, note length, task density), and — for the "my current system mostly works" path — reading your existing folder structure to auto-generate the taxonomy. Without an export, setup falls back to question-only scoring and cannot detect your folder hierarchy.
 
 Run `notes setup` again any time you want to switch frameworks or rename folders. It backs up your existing `taxonomy.local.yaml` before overwriting.
 
@@ -28,13 +31,13 @@ Run `notes setup` again any time you want to switch frameworks or rename folders
 
 6. **Write config files** — `config/taxonomy.local.yaml` is written (existing file is backed up as `.bak`). If `config/settings.local.yaml` doesn't exist, it's copied from the example.
 
-7. **Organization style** — if `settings.local.yaml` was just created, setup asks: how aggressively the AI should reorganize (standard / conservative / static), how many notes trigger a new subfolder, and whether Archive notes should be excluded from classification. Writes `reorganization_mode`, `folder_nesting`, `thresholds.min_notes_for_subfolder`, and `classify.exclude_archive`. Skipped on re-runs.
+7. **Organization style** — if `settings.local.yaml` was just created, setup asks: how aggressively the AI should reorganize (standard / conservative / static), how many notes trigger a new subfolder, and whether Archive notes should be excluded from classification. Writes `reorganization_mode`, `folder_nesting`, `thresholds.min_notes_for_subfolder`, and `classify.exclude_archive`. Skipped on re-runs. When the "my current system mostly works" path was chosen, the subfolder threshold defaults to **15 notes** (instead of 8) — a higher bar that reflects the intent to keep the existing structure mostly intact.
 
 8. **Forever Notes Hub structure** — asks whether to enable Hub and Home notes (the `sync-hubs` layer). If yes, collects the home note title and hub note prefix. Writes `forever_notes_mode` and related `strict_mode` keys. Skipped on re-runs.
 
-9. **LLM provider selection** — asks which LLM provider to use and writes `llm_provider` to `settings.local.yaml`. For Anthropic, optionally collects your API key and writes it to `.env` (never echoed). For Ollama, collects the base URL and model name. Skipped on re-runs.
+9. **LLM provider selection** — asks which LLM provider to use and writes `llm_provider` to `settings.local.yaml`. For Anthropic, optionally collects your API key and writes it to `.env` (never echoed). For Ollama, collects the base URL and model name. Skipped on re-runs. When **Apple Intelligence** is chosen, setup immediately runs three live prerequisite checks: (1) Xcode ≥ 26 installed (`xcodebuild -version`), (2) compiled Swift bridge binary exists at the configured path, (3) a live probe to confirm Apple Intelligence is available and responding. A disk-space warning is printed if Xcode needs to be installed and fewer than 50 GB are free.
 
-10. **Container folder structure** — asks whether to nest all taxonomy folders inside a single container folder (e.g. `Library/`) or place them at the account root. Writes `toplevel_folder.enabled` and `toplevel_folder.name`. Skipped on re-runs.
+10. **Container folder structure** — asks whether to nest all taxonomy folders inside a single container folder (e.g. `Library/`) or place them at the account root. Writes `toplevel_folder.enabled` and `toplevel_folder.name`. Skipped on re-runs. **If your notes are already inside a container folder, set `enabled: true`.** With `enabled: false`, `notes export` will not strip the container prefix from folder paths, which causes `notes draft` to add the container as a taxonomy category and duplicate the entire folder tree inside it.
 
 11. **Primary account** — if multiple accounts were detected in step 1 and `settings.local.yaml` was just created, writes the selected account as `primary_account` in `settings.local.yaml`.
 
