@@ -945,6 +945,52 @@ class TestRunSetup:
         assert "MyLib" not in top_folders, "Container from settings must not appear in taxonomy"
         assert "Projects" in top_folders
 
+    def test_container_prefixed_paths_stripped_before_role_detection(
+        self, mocker: MagicMock, tmp_path: Path
+    ) -> None:
+        """Folders inside a container are recognised even when the export was not pre-stripped.
+
+        If the user's export was run before toplevel_folder.enabled was set, paths still
+        carry the container prefix (e.g. "Library/Archive"). Without stripping, _auto_map_roles
+        only sees the container name and reports every role as missing. With the fix, prefix
+        stripping happens in setup before tree building, so Archive (and other folders) are
+        recognised correctly.
+        """
+        export = tmp_path / "notes-2024-01-01.json"
+        export.write_text(
+            json.dumps(
+                [
+                    {"folder": "Inbox", "folder_path": "Library/Inbox", "body": ""},
+                    {"folder": "Projects", "folder_path": "Library/Projects", "body": ""},
+                    {"folder": "Archive", "folder_path": "Library/Archive", "body": ""},
+                    {"folder": "Sub", "folder_path": "Library/Archive/Sub", "body": ""},
+                ]
+            )
+        )
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=export)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=4)
+        mocker.patch(
+            "scripts.setup.run_setup._detect_container",
+            return_value=("Library", ["Inbox", "Projects", "Archive"]),
+        )
+        # proceed + (PARA missing: Areas, Resources — offered and declined) + generate
+        mocker.patch("typer.confirm", side_effect=[True, False, False, True])
+        mocker.patch("scripts.setup.run_setup._collect_existing_folders")
+        write_mock = mocker.patch("scripts.setup.run_setup._write_taxonomy")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
+
+        run_setup(dry_run=False, no_corpus=True)
+
+        write_mock.assert_called_once()
+        taxonomy_yaml, _ = write_mock.call_args[0]
+        parsed = yaml.safe_load(taxonomy_yaml)
+        top_folders = {v["folder"] for v in parsed["taxonomy"].values()}
+        # All three folders must be recognised — Archive must NOT be treated as missing
+        assert "Inbox" in top_folders
+        assert "Projects" in top_folders
+        assert "Archive" in top_folders
+        assert "Library" not in top_folders
+
     def test_absent_inbox_detected_and_added(self, mocker: MagicMock, tmp_path: Path) -> None:
         """Missing PARA-relevant folders are offered individually and added when confirmed."""
         # Projects + Archive → PARA inferred → missing PARA roles: Inbox, Areas, Resources

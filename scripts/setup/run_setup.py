@@ -1242,23 +1242,36 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
         if export_path is not None:
             all_paths, note_counts = _extract_folders_from_export(export_path)
 
-            # The export strips "Container/..." prefixes from folder_path, but
-            # notes sitting directly IN the container keep folder_path == container_name
-            # (the strip uses startswith("Library/"), not an exact match on "Library").
-            # Exclude those paths so the container doesn't appear as a taxonomy category.
+            # Normalize paths relative to the container folder.
+            # The export strips "Container/" prefixes only when toplevel_folder.enabled
+            # was set at export time. If the export was run before that setting was
+            # applied, paths still carry the prefix (e.g. "Library/Archive"). Stripping
+            # here is always safe — startswith() is a no-op for already-relative paths.
+            # Notes filed directly in the container root are excluded and counted.
             effective_container = container  # from Phase 0 AppleScript detection
             if effective_container is None:
                 _tlf = load_settings().get("toplevel_folder") or {}
                 if _tlf.get("enabled"):
                     effective_container = _tlf.get("name") or None
-            if effective_container is not None and effective_container in note_counts:
-                n_direct = note_counts[effective_container]
-                all_paths = [p for p in all_paths if p != effective_container]
-                note_counts = {k: v for k, v in note_counts.items() if k != effective_container}
-                con.print(
-                    f"\n  [dim]{n_direct} note(s) found directly in "
-                    f"'{effective_container}' (container folder) — excluded from taxonomy.[/dim]"
-                )
+            if effective_container is not None:
+                prefix = effective_container + "/"
+                new_counts: dict[str, int] = {}
+                n_direct = 0
+                for path, count in note_counts.items():
+                    if path.startswith(prefix):
+                        key = path[len(prefix) :]
+                        new_counts[key] = new_counts.get(key, 0) + count
+                    elif path == effective_container:
+                        n_direct += count  # note filed directly in container root
+                    else:
+                        new_counts[path] = new_counts.get(path, 0) + count
+                note_counts = new_counts
+                all_paths = list(note_counts.keys())
+                if n_direct:
+                    con.print(
+                        f"\n  [dim]{n_direct} note(s) found directly in "
+                        f"'{effective_container}' (container folder) — excluded from taxonomy.[/dim]"
+                    )
 
             tree = _group_paths_into_tree(all_paths)
             role_map = _auto_map_roles(list(tree.keys()))
