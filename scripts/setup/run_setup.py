@@ -17,7 +17,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from scripts.config import CONFIG_DIR, find_latest_export, load_settings
+from scripts.config import CONFIG_DIR, find_latest_export, get_category_meta, load_settings
 from scripts.setup.frameworks import FRAMEWORKS, framework_choices, get_framework
 from scripts.setup.scorer import score
 
@@ -873,6 +873,68 @@ def _ask_organization_style(dry_run: bool, is_existing: bool = False) -> None:
     _write_classify_exclude_archive_to_settings(exclude_archive, dry_run)
 
 
+def _write_categories_for_taxonomy(taxonomy_yaml_str: str, dry_run: bool) -> None:
+    """Rewrite the categories: block in settings.local.yaml to match taxonomy role keys.
+
+    Called on first-time settings creation for the EXISTING path so the file only
+    contains entries for roles the user actually has — removing Zettelkasten-specific
+    keys (fleeting, literature, permanent) that don't apply to most existing systems.
+    """
+    settings_path = CONFIG_DIR / "settings.local.yaml"
+    if not settings_path.exists():
+        return
+
+    taxonomy = yaml.safe_load(taxonomy_yaml_str) or {}
+    role_keys = set((taxonomy.get("taxonomy") or {}).keys())
+    if not role_keys:
+        return
+
+    # Extra behavioral flags present in settings.example.yaml but not in _BUILTIN_CATEGORY_META
+    _EXTRA_FLAGS: dict[str, dict] = {
+        "inbox": {"stale_days": 7},
+        "fleeting": {"stale_days": 30},
+        "projects": {"active_days": 90},
+    }
+
+    builtin_meta = get_category_meta({})  # {} → built-in defaults only, no user overrides
+    categories: dict = {}
+    for key, meta in builtin_meta.items():
+        if key in role_keys:
+            entry = dict(meta)
+            entry.update(_EXTRA_FLAGS.get(key, {}))
+            categories[key] = entry
+
+    if not categories:
+        return
+
+    new_block = yaml.dump(
+        {"categories": categories},
+        allow_unicode=True,
+        default_flow_style=False,
+        sort_keys=False,
+        indent=2,
+    )
+
+    role_list = ", ".join(categories.keys())
+    if dry_run:
+        con.print(f"  [dim]Would update categories: block for roles: {role_list}[/dim]")
+        return
+
+    content = settings_path.read_text(encoding="utf-8")
+    # Match categories: header + all following indented/blank lines
+    new_content = re.sub(
+        r"^categories:\n(?:[ \t][^\n]*\n|[ \t]*\n)*",
+        new_block + "\n",
+        content,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if new_content == content:
+        return
+    settings_path.write_text(new_content, encoding="utf-8")
+    con.print(f"  Updated [green]categories:[/green] for taxonomy roles: {role_list}")
+
+
 def _write_toplevel_folder_to_settings(enabled: bool, name: str, dry_run: bool) -> None:
     settings_path = CONFIG_DIR / "settings.local.yaml"
     if not settings_path.exists():
@@ -1384,6 +1446,8 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
     if settings_created:
         _ask_organization_style(dry_run, is_existing=(winner == "EXISTING"))
         _ask_forever_notes(dry_run)
+        if winner == "EXISTING":
+            _write_categories_for_taxonomy(taxonomy_yaml, dry_run)
 
     # ── Phase 8: LLM provider selection ───────────────────────────────────────
     provider_configured = False
@@ -1391,14 +1455,15 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
         provider_configured = _select_provider(dry_run)
 
     # ── Phase 9: Container folder structure ───────────────────────────────────
-    # EXISTING path: taxonomy has full paths already — skip container setting entirely.
+    # EXISTING + container detected in Phase 0: write enabled: true to preserve structure.
+    # EXISTING + no container: skip — Phase 0 already asked via _detect_container.
     # New framework + container confirmed in Phase 0.5: write directly, no question needed.
     # New framework + user explicitly opted out: leave default (enabled: false) in place.
     # New framework + no folders detected: ask the classic question.
-    if settings_created and winner != "EXISTING":
+    if settings_created:
         if container is not None:
             _write_toplevel_folder_to_settings(enabled=True, name=container, dry_run=dry_run)
-        elif not container_question_shown:
+        elif not container_question_shown and winner != "EXISTING":
             _ask_container(dry_run)
 
     # ── Phase 10: Primary account ──────────────────────────────────────────────

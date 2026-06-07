@@ -36,6 +36,7 @@ from scripts.setup.run_setup import (
     _infer_framework,
     _relevant_missing_roles,
     _select_provider,
+    _write_categories_for_taxonomy,
     _write_classify_exclude_archive_to_settings,
     _write_env_line,
     _write_folder_nesting_to_settings,
@@ -1348,8 +1349,8 @@ class TestRunSetup:
         run_setup(dry_run=False, no_corpus=True)
         ask_mock.assert_not_called()
 
-    def test_existing_path_skips_container_phase(self, mocker: MagicMock) -> None:
-        """EXISTING path: Phase 8 is skipped entirely even when settings_created=True."""
+    def test_existing_path_no_container_skips_write_and_ask(self, mocker: MagicMock) -> None:
+        """EXISTING + no container: neither _ask_container nor _write_toplevel_folder called."""
         mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
         mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=4)
         mocker.patch("typer.confirm", return_value=True)
@@ -1362,11 +1363,235 @@ class TestRunSetup:
         mocker.patch("scripts.setup.run_setup._ask_organization_style")
         mocker.patch("scripts.setup.run_setup._ask_forever_notes")
         mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
+        mocker.patch("scripts.setup.run_setup._write_categories_for_taxonomy")
         ask_mock = mocker.patch("scripts.setup.run_setup._ask_container")
         write_mock = mocker.patch("scripts.setup.run_setup._write_toplevel_folder_to_settings")
         run_setup(dry_run=False, no_corpus=True)
         ask_mock.assert_not_called()
         write_mock.assert_not_called()
+
+    def test_existing_path_with_container_writes_toplevel_setting(self, mocker: MagicMock) -> None:
+        """EXISTING + container detected → toplevel_folder written enabled:true; no question."""
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=4)
+        mocker.patch("typer.confirm", return_value=True)
+        mocker.patch(
+            "scripts.setup.run_setup._collect_existing_folders",
+            return_value={"inbox": "Library/Inbox"},
+        )
+        mocker.patch("scripts.setup.run_setup._write_taxonomy")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
+        mocker.patch("scripts.setup.run_setup._ask_organization_style")
+        mocker.patch("scripts.setup.run_setup._ask_forever_notes")
+        mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
+        mocker.patch("scripts.setup.run_setup._write_categories_for_taxonomy")
+        # Override the autouse fixture: container IS detected this time
+        mocker.patch(
+            "scripts.setup.run_setup._detect_container",
+            return_value=("Library", ["Inbox", "Projects"]),
+        )
+        ask_mock = mocker.patch("scripts.setup.run_setup._ask_container")
+        write_mock = mocker.patch("scripts.setup.run_setup._write_toplevel_folder_to_settings")
+        run_setup(dry_run=False, no_corpus=True)
+        ask_mock.assert_not_called()
+        write_mock.assert_called_once_with(enabled=True, name="Library", dry_run=False)
+
+    def test_existing_path_categories_written_on_settings_created(self, mocker: MagicMock) -> None:
+        """EXISTING path with settings_created=True → _write_categories_for_taxonomy called."""
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=4)
+        mocker.patch("typer.confirm", return_value=True)
+        mocker.patch(
+            "scripts.setup.run_setup._collect_existing_folders",
+            return_value={"inbox": "Inbox", "archive": "Archive"},
+        )
+        mocker.patch("scripts.setup.run_setup._write_taxonomy")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
+        mocker.patch("scripts.setup.run_setup._ask_organization_style")
+        mocker.patch("scripts.setup.run_setup._ask_forever_notes")
+        mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
+        mocker.patch("scripts.setup.run_setup._write_toplevel_folder_to_settings")
+        cats_mock = mocker.patch("scripts.setup.run_setup._write_categories_for_taxonomy")
+        run_setup(dry_run=False, no_corpus=True)
+        cats_mock.assert_called_once()
+
+    def test_existing_path_categories_skipped_when_settings_not_created(
+        self, mocker: MagicMock
+    ) -> None:
+        """EXISTING path with settings_created=False → _write_categories_for_taxonomy not called."""
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", return_value=4)
+        mocker.patch("typer.confirm", return_value=True)
+        mocker.patch(
+            "scripts.setup.run_setup._collect_existing_folders",
+            return_value={"inbox": "Inbox"},
+        )
+        mocker.patch("scripts.setup.run_setup._write_taxonomy")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=False)
+        cats_mock = mocker.patch("scripts.setup.run_setup._write_categories_for_taxonomy")
+        run_setup(dry_run=False, no_corpus=True)
+        cats_mock.assert_not_called()
+
+
+# ── run_setup.py — EXISTING path: categories block ────────────────────────────
+
+_PARA_TAXONOMY_YAML = """\
+taxonomy:
+  inbox:
+    folder: Inbox
+  projects:
+    folder: Projects
+  areas:
+    folder: Areas
+  resources:
+    folder: Resources
+  archive:
+    folder: Archive
+"""
+
+_ZK_TAXONOMY_YAML = """\
+taxonomy:
+  inbox:
+    folder: Inbox
+  fleeting:
+    folder: Fleeting
+  literature:
+    folder: Literature
+  permanent:
+    folder: Permanent
+  projects:
+    folder: Projects
+  areas:
+    folder: Areas
+  resources:
+    folder: Resources
+  archive:
+    folder: Archive
+  review:
+    folder: Review
+"""
+
+_SETTINGS_WITH_CATEGORIES = """\
+reorganization_mode: "standard"
+categories:
+  inbox:
+    description: "temporary capture"
+    transit: true
+    stale_days: 7
+  fleeting:
+    description: "quick, short-lived thoughts"
+    transit: true
+    stale_days: 30
+  literature:
+    description: "notes tied to a specific source"
+  permanent:
+    description: "refined, evergreen concepts"
+  projects:
+    description: "active projects"
+    active_days: 90
+  areas:
+    description: "ongoing responsibilities"
+  resources:
+    description: "reference material"
+  archive:
+    description: "inactive notes"
+    exclude_from_classify: true
+    exclude_from_discover: true
+  review:
+    description: "unclear"
+    catchall: true
+
+# Settings below apply only when forever_notes_mode is "strict".
+strict_mode:
+  enabled: false
+"""
+
+
+class TestWriteCategoriesForTaxonomy:
+    def test_para_taxonomy_writes_only_para_roles(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(_SETTINGS_WITH_CATEGORIES)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_categories_for_taxonomy(_PARA_TAXONOMY_YAML, dry_run=False)
+        result = yaml.safe_load(settings.read_text())
+        cats = result["categories"]
+        assert set(cats.keys()) == {"inbox", "projects", "areas", "resources", "archive"}
+        # ZK-specific roles removed
+        assert "fleeting" not in cats
+        assert "literature" not in cats
+        assert "permanent" not in cats
+        assert "review" not in cats
+
+    def test_zk_taxonomy_writes_all_nine_roles(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(_SETTINGS_WITH_CATEGORIES)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_categories_for_taxonomy(_ZK_TAXONOMY_YAML, dry_run=False)
+        result = yaml.safe_load(settings.read_text())
+        cats = result["categories"]
+        assert set(cats.keys()) == {
+            "inbox",
+            "fleeting",
+            "literature",
+            "permanent",
+            "projects",
+            "areas",
+            "resources",
+            "archive",
+            "review",
+        }
+
+    def test_behavioral_flags_preserved(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(_SETTINGS_WITH_CATEGORIES)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_categories_for_taxonomy(_PARA_TAXONOMY_YAML, dry_run=False)
+        result = yaml.safe_load(settings.read_text())
+        cats = result["categories"]
+        assert cats["inbox"]["transit"] is True
+        assert cats["inbox"]["stale_days"] == 7
+        assert cats["projects"]["active_days"] == 90
+        assert cats["archive"]["exclude_from_classify"] is True
+        assert cats["archive"]["exclude_from_discover"] is True
+
+    def test_unknown_custom_key_omitted(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(_SETTINGS_WITH_CATEGORIES)
+        custom_yaml = """\
+taxonomy:
+  inbox:
+    folder: Inbox
+  my_custom_folder:
+    folder: CustomStuff
+"""
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_categories_for_taxonomy(custom_yaml, dry_run=False)
+        result = yaml.safe_load(settings.read_text())
+        cats = result["categories"]
+        assert "inbox" in cats
+        assert "my_custom_folder" not in cats
+
+    def test_surrounding_content_preserved(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(_SETTINGS_WITH_CATEGORIES)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_categories_for_taxonomy(_PARA_TAXONOMY_YAML, dry_run=False)
+        text = settings.read_text()
+        assert 'reorganization_mode: "standard"' in text
+        assert "strict_mode:" in text
+
+    def test_dry_run_does_not_write(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        original = _SETTINGS_WITH_CATEGORIES
+        settings.write_text(original)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_categories_for_taxonomy(_PARA_TAXONOMY_YAML, dry_run=True)
+        assert settings.read_text() == original
+
+    def test_no_op_when_file_missing(self, tmp_path: Path) -> None:
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_categories_for_taxonomy(_PARA_TAXONOMY_YAML, dry_run=False)
+        # Should not raise; nothing to assert except no exception
 
 
 # ── run_setup.py — provider selection ─────────────────────────────────────────
