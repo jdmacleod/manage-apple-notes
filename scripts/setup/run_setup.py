@@ -1164,9 +1164,9 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
     q1 = _ask_numbered(
         "What matters most to you going forward?",
         [
-            "Get on top of tasks and commitments — I need clarity on what to do next",
-            "Keep active work organized — I want clear structure for projects, responsibilities, and reference material",
-            "Develop ideas over time — I want my notes to think with me",
+            "GTD — Get on top of tasks and commitments — I need clarity on what to do next",
+            "PARA — Keep active work organized — I want clear structure for projects, responsibilities, and reference material",
+            "Zettelkasten — Develop ideas over time — I want my notes to think with me",
             "My current system mostly works — I want small improvements, not an overhaul",
         ],
     )

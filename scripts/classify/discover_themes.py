@@ -36,6 +36,7 @@ from scripts.folder_utils import (
 from scripts.json_output import emit_result
 from scripts.json_utils import (
     extract_json_object,
+    extract_json_themes,
     is_context_overflow,
     is_locale_error,
     normalize_for_apple,
@@ -395,8 +396,7 @@ def _discover_batch(
             user_payload,
             max_tokens=max_tokens,
         )
-        result = extract_json_object(response)
-        return list(result.get("themes") or [])
+        return extract_json_themes(response)
     except (ValueError, json.JSONDecodeError) as exc:
         # Apple Intelligence caps output at 1600 tokens and truncates silently —
         # it never raises a context-overflow exception, so truncated batches
@@ -457,8 +457,8 @@ def _discover_batch(
                     note_response = provider.classify_messages(
                         system_prompt, note_payload, max_tokens=probe_max_tokens
                     )
-                    note_result = extract_json_object(note_response)
-                    themes.extend(note_result.get("themes") or [])
+                    note_themes = extract_json_themes(note_response)
+                    themes.extend(note_themes)
                 except Exception as note_exc:
                     if is_locale_error(note_exc):
                         note_title = (note.get("title") or "").strip()[:60]
@@ -723,12 +723,17 @@ def run_discover(
                     category_names, reorg_mode=reorg_mode, established_paths=established
                 )
                 try:
+                    # Prepend English prose so Apple's language detector anchors
+                    # to English rather than scoring the bare JSON array as non-English.
+                    synthesis_user = "Themes to merge:\n\n" + json.dumps(
+                        stripped, indent=2, ensure_ascii=False
+                    )
                     response = provider.classify_messages(
                         apple_prompt,
-                        json.dumps(stripped, indent=2, ensure_ascii=False),
+                        synthesis_user,
                         max_tokens=max_tokens,
                     )
-                    merged = extract_json_object(response).get("themes", stripped)
+                    merged = extract_json_themes(response)
                     final_themes = _reattach_theme_details(merged, all_raw)
                 except Exception as exc:
                     if is_context_overflow(exc):

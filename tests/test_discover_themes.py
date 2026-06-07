@@ -239,6 +239,14 @@ class TestDiscoverBatch:
         result = _discover_batch(mock_llm_provider, "system", [{"id": "1", "title": "A"}])
         assert result == [{"name": "Technology", "estimated_count": 10}]
 
+    def test_bare_array_response_returns_themes(self, mock_llm_provider: MagicMock) -> None:
+        # Apple Intelligence sometimes returns a bare array instead of {"themes": [...]}.
+        # extract_json_themes should recover and return the list directly.
+        themes = [{"name": "Technology", "estimated_count": 8, "suggested_path": "Resources/Tech"}]
+        mock_llm_provider.classify_messages.return_value = json.dumps(themes)
+        result = _discover_batch(mock_llm_provider, "system", [{"id": "1", "title": "A"}])
+        assert result == themes
+
     def test_parse_error_returns_empty(self, mock_llm_provider: MagicMock) -> None:
         mock_llm_provider.classify_messages.return_value = "This is not JSON at all."
         result = _discover_batch(mock_llm_provider, "system", [{"id": "1"}])

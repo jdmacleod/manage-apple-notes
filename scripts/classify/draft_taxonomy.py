@@ -360,6 +360,17 @@ def run_draft(theme_map_file: str | None, dry_run: bool, json_output: bool = Fal
             if _fp and _fp not in _seen_fps:
                 _seen_fps.add(_fp)
                 ordered_export_paths.append(_fp)
+        # Strip the container prefix from export paths when toplevel_folder is enabled.
+        # This normalises exports that were written before the setting was turned on
+        # (the export script strips at write time; draft must do the same at read time
+        # so old export files do not re-introduce "Library/Archive" paths as candidates).
+        _tl_strip = settings.get("toplevel_folder", {})
+        if _tl_strip.get("enabled") and _tl_strip.get("name"):
+            _cprefix = _tl_strip["name"] + "/"
+            ordered_export_paths = [
+                p[len(_cprefix) :] if p.startswith(_cprefix) else p for p in ordered_export_paths
+            ]
+            ordered_export_paths = [p for p in ordered_export_paths if p]
         export_folder_tree: set[str] = set(ordered_export_paths)
     else:
         _export_notes = []

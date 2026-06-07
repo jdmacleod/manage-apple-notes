@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from scripts.json_utils import (
     extract_json_array,
     extract_json_object,
+    extract_json_themes,
     is_context_overflow,
     is_locale_error,
     normalize_for_apple,
@@ -63,6 +66,50 @@ class TestExtractJsonObject:
     def test_raises_on_invalid_json(self) -> None:
         with pytest.raises(ValueError):
             extract_json_object("{not valid}")
+
+
+class TestExtractJsonThemes:
+    _theme = {"name": "Health", "estimated_count": 5, "suggested_path": "Areas/Health"}
+
+    def test_object_format_returns_themes_list(self) -> None:
+        result = extract_json_themes(f'{{"themes": [{json.dumps(self._theme)}]}}')
+        assert result == [self._theme]
+
+    def test_bare_array_format_returns_list(self) -> None:
+        result = extract_json_themes(f"[{json.dumps(self._theme)}]")
+        assert result == [self._theme]
+
+    def test_object_format_preferred_over_embedded_brace(self) -> None:
+        # A bare array starts with [{ — object parser finds { first but it has no
+        # "themes" key, so falls back to array parser and returns the full list.
+        t2 = {"name": "Work", "estimated_count": 3, "suggested_path": "Areas/Work"}
+        text = json.dumps([self._theme, t2])
+        result = extract_json_themes(text)
+        assert result == [self._theme, t2]
+
+    def test_object_in_prose(self) -> None:
+        text = f'Here are the themes:\n{{"themes": [{json.dumps(self._theme)}]}}\nDone.'
+        result = extract_json_themes(text)
+        assert result == [self._theme]
+
+    def test_bare_array_in_code_fence(self) -> None:
+        text = f"```json\n[{json.dumps(self._theme)}]\n```"
+        result = extract_json_themes(text)
+        assert result == [self._theme]
+
+    def test_empty_themes_object(self) -> None:
+        assert extract_json_themes('{"themes": []}') == []
+
+    def test_empty_bare_array(self) -> None:
+        assert extract_json_themes("[]") == []
+
+    def test_raises_when_no_json(self) -> None:
+        with pytest.raises(ValueError, match="No JSON themes found"):
+            extract_json_themes("No JSON here at all.")
+
+    def test_raises_on_object_without_themes_key_and_no_array(self) -> None:
+        with pytest.raises(ValueError, match="No JSON themes found"):
+            extract_json_themes('{"name": "Health", "estimated_count": 5}')
 
 
 class TestIsContextOverflow:

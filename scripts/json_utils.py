@@ -62,6 +62,44 @@ def extract_json_array(text: str) -> list:
     return result
 
 
+def extract_json_themes(text: str) -> list:
+    """Extract a themes list from an LLM response, accepting two formats:
+
+    - {"themes": [...]} — the canonical format the discover prompt requests
+    - [...]             — a bare array, returned by some on-device models (e.g.
+                          Apple Intelligence) that echo the input array format
+
+    Tries the object format first so that a correctly-wrapped response is always
+    preferred.  Falls back to bare-array parsing when the object form is absent or
+    lacks a "themes" key.
+    """
+    fence = text.find("```") if "```" in text else 0
+    obj_start = text.find("{", fence)
+    arr_start = text.find("[", fence)
+
+    # Try {"themes": [...]} first
+    if obj_start != -1:
+        try:
+            result, _ = json.JSONDecoder().raw_decode(text, obj_start)
+            if isinstance(result, dict):
+                themes = result.get("themes")
+                if isinstance(themes, list):
+                    return themes
+        except json.JSONDecodeError:
+            pass
+
+    # Fallback: bare [...] array
+    if arr_start != -1:
+        try:
+            result, _ = json.JSONDecoder().raw_decode(text, arr_start)
+            if isinstance(result, list):
+                return result
+        except json.JSONDecodeError:
+            pass
+
+    raise ValueError(f"No JSON themes found in response:\n{text[:300]}")
+
+
 def extract_json_object(text: str) -> dict:
     """Extract a JSON object from an LLM response that may include prose or fences."""
     if "```" in text:
