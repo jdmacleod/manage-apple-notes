@@ -17,6 +17,7 @@ from scripts.forever_notes.sync_hubs import (
     _lookup_uuids,
     _note_link,
     _subfolders,
+    _theme_order,
     _url_id,
     _write_note_applescript,
     run_sync_hubs,
@@ -242,8 +243,22 @@ class TestBuildHomeBody:
         assert "✱ Reference" in body
 
     def test_non_hub_subfolder_appears_plain(self, minimal_taxonomy: dict) -> None:
-        body = _build_home_body(minimal_taxonomy, {}, {}, "✱ ", "✱ Home")
+        # "Reference" is in home_index but not hub_index → plain text leaf.
+        home_index = {
+            "Reference": {
+                "_sf_def": {"name": "Reference"},
+                "categories": {"Resources": [("Note", "p1")]},
+                "total": 2,
+            }
+        }
+        body = _build_home_body(minimal_taxonomy, {}, home_index, "✱ ", "✱ Home")
         assert "Reference" in body
+        assert "✱ Reference" not in body
+
+    def test_subfolder_below_home_threshold_suppressed(self, minimal_taxonomy: dict) -> None:
+        # Empty home_index: "Reference" is in the taxonomy but has no notes → not rendered.
+        body = _build_home_body(minimal_taxonomy, {}, {}, "✱ ", "✱ Home")
+        assert "Reference" not in body
 
     def test_home_only_subfolder_appears_as_leaf(self, minimal_taxonomy: dict) -> None:
         # Subfolder meets min_notes_for_home_link but not min_notes_for_hub:
@@ -359,6 +374,79 @@ class TestWriteNoteApplescript:
         assert status == "error"
         assert local_id == ""
 
+    def test_account_arg_passed_to_subprocess(self, mocker: MagicMock) -> None:
+        mock_result = MagicMock(returncode=0, stdout="created:p1", stderr="")
+        mock_run = mocker.patch("subprocess.run", return_value=mock_result)
+
+        _write_note_applescript(
+            "✱ Hub", "<p>body</p>", None, dry_run=False, container="", account="iCloud"
+        )
+
+        called_cmd = mock_run.call_args[0][0]
+        assert "iCloud" in called_cmd
+
+    def test_empty_account_still_passes_arg(self, mocker: MagicMock) -> None:
+        mock_result = MagicMock(returncode=0, stdout="updated:p2", stderr="")
+        mock_run = mocker.patch("subprocess.run", return_value=mock_result)
+
+        _write_note_applescript("✱ Hub", "<p>body</p>", None, dry_run=False)
+
+        called_cmd = mock_run.call_args[0][0]
+        # Empty string account arg is always appended (7 total args: osascript, script, 5 payload)
+        assert len(called_cmd) == 7
+        assert called_cmd[-1] == ""
+
+
+class TestThemeOrder:
+    def test_basic_order_matches_taxonomy(self) -> None:
+        taxonomy = {
+            "taxonomy": {
+                "resources": {
+                    "folder": "Resources",
+                    "subfolders": ["Cooking", "Finance"],
+                },
+                "areas": {
+                    "folder": "Areas",
+                    "subfolders": ["Health"],
+                },
+            }
+        }
+        order = _theme_order(taxonomy)
+        assert order["Cooking"] < order["Finance"] < order["Health"]
+
+    def test_same_leaf_across_categories_uses_first_appearance(self) -> None:
+        taxonomy = {
+            "taxonomy": {
+                "permanent": {
+                    "folder": "Permanent",
+                    "subfolders": ["Health"],
+                },
+                "areas": {
+                    "folder": "Areas",
+                    "subfolders": ["Health", "Finance"],
+                },
+            }
+        }
+        order = _theme_order(taxonomy)
+        # "Health" first appears under permanent (position 0), Finance second (position 1)
+        assert order["Health"] == 0
+        assert order["Finance"] == 1
+
+    def test_empty_taxonomy_returns_empty(self) -> None:
+        assert _theme_order({}) == {}
+
+    def test_flat_categories_excluded(self) -> None:
+        # Flat categories (no subfolders / depth < 2) should not appear in the order map.
+        taxonomy = {
+            "taxonomy": {
+                "inbox": {"folder": "Inbox"},
+                "resources": {"folder": "Resources", "subfolders": ["Cooking"]},
+            }
+        }
+        order = _theme_order(taxonomy)
+        assert "Inbox" not in order
+        assert "Cooking" in order
+
 
 class TestRunSyncHubs:
     def test_non_strict_mode_exits_early(
@@ -429,3 +517,45 @@ class TestRunSyncHubs:
         mock_write = mocker.patch("scripts.forever_notes.sync_hubs._write_note_applescript")
         run_sync_hubs(export_file=str(export_file), dry_run=True)
         mock_write.assert_not_called()
+
+    def test_primary_account_passed_to_write(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_taxonomy: dict,
+    ) -> None:
+        notes = [
+            {
+                "id": f"x-coredata://test/p{i}",
+                "title": f"Note {i}",
+                "folder": "Resources",
+                "folder_path": "Resources/Reference",
+                "modified": "2026-01-01",
+            }
+            for i in range(5)
+        ]
+        export_file = tmp_path / "notes-test.json"
+        export_file.write_text(json.dumps(notes))
+
+        settings = {
+            "forever_notes_mode": "strict",
+            "strict_mode": {"hub_title_prefix": "✱ ", "home_note_title": "✱ Home"},
+            "thresholds": {"min_notes_for_hub": 1, "min_notes_for_home_link": 1},
+            "toplevel_folder": {"enabled": False},
+            "primary_account": "iCloud",
+        }
+        mocker.patch("scripts.forever_notes.sync_hubs.load_settings", return_value=settings)
+        mocker.patch("scripts.forever_notes.sync_hubs.load_taxonomy", return_value=minimal_taxonomy)
+        mocker.patch("scripts.forever_notes.sync_hubs.local_taxonomy_exists", return_value=True)
+
+        mock_write = mocker.patch(
+            "scripts.forever_notes.sync_hubs._write_note_applescript",
+            return_value=("created", "p99"),
+        )
+        mocker.patch("scripts.forever_notes.sync_hubs.RunLogger")
+
+        run_sync_hubs(export_file=str(export_file), dry_run=False)
+
+        # Every call to _write_note_applescript must carry account="iCloud"
+        for call in mock_write.call_args_list:
+            assert call.kwargs.get("account") == "iCloud"

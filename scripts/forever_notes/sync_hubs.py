@@ -254,12 +254,33 @@ def _generate_hub_body(
     return "\n".join(parts)
 
 
+def _theme_order(taxonomy: dict) -> dict[str, int]:
+    """Map each theme (subfolder leaf name) to its first-appearance index in taxonomy order.
+
+    Used to iterate Hub notes in the same order as the user's sidebar rather than
+    alphabetically by theme name.
+    """
+    order: dict[str, int] = {}
+    idx = 0
+    for cat_val in taxonomy.get("taxonomy", {}).values():
+        if not isinstance(cat_val, dict):
+            continue
+        for path in enumerate_paths(cat_val):
+            if path_depth(path) >= 2:
+                leaf = path.split("/")[-1]
+                if leaf not in order:
+                    order[leaf] = idx
+                    idx += 1
+    return order
+
+
 def _write_note_applescript(
     title: str,
     body: str,
     folder: str | None,
     dry_run: bool,
     container: str = "",
+    account: str = "",
     _con: Console | None = None,
 ) -> tuple[str, str]:
     """Create or update a note in Apple Notes with the given title and body.
@@ -281,6 +302,7 @@ def _write_note_applescript(
         body,
         folder or "",
         container,
+        account,
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     output = result.stdout.strip()
@@ -338,7 +360,7 @@ def _build_home_body(
                         parts.append(f"<li>{indent}{_note_link(h_title, local_id, uuid)}</li>")
                     else:
                         parts.append(f"<li>{indent}{html.escape(h_title)}</li>")
-                else:
+                elif leaf in home_index:
                     parts.append(f"<li>{indent}{html.escape(leaf)}</li>")
             parts.append("</ul>")
         parts.append("<br>")
@@ -374,6 +396,7 @@ def run_sync_hubs(
     home_folder = strict.get("home_note_folder") or None
     hub_folder = strict.get("hub_note_folder") or None
     use_links = strict.get("internal_links", "text") == "html"
+    primary_account = settings.get("primary_account", "")
 
     tl_cfg = settings.get("toplevel_folder", {})
     container = tl_cfg.get("name", "") if tl_cfg.get("enabled", False) else ""
@@ -455,7 +478,12 @@ def run_sync_hubs(
     # cat_display = cat_key.capitalize() is how _build_theme_index sets display names.
     cat_order = {k.capitalize(): i for i, k in enumerate(taxonomy.get("taxonomy", {}).keys())}
 
-    for _theme_name, theme_data in sorted(hub_index.items()):
+    # Process Hub notes in taxonomy subfolder order (matches sidebar); alphabetical fallback.
+    t_order = _theme_order(taxonomy)
+    n_themes = len(t_order)
+    for _theme_name, theme_data in sorted(
+        hub_index.items(), key=lambda x: (t_order.get(x[0], n_themes), x[0])
+    ):
         sf_def = theme_data["_sf_def"]
         h_title = _hub_title(sf_def, hub_prefix)
         categories = theme_data["categories"]
@@ -474,7 +502,13 @@ def run_sync_hubs(
             cat_order=cat_order,
         )
         status, local_id = _write_note_applescript(
-            h_title, body, hub_folder, dry_run, container=container, _con=_con
+            h_title,
+            body,
+            hub_folder,
+            dry_run,
+            container=container,
+            account=primary_account,
+            _con=_con,
         )
         if local_id:
             hub_ids[h_title] = local_id
@@ -522,7 +556,13 @@ def run_sync_hubs(
     )
 
     home_status, _ = _write_note_applescript(
-        home_title, home_body, home_folder, dry_run, container=container, _con=_con
+        home_title,
+        home_body,
+        home_folder,
+        dry_run,
+        container=container,
+        account=primary_account,
+        _con=_con,
     )
     if home_status == "created":
         _con.print("    [green][CREATED][/green]")

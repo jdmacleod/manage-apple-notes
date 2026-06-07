@@ -4,19 +4,24 @@
   Called by sync_hubs.py for each Hub note and for ✱ Home.
 
   Usage (called by Python):
-    osascript scripts/forever_notes/sync-hubs.applescript <title> <body> <folder> [<container>]
+    osascript scripts/forever_notes/sync-hubs.applescript <title> <body> <folder> [<container> [<account>]]
 
   Arguments:
     title      — Note title to find or create
     body       — Full body HTML to set
     folder     — Subfolder name to create the note in (empty string = use container root)
     container  — Optional top-level container folder name (empty string = disabled)
+    account    — Optional Apple Notes account name to scope all operations (empty string = all accounts)
 
   Folder resolution rules:
     - container set, folder empty or folder == container  → place in container itself
     - container set, folder is a different name           → place in named subfolder of container
     - container empty, folder set                         → place in named folder at account root
-    - both empty                                          → place at iCloud account root
+    - both empty                                          → place at account root (or iCloud root if no account)
+
+  Account scoping:
+    When account is non-empty, all folder and note searches are limited to that account.
+    When account is empty, all accounts are searched (original behaviour).
 
   Output (stdout):
     "created:<localId>" if a new note was made
@@ -26,7 +31,7 @@
 
 on run argv
 	if (count of argv) < 3 then
-		error "Usage: sync-hubs.applescript <title> <body> <folder> [<container>]"
+		error "Usage: sync-hubs.applescript <title> <body> <folder> [<container> [<account>]]"
 	end if
 
 	set noteTitle to item 1 of argv as string
@@ -36,15 +41,34 @@ on run argv
 	if (count of argv) >= 4 then
 		set containerName to item 4 of argv as string
 	end if
+	set accountName to ""
+	if (count of argv) >= 5 then
+		set accountName to item 5 of argv as string
+	end if
 
 	tell application "Notes"
 		set targetNote to missing value
 		set targetFolder to missing value
 
+		-- Build the list of accounts to search: either the named account or all accounts.
+		set searchAccounts to {}
+		if accountName is not "" then
+			repeat with acct in accounts
+				if name of acct is accountName then
+					set searchAccounts to {acct}
+					exit repeat
+				end if
+			end repeat
+		end if
+		-- Fall back to all accounts when accountName is empty or not matched.
+		if (count of searchAccounts) = 0 then
+			set searchAccounts to accounts
+		end if
+
 		-- Resolve the target folder
 		if containerName is not "" and (folderName is "" or folderName is containerName) then
 			-- Place directly in the container folder itself
-			repeat with acct in accounts
+			repeat with acct in searchAccounts
 				if exists folder containerName of acct then
 					set targetFolder to folder containerName of acct
 					exit repeat
@@ -52,7 +76,7 @@ on run argv
 			end repeat
 		else if folderName is not "" then
 			-- Place in a named folder, optionally inside a container
-			repeat with acct in accounts
+			repeat with acct in searchAccounts
 				if containerName is not "" then
 					if exists folder containerName of acct then
 						repeat with f in folders of folder containerName of acct
@@ -74,11 +98,17 @@ on run argv
 			end repeat
 		end if
 
-		-- Search for an existing note with this title in the target folder
+		-- Search for an existing note with this title in the target folder (or account scope)
 		if targetFolder is not missing value then
 			set allNotes to notes of targetFolder
 		else
-			set allNotes to every note
+			-- No folder resolved: scope to the account(s) we are authorised to touch.
+			-- When searchAccounts contains exactly one account this avoids touching notes
+			-- in other accounts that the pipeline should not modify.
+			set allNotes to {}
+			repeat with acct in searchAccounts
+				set allNotes to allNotes & (every note of acct)
+			end repeat
 		end if
 
 		repeat with n in allNotes
@@ -98,7 +128,8 @@ on run argv
 			if targetFolder is not missing value then
 				set targetNote to make new note at targetFolder with properties {name: noteTitle}
 			else
-				set targetNote to make new note with properties {name: noteTitle}
+				-- Create in the first (and typically only) account we are scoped to
+				set targetNote to make new note at (item 1 of searchAccounts) with properties {name: noteTitle}
 			end if
 			set body of targetNote to noteBody
 		end if
