@@ -764,6 +764,7 @@ def _write_forever_notes_to_settings(
     home_title: str | None = None,
     hub_prefix: str | None = None,
     internal_links: str | None = None,
+    note_folder: str | None = None,
 ) -> None:
     settings_path = CONFIG_DIR / "settings.local.yaml"
     if not settings_path.exists():
@@ -800,6 +801,21 @@ def _write_forever_notes_to_settings(
             count=1,
             flags=re.MULTILINE,
         )
+    if note_folder is not None:
+        new_content = re.sub(
+            r"^(\s+home_note_folder:).*$",
+            f'\\1 "{note_folder}"',
+            new_content,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        new_content = re.sub(
+            r"^(\s+hub_note_folder:).*$",
+            f'\\1 "{note_folder}"',
+            new_content,
+            count=1,
+            flags=re.MULTILINE,
+        )
     parts = [f'forever_notes_mode: "{mode}"']
     if home_title is not None:
         parts.append(f'home_note_title: "{home_title}"')
@@ -807,6 +823,9 @@ def _write_forever_notes_to_settings(
         parts.append(f'hub_title_prefix: "{hub_prefix}"')
     if internal_links is not None:
         parts.append(f'internal_links: "{internal_links}"')
+    if note_folder is not None:
+        parts.append(f'home_note_folder: "{note_folder}"')
+        parts.append(f'hub_note_folder: "{note_folder}"')
     if dry_run:
         con.print(f"  [dim]Would set {', '.join(parts)} in settings.local.yaml[/dim]")
         return
@@ -814,7 +833,7 @@ def _write_forever_notes_to_settings(
     con.print(f"  Set [green]{', '.join(parts)}[/green] in settings.local.yaml")
 
 
-def _ask_forever_notes(dry_run: bool) -> None:
+def _ask_forever_notes(dry_run: bool, container: str = "") -> None:
     """Ask whether to enable Hub/Home structure and collect naming preferences."""
     con.print("\n[bold]Forever Notes Hub structure[/bold]")
     con.print(
@@ -843,12 +862,26 @@ def _ask_forever_notes(dry_run: bool) -> None:
     )
     use_html = typer.confirm("  Use clickable HTML links?", default=False)
     internal_links = "html" if use_html else "text"
+
+    note_folder: str | None = None
+    if container:
+        con.print(
+            f"\n  Hub and Home notes will be placed in [bold]'{container}'[/bold] "
+            f"(your container folder), alongside your taxonomy folders."
+        )
+        override = typer.prompt(
+            f"  Place them in a different folder instead? (leave blank to use '{container}')",
+            default="",
+        ).strip()
+        note_folder = override if override else None
+
     _write_forever_notes_to_settings(
         "strict",
         dry_run,
         home_title=home_title,
         hub_prefix=hub_prefix,
         internal_links=internal_links,
+        note_folder=note_folder,
     )
 
 
@@ -1469,7 +1502,7 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
     # ── Phase 7: Organization style preferences ───────────────────────────────
     if settings_created:
         _ask_organization_style(dry_run, is_existing=(winner == "EXISTING"))
-        _ask_forever_notes(dry_run)
+        _ask_forever_notes(dry_run, container=container or "")
         _write_categories_for_taxonomy(taxonomy_yaml, dry_run)
 
     # ── Phase 8: LLM provider selection ───────────────────────────────────────

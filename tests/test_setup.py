@@ -2311,7 +2311,9 @@ class TestWriteForeverNotesToSettings:
         'forever_notes_mode: "loose"\n'
         "strict_mode:\n"
         '  home_note_title: "✱ Home"\n'
+        "  home_note_folder: null\n"
         '  hub_title_prefix: "✱ "\n'
+        "  hub_note_folder: null\n"
         '  internal_links: "text"\n'
         "other: setting\n"
     )
@@ -2369,6 +2371,26 @@ class TestWriteForeverNotesToSettings:
         # Original value preserved
         assert 'internal_links: "text"' in settings.read_text()
 
+    def test_writes_note_folder(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(self._SETTINGS_TEMPLATE)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_forever_notes_to_settings("strict", dry_run=False, note_folder="Notes")
+        content = settings.read_text()
+        assert 'home_note_folder: "Notes"' in content
+        assert 'hub_note_folder: "Notes"' in content
+        assert "other: setting" in content
+
+    def test_omits_note_folder_when_none(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(self._SETTINGS_TEMPLATE)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_forever_notes_to_settings("strict", dry_run=False)
+        content = settings.read_text()
+        # Original null values preserved
+        assert "home_note_folder: null" in content
+        assert "hub_note_folder: null" in content
+
     def test_dry_run_does_not_write(self, tmp_path: Path) -> None:
         settings = tmp_path / "settings.local.yaml"
         settings.write_text(self._SETTINGS_TEMPLATE)
@@ -2379,6 +2401,7 @@ class TestWriteForeverNotesToSettings:
                 home_title="Test",
                 hub_prefix="- ",
                 internal_links="html",
+                note_folder="Notes",
             )
         assert settings.read_text() == self._SETTINGS_TEMPLATE
 
@@ -2441,7 +2464,9 @@ class TestAskForeverNotes:
         'forever_notes_mode: "loose"\n'
         "strict_mode:\n"
         '  home_note_title: "✱ Home"\n'
+        "  home_note_folder: null\n"
         '  hub_title_prefix: "✱ "\n'
+        "  hub_note_folder: null\n"
         '  internal_links: "text"\n'
     )
 
@@ -2482,6 +2507,42 @@ class TestAskForeverNotes:
             _ask_forever_notes(dry_run=False)
         prompt_mock.assert_not_called()
         assert 'forever_notes_mode: "loose"' in settings.read_text()
+
+    def test_container_blank_override_leaves_null(self, mocker: MagicMock, tmp_path: Path) -> None:
+        """Container set, user leaves override blank → null preserved (no write)."""
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(self._SETTINGS_TEMPLATE)
+        # confirm: enable=True, html=False; prompt: home title, hub prefix, folder override (blank)
+        mocker.patch("typer.confirm", side_effect=[True, False])
+        mocker.patch("typer.prompt", side_effect=["✱ Home", "✱ ", ""])
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _ask_forever_notes(dry_run=False, container="Library")
+        content = settings.read_text()
+        assert "home_note_folder: null" in content
+        assert "hub_note_folder: null" in content
+
+    def test_container_override_folder_written(self, mocker: MagicMock, tmp_path: Path) -> None:
+        """Container set, user enters override folder → home/hub folder written."""
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(self._SETTINGS_TEMPLATE)
+        # confirm: enable=True, html=False; prompt: home title, hub prefix, folder override
+        mocker.patch("typer.confirm", side_effect=[True, False])
+        mocker.patch("typer.prompt", side_effect=["✱ Home", "✱ ", "Notes"])
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _ask_forever_notes(dry_run=False, container="Library")
+        content = settings.read_text()
+        assert 'home_note_folder: "Notes"' in content
+        assert 'hub_note_folder: "Notes"' in content
+
+    def test_no_container_skips_folder_question(self, mocker: MagicMock, tmp_path: Path) -> None:
+        """No container → folder question not shown; only two prompts (title + prefix)."""
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(self._SETTINGS_TEMPLATE)
+        mocker.patch("typer.confirm", side_effect=[True, False])
+        prompt_mock = mocker.patch("typer.prompt", side_effect=["✱ Home", "✱ "])
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _ask_forever_notes(dry_run=False, container="")
+        assert prompt_mock.call_count == 2  # title + prefix only, no folder question
 
     def test_forever_notes_called_when_settings_created(self, mocker: MagicMock) -> None:
         mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)

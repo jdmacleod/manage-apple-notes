@@ -210,9 +210,9 @@ categories:
 strict_mode:
   heavy_asterisk: "✱"            # Unicode U+2731 - do not change
   home_note_title: "✱ Home"
-  home_note_folder: null         # null = iCloud root; or specify a folder name
+  home_note_folder: null         # null = container root (if toplevel_folder.enabled) or account root
   hub_title_prefix: "✱ "
-  hub_note_folder: null          # null = same folder as home note
+  hub_note_folder: null          # null = same location as home_note_folder
   internal_links: "text"         # "text" = plain title list (safe, default)
                                   # "html" = applenotes:// links (experimental - may break
                                   #          after iCloud sync; see docs/forever-notes-framework.md)
