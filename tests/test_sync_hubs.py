@@ -518,6 +518,49 @@ class TestRunSyncHubs:
         run_sync_hubs(export_file=str(export_file), dry_run=True)
         mock_write.assert_not_called()
 
+    def test_container_prefix_stripped_before_theme_index(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_taxonomy: dict,
+    ) -> None:
+        # Export written before toplevel_folder.enabled was set: paths carry the
+        # container prefix "Library/Resources/Reference".  Without stripping,
+        # _build_theme_index matches nothing → empty home_index → early exit and
+        # _write_note_applescript is never called.  With stripping it should be called.
+        notes = [
+            {
+                "id": f"x-coredata://test/p{i}",
+                "title": f"Note {i}",
+                "folder": "Resources",
+                "folder_path": "Library/Resources/Reference",
+                "modified": "2026-01-01",
+            }
+            for i in range(5)
+        ]
+        export_file = tmp_path / "notes-prefixed.json"
+        export_file.write_text(json.dumps(notes))
+
+        settings = {
+            "forever_notes_mode": "strict",
+            "strict_mode": {"hub_title_prefix": "✱ ", "home_note_title": "✱ Home"},
+            "thresholds": {"min_notes_for_hub": 3, "min_notes_for_home_link": 1},
+            "toplevel_folder": {"enabled": True, "name": "Library"},
+        }
+        mocker.patch("scripts.forever_notes.sync_hubs.load_settings", return_value=settings)
+        mocker.patch("scripts.forever_notes.sync_hubs.load_taxonomy", return_value=minimal_taxonomy)
+        mocker.patch("scripts.forever_notes.sync_hubs.local_taxonomy_exists", return_value=True)
+
+        write_mock = mocker.patch(
+            "scripts.forever_notes.sync_hubs._write_note_applescript",
+            return_value=("created", "p99"),
+        )
+        mocker.patch("scripts.forever_notes.sync_hubs.RunLogger")
+        run_sync_hubs(export_file=str(export_file), dry_run=False)
+        # After stripping "Library/" the notes match "Resources/Reference" in the
+        # taxonomy → home_index non-empty → hub and home writes are attempted.
+        assert write_mock.called
+
     def test_primary_account_passed_to_write(
         self,
         mocker: MagicMock,

@@ -431,12 +431,32 @@ def run_sync_hubs(
         notes: list[dict] = json.load(f)
     _con.print(f"  {len(notes)} notes loaded")
 
+    # Normalize folder_path values: strip the container prefix when toplevel_folder
+    # is enabled, matching what the export script does at write time.  If the export
+    # was run before the setting was enabled, paths still carry the container prefix
+    # (e.g. "Library/Areas/Finance") and _build_theme_index would find no matches
+    # against the taxonomy's bare subfolder paths (e.g. "Areas/Finance").
+    if container:
+        _cprefix = container + "/"
+        notes = [
+            {**n, "folder_path": n["folder_path"][len(_cprefix) :]}
+            if n.get("folder_path", "").startswith(_cprefix)
+            else n
+            for n in notes
+        ]
+
     hub_index = _build_theme_index(taxonomy, notes, min_hub)
     home_index = _build_theme_index(taxonomy, notes, min_home)
 
     if not home_index:
         _con.print(
-            "[yellow]No home-eligible subfolders found (no subfolders meet the minimum note threshold).[/yellow]"
+            "[yellow]No home-eligible subfolders found.[/yellow]\n"
+            "  Common causes:\n"
+            "  1. No subfolders are defined in config/taxonomy.local.yaml\n"
+            f"  2. No notes have been moved into subfolders yet — run: uv run notes export, then uv run notes move\n"
+            f"  3. All subfolders are below the threshold "
+            f"(min_notes_for_home_link: {min_home} in settings.local.yaml)\n"
+            "  4. The export was run before toplevel_folder.enabled was set — re-run: uv run notes export"
         )
         if json_output:
             emit_result(
