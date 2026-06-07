@@ -2270,6 +2270,7 @@ class TestWriteForeverNotesToSettings:
         "strict_mode:\n"
         '  home_note_title: "✱ Home"\n'
         '  hub_title_prefix: "✱ "\n'
+        '  internal_links: "text"\n'
         "other: setting\n"
     )
 
@@ -2303,12 +2304,39 @@ class TestWriteForeverNotesToSettings:
         assert "✱ Home" in content
         assert "✱ " in content
 
+    def test_writes_internal_links_html(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(self._SETTINGS_TEMPLATE)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_forever_notes_to_settings("strict", dry_run=False, internal_links="html")
+        assert 'internal_links: "html"' in settings.read_text()
+        assert "other: setting" in settings.read_text()
+
+    def test_writes_internal_links_text(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(self._SETTINGS_TEMPLATE)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_forever_notes_to_settings("strict", dry_run=False, internal_links="text")
+        assert 'internal_links: "text"' in settings.read_text()
+
+    def test_omits_internal_links_when_not_supplied(self, tmp_path: Path) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(self._SETTINGS_TEMPLATE)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_forever_notes_to_settings("strict", dry_run=False)
+        # Original value preserved
+        assert 'internal_links: "text"' in settings.read_text()
+
     def test_dry_run_does_not_write(self, tmp_path: Path) -> None:
         settings = tmp_path / "settings.local.yaml"
         settings.write_text(self._SETTINGS_TEMPLATE)
         with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
             _write_forever_notes_to_settings(
-                "strict", dry_run=True, home_title="Test", hub_prefix="- "
+                "strict",
+                dry_run=True,
+                home_title="Test",
+                hub_prefix="- ",
+                internal_links="html",
             )
         assert settings.read_text() == self._SETTINGS_TEMPLATE
 
@@ -2372,12 +2400,16 @@ class TestAskForeverNotes:
         "strict_mode:\n"
         '  home_note_title: "✱ Home"\n'
         '  hub_title_prefix: "✱ "\n'
+        '  internal_links: "text"\n'
     )
 
-    def test_strict_writes_mode_and_names(self, mocker: MagicMock, tmp_path: Path) -> None:
+    def test_strict_writes_mode_names_and_text_links(
+        self, mocker: MagicMock, tmp_path: Path
+    ) -> None:
         settings = tmp_path / "settings.local.yaml"
         settings.write_text(self._SETTINGS_TEMPLATE)
-        mocker.patch("typer.confirm", return_value=True)  # Enable Hub structure
+        # confirm calls: 1=enable hub, 2=use HTML links (False → text)
+        mocker.patch("typer.confirm", side_effect=[True, False])
         mocker.patch("typer.prompt", side_effect=["My Notes", "# "])
         with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
             _ask_forever_notes(dry_run=False)
@@ -2385,6 +2417,19 @@ class TestAskForeverNotes:
         assert 'forever_notes_mode: "strict"' in content
         assert 'home_note_title: "My Notes"' in content
         assert 'hub_title_prefix: "# "' in content
+        assert 'internal_links: "text"' in content
+
+    def test_strict_html_links_written_when_confirmed(
+        self, mocker: MagicMock, tmp_path: Path
+    ) -> None:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(self._SETTINGS_TEMPLATE)
+        # confirm calls: 1=enable hub, 2=use HTML links (True → html)
+        mocker.patch("typer.confirm", side_effect=[True, True])
+        mocker.patch("typer.prompt", side_effect=["✱ Home", "✱ "])
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _ask_forever_notes(dry_run=False)
+        assert 'internal_links: "html"' in settings.read_text()
 
     def test_loose_does_not_prompt_for_names(self, mocker: MagicMock, tmp_path: Path) -> None:
         settings = tmp_path / "settings.local.yaml"

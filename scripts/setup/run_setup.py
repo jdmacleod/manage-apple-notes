@@ -763,6 +763,7 @@ def _write_forever_notes_to_settings(
     dry_run: bool,
     home_title: str | None = None,
     hub_prefix: str | None = None,
+    internal_links: str | None = None,
 ) -> None:
     settings_path = CONFIG_DIR / "settings.local.yaml"
     if not settings_path.exists():
@@ -791,11 +792,21 @@ def _write_forever_notes_to_settings(
             count=1,
             flags=re.MULTILINE,
         )
+    if internal_links is not None:
+        new_content = re.sub(
+            r"^(\s+internal_links:).*$",
+            f'\\1 "{internal_links}"',
+            new_content,
+            count=1,
+            flags=re.MULTILINE,
+        )
     parts = [f'forever_notes_mode: "{mode}"']
     if home_title is not None:
         parts.append(f'home_note_title: "{home_title}"')
     if hub_prefix is not None:
         parts.append(f'hub_title_prefix: "{hub_prefix}"')
+    if internal_links is not None:
+        parts.append(f'internal_links: "{internal_links}"')
     if dry_run:
         con.print(f"  [dim]Would set {', '.join(parts)} in settings.local.yaml[/dim]")
         return
@@ -823,8 +834,21 @@ def _ask_forever_notes(dry_run: bool) -> None:
         "  Hub note prefix (e.g. '✱ ' → '✱ Health', '✱ Projects')",
         default="✱ ",
     )
+    con.print(
+        "\n  Hub notes list titles of related notes. By default they use plain text,\n"
+        "  which always works. Clickable applenotes:// links are also available but\n"
+        "  require Full Disk Access for Terminal\n"
+        "  (System Settings → Privacy & Security → Full Disk Access).\n"
+        "  See docs/technical-notes.md → 'Note-to-note links' for details."
+    )
+    use_html = typer.confirm("  Use clickable HTML links?", default=False)
+    internal_links = "html" if use_html else "text"
     _write_forever_notes_to_settings(
-        "strict", dry_run, home_title=home_title, hub_prefix=hub_prefix
+        "strict",
+        dry_run,
+        home_title=home_title,
+        hub_prefix=hub_prefix,
+        internal_links=internal_links,
     )
 
 
