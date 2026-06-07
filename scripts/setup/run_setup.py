@@ -1470,8 +1470,7 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
     if settings_created:
         _ask_organization_style(dry_run, is_existing=(winner == "EXISTING"))
         _ask_forever_notes(dry_run)
-        if winner == "EXISTING":
-            _write_categories_for_taxonomy(taxonomy_yaml, dry_run)
+        _write_categories_for_taxonomy(taxonomy_yaml, dry_run)
 
     # ── Phase 8: LLM provider selection ───────────────────────────────────────
     provider_configured = False

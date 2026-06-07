@@ -1234,6 +1234,7 @@ class TestRunSetup:
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
         mocker.patch("scripts.setup.run_setup._ask_organization_style")
         mocker.patch("scripts.setup.run_setup._ask_forever_notes")
+        mocker.patch("scripts.setup.run_setup._write_categories_for_taxonomy")
         select_mock = mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
         mocker.patch("scripts.setup.run_setup._ask_container")
         run_setup(dry_run=False, no_corpus=True)
@@ -1279,6 +1280,7 @@ class TestRunSetup:
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
         mocker.patch("scripts.setup.run_setup._ask_organization_style")
         mocker.patch("scripts.setup.run_setup._ask_forever_notes")
+        mocker.patch("scripts.setup.run_setup._write_categories_for_taxonomy")
         mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
         container_mock = mocker.patch("scripts.setup.run_setup._ask_container")
         run_setup(dry_run=False, no_corpus=True)
@@ -1310,6 +1312,7 @@ class TestRunSetup:
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
         mocker.patch("scripts.setup.run_setup._ask_organization_style")
         mocker.patch("scripts.setup.run_setup._ask_forever_notes")
+        mocker.patch("scripts.setup.run_setup._write_categories_for_taxonomy")
         mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
         ask_mock = mocker.patch("scripts.setup.run_setup._ask_container")
         write_mock = mocker.patch("scripts.setup.run_setup._write_toplevel_folder_to_settings")
@@ -1344,6 +1347,7 @@ class TestRunSetup:
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
         mocker.patch("scripts.setup.run_setup._ask_organization_style")
         mocker.patch("scripts.setup.run_setup._ask_forever_notes")
+        mocker.patch("scripts.setup.run_setup._write_categories_for_taxonomy")
         mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
         ask_mock = mocker.patch("scripts.setup.run_setup._ask_container")
         run_setup(dry_run=False, no_corpus=True)
@@ -1431,6 +1435,44 @@ class TestRunSetup:
         cats_mock = mocker.patch("scripts.setup.run_setup._write_categories_for_taxonomy")
         run_setup(dry_run=False, no_corpus=True)
         cats_mock.assert_not_called()
+
+    def test_para_path_categories_written_on_settings_created(self, mocker: MagicMock) -> None:
+        """PARA path with settings_created=True → _write_categories_for_taxonomy called."""
+        mocker.patch("scripts.setup.run_setup._find_export_optional", return_value=None)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", side_effect=[2, 1, 2])
+        mocker.patch("typer.confirm", return_value=True)
+        mocker.patch(
+            "scripts.setup.run_setup._collect_folder_names",
+            return_value={
+                "inbox": "Inbox",
+                "projects": "Projects",
+                "areas": "Areas",
+                "resources": "Resources",
+                "archive": "Archive",
+            },
+        )
+        mocker.patch("scripts.setup.run_setup._write_taxonomy")
+        mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
+        mocker.patch("scripts.setup.run_setup._ask_organization_style")
+        mocker.patch("scripts.setup.run_setup._ask_forever_notes")
+        mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
+        mocker.patch("scripts.setup.run_setup._ask_container")
+        cats_mock = mocker.patch("scripts.setup.run_setup._write_categories_for_taxonomy")
+        run_setup(dry_run=False, no_corpus=True)
+        cats_mock.assert_called_once()
+
+    def test_para_categories_excludes_zk_roles(self, tmp_path: Path) -> None:
+        """PARA taxonomy → categories block contains only PARA role keys, not ZK-specific ones."""
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(_SETTINGS_WITH_CATEGORIES)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _write_categories_for_taxonomy(_PARA_TAXONOMY_YAML, dry_run=False)
+        result = yaml.safe_load(settings.read_text())
+        cats = result["categories"]
+        assert set(cats.keys()) == {"inbox", "projects", "areas", "resources", "archive"}
+        assert "fleeting" not in cats
+        assert "literature" not in cats
+        assert "permanent" not in cats
 
 
 # ── run_setup.py — EXISTING path: categories block ────────────────────────────
@@ -2461,6 +2503,7 @@ class TestAskForeverNotes:
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
         mocker.patch("scripts.setup.run_setup._ask_organization_style")
         fn_mock = mocker.patch("scripts.setup.run_setup._ask_forever_notes")
+        mocker.patch("scripts.setup.run_setup._write_categories_for_taxonomy")
         mocker.patch("scripts.setup.run_setup._select_provider", return_value=True)
         mocker.patch("scripts.setup.run_setup._ask_container")
         run_setup(dry_run=False, no_corpus=True)
@@ -2512,6 +2555,7 @@ class TestRunSetupAccountIntegration:
         mocker.patch("scripts.setup.run_setup._ensure_settings", return_value=True)
         mocker.patch("scripts.setup.run_setup._ask_organization_style")
         mocker.patch("scripts.setup.run_setup._ask_forever_notes")
+        mocker.patch("scripts.setup.run_setup._write_categories_for_taxonomy")
         mocker.patch("scripts.setup.run_setup._select_provider", return_value=False)
         mocker.patch("scripts.setup.run_setup._ask_container")
 
