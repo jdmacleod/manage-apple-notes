@@ -776,6 +776,14 @@ def run_discover(
     below_threshold = [t for t in final_themes if (t.get("estimated_count") or 0) < min_subfolder]
 
     established_set = set(established)
+
+    # Annotate each theme with its disposition so the JSON is self-documenting.
+    # "use-existing": suggested_path already in the taxonomy — no structural change needed.
+    # "create-new": suggested_path is a net-new proposal — gated by threshold and user review.
+    for theme in final_themes:
+        sp = theme.get("suggested_path") or ""
+        theme["status"] = "use-existing" if sp in established_set else "create-new"
+
     new_paths = sorted(
         {
             t["suggested_path"]

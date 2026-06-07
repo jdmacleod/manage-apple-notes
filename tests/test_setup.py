@@ -15,6 +15,7 @@ from scripts.setup.run_setup import (
     _ask_container,
     _ask_forever_notes,
     _ask_numbered,
+    _ask_organization_style,
     _auto_map_roles,
     _build_existing_taxonomy_yaml,
     _build_taxonomy_from_export,
@@ -2090,6 +2091,54 @@ class TestWriteForeverNotesToSettings:
         with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
             _write_forever_notes_to_settings("strict", dry_run=False, home_title="X")
         assert not (tmp_path / "settings.local.yaml").exists()
+
+
+class TestAskOrganizationStyle:
+    _SETTINGS_TEMPLATE = (
+        'reorganization_mode: "standard"\n'
+        'folder_nesting: "natural"\n'
+        "thresholds:\n"
+        "  min_notes_for_subfolder: 8\n"
+        "classify:\n"
+        "  exclude_archive: true\n"
+    )
+
+    def _setup(self, tmp_path: Path) -> Path:
+        settings = tmp_path / "settings.local.yaml"
+        settings.write_text(self._SETTINGS_TEMPLATE)
+        return settings
+
+    def test_default_threshold_is_8_for_non_existing(
+        self, mocker: MagicMock, tmp_path: Path
+    ) -> None:
+        settings = self._setup(tmp_path)
+        # Choices: mode=2 (conservative), threshold=2 (8 notes — default), archive=True
+        mocker.patch("scripts.setup.run_setup._ask_numbered", side_effect=[2, 2])
+        mocker.patch("typer.confirm", return_value=True)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _ask_organization_style(dry_run=False, is_existing=False)
+        assert "min_notes_for_subfolder: 8" in settings.read_text()
+
+    def test_default_threshold_is_15_for_existing(self, mocker: MagicMock, tmp_path: Path) -> None:
+        settings = self._setup(tmp_path)
+        # When is_existing=True the threshold default is choice 3 (15 notes);
+        # simulate user pressing Enter → default accepted → threshold_map[3] = 15
+        mocker.patch("scripts.setup.run_setup._ask_numbered", side_effect=[2, 3])
+        mocker.patch("typer.confirm", return_value=True)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _ask_organization_style(dry_run=False, is_existing=True)
+        assert "min_notes_for_subfolder: 15" in settings.read_text()
+
+    def test_mode_default_conservative_regardless_of_is_existing(
+        self, mocker: MagicMock, tmp_path: Path
+    ) -> None:
+        settings = self._setup(tmp_path)
+        # Both existing and non-existing default to conservative (choice 2)
+        mocker.patch("scripts.setup.run_setup._ask_numbered", side_effect=[2, 2])
+        mocker.patch("typer.confirm", return_value=True)
+        with patch("scripts.setup.run_setup.CONFIG_DIR", tmp_path):
+            _ask_organization_style(dry_run=False, is_existing=True)
+        assert 'reorganization_mode: "conservative"' in settings.read_text()
 
 
 class TestAskForeverNotes:

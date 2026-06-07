@@ -496,6 +496,9 @@ class TestRunDiscover:
         assert len(theme_files) == 1
         data = json.loads(theme_files[0].read_text())
         assert "themes" in data
+        # Every theme must carry a status field
+        for theme in data["themes"]:
+            assert theme.get("status") in ("use-existing", "create-new")
 
     def test_missing_export_exits(
         self,
@@ -716,3 +719,50 @@ class TestAppleSynthesisHelpers:
         )
         assert "Resources/Topic19" in prompt
         assert "Resources/Topic20" not in prompt
+
+
+class TestThemeStatusAnnotation:
+    """Tests for the per-theme 'status' field added during theme map assembly."""
+
+    def _annotate(self, themes: list[dict], established: list[str]) -> list[dict]:
+        """Replicate the annotation logic from discover_themes.py for unit testing."""
+        established_set = set(established)
+        for theme in themes:
+            sp = theme.get("suggested_path") or ""
+            theme["status"] = "use-existing" if sp in established_set else "create-new"
+        return themes
+
+    def test_use_existing_when_path_in_established(self) -> None:
+        themes = [{"name": "Health", "suggested_path": "Areas/Health", "estimated_count": 10}]
+        result = self._annotate(themes, ["Areas/Health", "Resources/Cooking"])
+        assert result[0]["status"] == "use-existing"
+
+    def test_create_new_when_path_not_in_established(self) -> None:
+        themes = [{"name": "Travel", "suggested_path": "Resources/Travel", "estimated_count": 8}]
+        result = self._annotate(themes, ["Areas/Health"])
+        assert result[0]["status"] == "create-new"
+
+    def test_empty_suggested_path_is_create_new(self) -> None:
+        themes = [{"name": "Misc", "estimated_count": 3}]  # no suggested_path key
+        result = self._annotate(themes, ["Areas/Health"])
+        assert result[0]["status"] == "create-new"
+
+    def test_multiple_themes_annotated_correctly(self) -> None:
+        themes = [
+            {"name": "Health", "suggested_path": "Areas/Health", "estimated_count": 12},
+            {"name": "Travel", "suggested_path": "Resources/Travel", "estimated_count": 9},
+            {"name": "Cooking", "suggested_path": "Resources/Cooking", "estimated_count": 5},
+        ]
+        established = ["Areas/Health", "Resources/Cooking"]
+        result = self._annotate(themes, established)
+        assert result[0]["status"] == "use-existing"
+        assert result[1]["status"] == "create-new"
+        assert result[2]["status"] == "use-existing"
+
+    def test_empty_established_all_create_new(self) -> None:
+        themes = [
+            {"name": "Health", "suggested_path": "Areas/Health", "estimated_count": 5},
+            {"name": "Travel", "suggested_path": "Resources/Travel", "estimated_count": 5},
+        ]
+        result = self._annotate(themes, [])
+        assert all(t["status"] == "create-new" for t in result)

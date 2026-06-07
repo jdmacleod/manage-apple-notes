@@ -828,8 +828,12 @@ def _ask_forever_notes(dry_run: bool) -> None:
     )
 
 
-def _ask_organization_style(dry_run: bool) -> None:
-    """Ask reorganization mode, subfolder threshold, and archive exclusion."""
+def _ask_organization_style(dry_run: bool, is_existing: bool = False) -> None:
+    """Ask reorganization mode, subfolder threshold, and archive exclusion.
+
+    When is_existing=True (user chose "my current system mostly works"), the subfolder
+    threshold defaults to Many (15) — a higher evidence bar before proposing new structure.
+    """
     con.print("\n[bold]Organization style[/bold]")
 
     mode_choice = _ask_numbered(
@@ -852,10 +856,10 @@ def _ask_organization_style(dry_run: bool) -> None:
         "How many notes on a topic before creating a new subfolder?",
         [
             "A few (5)   — more granular; good for large collections",
-            "Several (8) — balanced [recommended]",
+            "Several (8) — balanced",
             "Many (15)  — fewer folders; simpler; better for small libraries or iPhone",
         ],
-        default=2,
+        default=3 if is_existing else 2,
     )
     threshold_map = {1: 5, 2: 8, 3: 15}
     _write_subfolder_threshold_to_settings(threshold_map[threshold_choice], dry_run)
@@ -1378,7 +1382,7 @@ def run_setup(dry_run: bool = False, no_corpus: bool = False) -> None:
 
     # ── Phase 7: Organization style preferences ───────────────────────────────
     if settings_created:
-        _ask_organization_style(dry_run)
+        _ask_organization_style(dry_run, is_existing=(winner == "EXISTING"))
         _ask_forever_notes(dry_run)
 
     # ── Phase 8: LLM provider selection ───────────────────────────────────────
