@@ -11,37 +11,61 @@ how data flows through the pipeline and choose the workflow that matches your si
 |------|-------------|--------------------------|
 | `notes setup` | Interactive wizard. Queries Apple Notes account names via AppleScript. When an export is present and "existing system" is chosen, reads folder paths (not note bodies) from the export JSON to auto-generate the taxonomy. Collects folder names and optionally an LLM provider API key written to `.env` (gitignored, not echoed). | No |
 | `notes export` / `notes backup` | AppleScript extracts plaintext from Notes app → local JSON in `data/exports/` or `data/backups/` | No |
-| `notes discover` / `notes classify` (cloud) | Note title + body excerpt sent to Anthropic API per batch | Yes — see below |
-| `notes discover` / `notes classify` (local) | Same content sent to Ollama process on `localhost` | No |
+| `notes discover` / `notes classify` (Apple Intelligence, default) | Note title + body excerpt sent to on-device FoundationModels via the Swift bridge — never leaves the machine | No |
+| `notes discover` / `notes classify` (Anthropic, cloud) | Note title + body excerpt sent to Anthropic API per batch | Yes — see below |
+| `notes discover` / `notes classify` (Ollama / AWS-Ollama) | Same content sent to Ollama process on `localhost` or your own EC2 instance over an SSH tunnel | No |
 | `notes move` / `notes revert` / `notes purge` | AppleScript moves or deletes notes inside the Notes app | No |
 | `notes restore` | AppleScript creates notes from local backup JSON | No |
-| `notes sync-hubs` | Writes Hub and Home notes via AppleScript; when `internal_links: "html"` is set, also reads `NoteStore.sqlite` locally (read-only, requires Full Disk Access) to resolve stable note UUIDs | No |
-| `notes review` | Reads a local proposal JSON, prompts for folder selection, writes back the edited proposal. No data leaves the machine. | No |
+| `notes arrange` | Interactive reordering of Home page categories; writes `folder_order` to `settings.local.yaml` only | No |
+| `notes sync-hubs` | Writes Hub and Home notes via AppleScript; reads `NoteStore.sqlite` locally (read-only, requires Full Disk Access) to resolve stable note UUIDs (when `internal_links: "html"`) and sidebar folder order | No |
+| `notes review` | Reads a local proposal JSON, prompts for folder selection, writes back the edited proposal | No |
 
-In cloud mode, each batch contains the note title and up to `max_body_chars` of body text
-(default: 2000 characters). Notes are truncated before transmission; raw exports stay local.
+With the default **Apple Intelligence** provider, no note content leaves the machine at
+any point. Classification runs entirely on-device via the FoundationModels framework
+(requires macOS 26+ and Apple Intelligence enabled).
 
-`notes sync-hubs` reads `NoteStore.sqlite` only when `internal_links: "html"` is set
-in `strict_mode` settings (off by default). When active, it copies the database to a
-temp directory (read-only). This requires Full Disk Access for Terminal (grant in System
-Settings → Privacy & Security → Full Disk Access). Without it, hub links fall back to
-numeric identifiers and a warning is printed — no data is transmitted either way.
-With the default `internal_links: "text"`, no SQLite access occurs.
+When using the **Anthropic** provider, each batch contains the note title and up to
+`max_body_chars` of body text (default: 2000 characters). Notes are truncated before
+transmission; raw exports stay local.
+
+`notes sync-hubs` reads `NoteStore.sqlite` for two purposes: resolving stable note UUIDs
+(only when `internal_links: "html"` is set — off by default) and reading sidebar folder
+order (always, when Full Disk Access is granted). In both cases it copies the database to
+a temp directory for a read-only query; the original is never modified. Grant Full Disk
+Access in System Settings → Privacy & Security → Full Disk Access. Without it, HTML note
+links fall back to numeric identifiers and folder order falls back to alphabetical — a
+warning is printed. No data is transmitted either way.
 
 ---
 
 ## Choosing a Workflow
 
-### Cloud — Anthropic (recommended default)
+### On-device — Apple Intelligence (default)
 
-- Produces the highest classification quality across the full pipeline
+- Note content never leaves the machine — processed entirely by the on-device
+  FoundationModels framework
+- No account, API key, or internet connection required for classification
+- Requires macOS 26+, Apple Silicon, and Apple Intelligence enabled in System Settings →
+  Apple Intelligence & Siri; also requires Xcode 26 and the compiled Swift bridge
+  (`make -C swift/apple-llm build`)
+- Trade-offs compared to cloud:
+  - Tight context window (≤ 4096 tokens) means `batch_size: 1` — slower throughput on
+    large libraries
+  - Classification quality is good for most libraries; complex or ambiguous notes may
+    produce more `needs_review` results than the Anthropic provider
+
+Suitable for any sensitivity level and recommended as the starting point for all users.
+
+### Cloud — Anthropic
+
 - Note excerpts are transmitted to Anthropic's API and processed in their infrastructure
 - Governed by [Anthropic's Privacy Policy](https://www.anthropic.com/legal/privacy) and
   [Usage Policy](https://www.anthropic.com/legal/aup)
 - Your API key is stored in `.env`, which is gitignored and never committed
-- For most personal use, this is the right choice
+- Produces the highest classification quality; handles larger batches (up to 20 notes)
+  and more nuanced taxonomy decisions
 
-**Consider using the local workflow instead if your notes contain:**
+**Consider using an on-device workflow instead if your notes contain:**
 - Attorney-client privileged communications
 - Medical or financial records
 - Trade secrets or unreleased product information
@@ -142,12 +166,12 @@ Before enabling any Apple Notes MCP:
 
 1. **Read the full source** — look for any `fetch()`, `axios`, `http`, `net`, `requests`,
    or socket calls that could transmit data externally
-2. **Verify the scope of any SQLite access** — this project itself uses a read-only
-   `NoteStore.sqlite` query (copying the DB to a temp file first) solely to resolve
-   stable note UUIDs for Hub links. That is a disclosed, scoped, read-only use. What
-   to reject in an MCP: undisclosed database reads, write access, full-schema queries
-   that bulk-extract note content, or any access that bypasses the Notes app for reads
-   or writes beyond a narrow documented purpose
+2. **Verify the scope of any SQLite access** — this project itself uses read-only
+   `NoteStore.sqlite` queries (copying the DB to a temp file first) for two disclosed,
+   scoped purposes: resolving stable note UUIDs for Hub links and reading sidebar folder
+   order. What to reject in an MCP: undisclosed database reads, write access, full-schema
+   queries that bulk-extract note content, or any access that bypasses the Notes app for
+   reads or writes beyond a narrow documented purpose
 3. **Check dependencies** for unexpected network-capable packages
    (`package.json` / `pyproject.toml` / `requirements.txt`)
 4. **Confirm env var access** — the MCP should not read `ANTHROPIC_API_KEY`, `AWS_*`,
