@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-08
+
+### Added
+
+- `notes setup` wizard overhaul:
+  - Defaults LLM provider to **Apple Intelligence** (Enter to accept)
+  - Checks Apple Intelligence prerequisites when Apple provider is selected: Xcode ≥ 26 (`xcodebuild -version`), compiled Swift bridge binary, live inference probe; prints a disk-space warning if Xcode needs to be downloaded and fewer than 50 GB are free
+  - Asks the container folder question before folder mapping so the taxonomy wizard has the correct folder context
+  - **Existing-system path**: auto-generates `taxonomy.local.yaml` directly from the export folder hierarchy; strips the container prefix before role detection; correctly writes `toplevel_folder.enabled: true` when a container is detected (previously this was silently skipped, causing `notes draft` to treat the container as a taxonomy category)
+  - Writes a **framework-appropriate `categories:` block** on first settings creation for all frameworks (PARA, Zettelkasten, GTD, existing) — only roles present in the chosen taxonomy are included, with built-in descriptions and behavioral flags
+  - Forever Notes Hub setup: new **`internal_links` question** — choose between clickable `applenotes://` HTML links (requires Full Disk Access for Terminal) and plain text titles (default); **surfaces Hub and Home note placement** when a container is detected and offers a one-field override (writes both `home_note_folder` and `hub_note_folder`)
+  - Mode-aware post-discover next steps printed based on `reorganization_mode`
+  - Higher subfolder threshold default (15 notes) for the existing-system path
+- `static` reorganization mode — folder structure is fixed; `notes discover` runs for audit/triage only; `notes draft` is a no-op; `notes classify` places notes into existing folders without proposing new subfolders
+- `notes discover`: per-theme `status` field in theme-map output; stronger anchoring to existing paths in `conservative` mode
+- `notes sync-hubs`: Home note now lists **notes directly in flat top-level categories** (categories with no subfolders) as `<li>` items under the h2 heading — mirrors Hub note behavior for libraries that haven't adopted subfolders
+- `notes sync-hubs`: **Home note category order and Hub category section order now reflect the Apple Notes sidebar position**, read from `ZPARENTMODIFICATIONDATE` in NoteStore.sqlite; falls back to export first-appearance order (alphabetical) when Full Disk Access is unavailable
+- `notes sync-hubs` dry-run output now shows the folder where each Hub note will be placed
+
+### Changed
+
+- `notes repair` command removed
+
+### Fixed
+
+- `notes setup`: taxonomy generation now preserves full folder hierarchy from export and excludes the container folder from the generated taxonomy
+- `notes discover` / `notes classify` / `notes sync-hubs`: Apple Intelligence locale errors resolved — strips control characters, drops the `id` field, adds a language anchor; handles bare-array LLM responses; sanitizes system prompts before locale-error retry
+- `notes draft`: strips container prefix from suggested paths so drafts don't include the container as a taxonomy category
+- `notes sync-hubs`: strips container prefix before building the theme index
+- YAML config templates and generated files: non-ASCII punctuation (curly quotes, em-dashes, ellipsis) replaced with ASCII equivalents to prevent YAML parse errors
+
 ## [0.3.0] - 2026-05-31
 
 ### Added
@@ -75,7 +106,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pre-commit hook blocking accidental commits of personal config and note data
 - Pytest test suite with ≥90% line coverage
 
-[Unreleased]: https://github.com/jdmacleod/manage-apple-notes/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/jdmacleod/manage-apple-notes/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/jdmacleod/manage-apple-notes/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jdmacleod/manage-apple-notes/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/jdmacleod/manage-apple-notes/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jdmacleod/manage-apple-notes/releases/tag/v0.1.0
