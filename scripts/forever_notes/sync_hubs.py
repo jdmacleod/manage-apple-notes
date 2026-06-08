@@ -342,6 +342,8 @@ def _build_home_body(
     hub_uuids: dict[str, str] | None = None,
     use_links: bool = False,
     export_sf_order: dict[str, int] | None = None,
+    flat_index: dict[str, list[tuple[str, str]]] | None = None,
+    flat_uuids: dict[str, str] | None = None,
 ) -> str:
     """Build the taxonomy-driven ✱ Home note body as HTML.
 
@@ -355,6 +357,10 @@ def _build_home_body(
       sidebar order). When provided, subfolders within each category are sorted
       by this order so the Home page reflects the user's current Notes arrangement.
       Taxonomy subfolders absent from the export fall to the end, then alphabetical.
+    flat_index: category display name → [(title, nid)] for notes sitting directly
+      in a top-level taxonomy folder with no subfolders. Rendered when a category
+      section would otherwise be empty (no home-eligible subfolders).
+    flat_uuids: PK string → UUID for flat notes (used when use_links=True).
     The home_title is placed first so Apple Notes uses it as the note title.
     """
     hub_eligible: set[str] = set(hub_index.keys())
@@ -394,6 +400,18 @@ def _build_home_body(
                 elif leaf in home_index:
                     parts.append(f"<li>{indent}{html.escape(leaf)}</li>")
             parts.append("</ul>")
+        else:
+            flat_notes = (flat_index or {}).get(heading, [])
+            if flat_notes:
+                parts.append("<ul>")
+                for title, nid in flat_notes:
+                    if use_links:
+                        pk = _url_id(nid)
+                        uuid = (flat_uuids or {}).get(pk, "")
+                        parts.append(f"<li>{_note_link(title, nid, uuid)}</li>")
+                    else:
+                        parts.append(f"<li>{html.escape(title)}</li>")
+                parts.append("</ul>")
         parts.append("<br>")
 
     parts.append("<p>#ForeverNotes</p>")
@@ -500,9 +518,23 @@ def run_sync_hubs(
     hub_index = _build_theme_index(taxonomy, notes, min_hub)
     home_index = _build_theme_index(taxonomy, notes, min_home)
 
-    if not home_index:
+    # Notes sitting directly in a top-level taxonomy category (no subfolder).
+    # These fill category sections that would otherwise render as empty headings.
+    _top_cat_folders: set[str] = set()
+    for _ck, _cv in taxonomy.get("taxonomy", {}).items():
+        if isinstance(_cv, dict):
+            _fname = folder_name(_cv) or _ck.capitalize()
+            _top_cat_folders.add(_fname)
+    flat_index: dict[str, list[tuple[str, str]]] = {}
+    for _n in notes:
+        _fp = _n.get("folder_path", "")
+        if _fp in _top_cat_folders:
+            flat_index.setdefault(_fp, []).append((_n.get("title", "(untitled)"), _n.get("id", "")))
+    flat_index = {k: v for k, v in flat_index.items() if len(v) >= min_home}
+
+    if not home_index and not flat_index:
         _con.print(
-            "[yellow]No home-eligible subfolders found.[/yellow]\n"
+            "[yellow]No home-eligible content found.[/yellow]\n"
             "  Common causes:\n"
             "  1. No subfolders are defined in config/taxonomy.local.yaml\n"
             f"  2. No notes have been moved into subfolders yet — run: uv run notes export, then uv run notes move\n"
@@ -539,6 +571,11 @@ def run_sync_hubs(
             _url_id(nid)
             for theme_data in hub_index.values()
             for note_pairs in theme_data["categories"].values()
+            for _, nid in note_pairs
+            if _url_id(nid)
+        ] + [
+            _url_id(nid)
+            for note_pairs in flat_index.values()
             for _, nid in note_pairs
             if _url_id(nid)
         ]
@@ -641,6 +678,8 @@ def run_sync_hubs(
         hub_uuids,
         use_links=use_links,
         export_sf_order=export_sf_order,
+        flat_index=flat_index,
+        flat_uuids=note_uuid_map,
     )
 
     home_status, _ = _write_note_applescript(

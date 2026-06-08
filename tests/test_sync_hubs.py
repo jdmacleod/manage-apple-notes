@@ -399,6 +399,65 @@ class TestBuildHomeBody:
         # No export_sf_order → taxonomy order (Finance first)
         assert body.index("Finance") < body.index("Health &amp; Wellness")
 
+    def test_flat_notes_shown_when_no_subfolders(self) -> None:
+        # "Projects" has no subfolders in taxonomy; flat_index has notes for it.
+        taxonomy = {"taxonomy": {"projects": {"folder": "Projects"}}}
+        flat_index = {
+            "Projects": [
+                ("Alpha", "x-coredata://u/p1"),
+                ("Beta", "x-coredata://u/p2"),
+            ]
+        }
+        body = _build_home_body(taxonomy, {}, {}, "✱ ", "✱ Home", flat_index=flat_index)
+        assert "Alpha" in body
+        assert "Beta" in body
+        assert "<li>Alpha</li>" in body
+
+    def test_flat_notes_not_shown_when_subfolders_exist(self) -> None:
+        # "Resources" has subfolders; flat notes for it must not render.
+        taxonomy = {
+            "taxonomy": {
+                "resources": {
+                    "folder": "Resources",
+                    "subfolders": ["Reference"],
+                }
+            }
+        }
+        home_index = {
+            "Reference": {"_sf_def": {"name": "Reference"}, "categories": {}, "total": 3}
+        }
+        flat_index = {"Resources": [("Stray Note", "x-coredata://u/p9")]}
+        body = _build_home_body(
+            taxonomy, {}, home_index, "✱ ", "✱ Home", flat_index=flat_index
+        )
+        assert "Reference" in body
+        assert "Stray Note" not in body
+
+    def test_flat_notes_use_links(self) -> None:
+        # use_links=True with a UUID in flat_uuids → applenotes:// href.
+        taxonomy = {"taxonomy": {"projects": {"folder": "Projects"}}}
+        flat_index = {"Projects": [("My Note", "x-coredata://u/p42")]}
+        flat_uuids = {"42": "STABLE-UUID-42"}
+        body = _build_home_body(
+            taxonomy,
+            {},
+            {},
+            "✱ ",
+            "✱ Home",
+            use_links=True,
+            flat_index=flat_index,
+            flat_uuids=flat_uuids,
+        )
+        assert 'href="applenotes://showNote?identifier=STABLE-UUID-42"' in body
+        assert "My Note" in body
+
+    def test_flat_notes_omitted_when_flat_index_empty(self) -> None:
+        # flat_index has no entry for the category → no <ul> rendered.
+        taxonomy = {"taxonomy": {"projects": {"folder": "Projects"}}}
+        body = _build_home_body(taxonomy, {}, {}, "✱ ", "✱ Home", flat_index={})
+        assert "<ul>" not in body
+        assert "Projects" in body  # h2 heading still present
+
 
 class TestLookupUuids:
     def test_empty_keys_returns_empty(self) -> None:
@@ -654,6 +713,61 @@ class TestRunSyncHubs:
         # After stripping "Library/" the notes match "Resources/Reference" in the
         # taxonomy → home_index non-empty → hub and home writes are attempted.
         assert write_mock.called
+
+    def test_flat_notes_appear_in_home_body(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        # Taxonomy has "Projects" with no subfolders. Notes sit directly in "Projects".
+        # After sync-hubs runs, the home body written to AppleScript must contain the note titles.
+        taxonomy = {
+            "taxonomy": {
+                "projects": {"folder": "Projects"},
+            }
+        }
+        notes = [
+            {
+                "id": f"x-coredata://test/p{i}",
+                "title": f"Project Note {i}",
+                "folder": "Projects",
+                "folder_path": "Projects",
+                "modified": "2026-01-01",
+            }
+            for i in range(3)
+        ]
+        export_file = tmp_path / "notes-flat.json"
+        export_file.write_text(json.dumps(notes))
+
+        settings = {
+            "forever_notes_mode": "strict",
+            "strict_mode": {"hub_title_prefix": "✱ ", "home_note_title": "✱ Home"},
+            "thresholds": {"min_notes_for_hub": 5, "min_notes_for_home_link": 1},
+            "toplevel_folder": {"enabled": False},
+        }
+        mocker.patch("scripts.forever_notes.sync_hubs.load_settings", return_value=settings)
+        mocker.patch("scripts.forever_notes.sync_hubs.load_taxonomy", return_value=taxonomy)
+        mocker.patch("scripts.forever_notes.sync_hubs.local_taxonomy_exists", return_value=True)
+        mocker.patch("scripts.forever_notes.sync_hubs.RunLogger")
+
+        written_bodies: list[str] = []
+
+        def _capture_write(title: str, body: str, *args: object, **kwargs: object) -> tuple[str, str]:
+            written_bodies.append(body)
+            return ("created", "p1")
+
+        mocker.patch(
+            "scripts.forever_notes.sync_hubs._write_note_applescript",
+            side_effect=_capture_write,
+        )
+
+        run_sync_hubs(export_file=str(export_file), dry_run=False)
+
+        # The last write is the Home note body; it should list the flat notes.
+        home_body = written_bodies[-1]
+        assert "Project Note 0" in home_body
+        assert "Project Note 1" in home_body
+        assert "Project Note 2" in home_body
 
     def test_primary_account_passed_to_write(
         self,
