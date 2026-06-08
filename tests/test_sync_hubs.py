@@ -16,6 +16,7 @@ from scripts.forever_notes.sync_hubs import (
     _hub_title,
     _lookup_uuids,
     _note_link,
+    _placement_label,
     _subfolders,
     _theme_order,
     _url_id,
@@ -63,6 +64,20 @@ class TestHubTitle:
     def test_generated_from_prefix_and_name(self) -> None:
         sf = {"name": "Reference"}
         assert _hub_title(sf, "✱ ") == "✱ Reference"
+
+
+class TestPlacementLabel:
+    def test_container_no_folder_returns_container(self) -> None:
+        assert _placement_label(None, "Library") == "Library"
+
+    def test_container_with_folder_returns_combined(self) -> None:
+        assert _placement_label("Notes", "Library") == "Library/Notes"
+
+    def test_no_container_with_folder_returns_folder(self) -> None:
+        assert _placement_label("Notes", "") == "Notes"
+
+    def test_neither_returns_account_root(self) -> None:
+        assert _placement_label(None, "") == "account root"
 
 
 class TestNoteLink:

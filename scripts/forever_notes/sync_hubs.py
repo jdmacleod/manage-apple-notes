@@ -254,6 +254,24 @@ def _generate_hub_body(
     return "\n".join(parts)
 
 
+def _placement_label(folder: str | None, container: str) -> str:
+    """Return a human-readable description of where a note will be placed.
+
+    Mirrors the AppleScript folder resolution rules in sync-hubs.applescript:
+    - container + no folder  → container root (e.g. "Library")
+    - container + folder     → subfolder of container (e.g. "Library/Notes")
+    - no container + folder  → named folder at account root (e.g. "Notes")
+    - neither                → account root
+    """
+    if container and not folder:
+        return container
+    if container and folder:
+        return f"{container}/{folder}"
+    if folder:
+        return folder
+    return "account root"
+
+
 def _theme_order(taxonomy: dict) -> dict[str, int]:
     """Map each theme (subfolder leaf name) to its first-appearance index in taxonomy order.
 
@@ -505,6 +523,13 @@ def run_sync_hubs(
         f"[bold]{len(home_index)}[/bold] Home-listed subfolder(s)."
     )
     if dry_run:
+        hub_loc = _placement_label(hub_folder, container)
+        home_loc = _placement_label(home_folder, container)
+        if hub_loc == home_loc:
+            _con.print(f"  Hub + Home notes → [bold]{hub_loc}[/bold]")
+        else:
+            _con.print(f"  Hub notes  → [bold]{hub_loc}[/bold]")
+            _con.print(f"  Home note  → [bold]{home_loc}[/bold]")
         _con.print("[dim](dry-run — no writes)[/dim]\n")
 
     # UUID lookups are only needed when internal_links: "html" is set.
