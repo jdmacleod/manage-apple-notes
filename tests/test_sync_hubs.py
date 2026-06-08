@@ -1084,3 +1084,122 @@ class TestRunSyncHubs:
         # Every call to _write_note_applescript must carry account="iCloud"
         for call in mock_write.call_args_list:
             assert call.kwargs.get("account") == "iCloud"
+
+    def test_user_folder_order_overrides_notestore(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        # strict_mode.folder_order = ["Areas", "Inbox"] overrides NoteStore order.
+        # Home note must show Areas heading before Inbox heading.
+        taxonomy = {
+            "taxonomy": {
+                "inbox": {"folder": "Inbox"},
+                "areas": {"folder": "Areas", "subfolders": ["Finance"]},
+            }
+        }
+        notes = [
+            {
+                "id": f"x-coredata://test/p{i}",
+                "title": f"Finance Note {i}",
+                "folder": "Areas",
+                "folder_path": "Areas/Finance",
+                "modified": "2026-01-01",
+            }
+            for i in range(3)
+        ]
+        export_file = tmp_path / "notes-user-order.json"
+        export_file.write_text(json.dumps(notes))
+
+        settings = {
+            "forever_notes_mode": "strict",
+            "strict_mode": {
+                "hub_title_prefix": "✱ ",
+                "home_note_title": "✱ Home",
+                "folder_order": ["Areas", "Inbox"],
+            },
+            "thresholds": {"min_notes_for_hub": 5, "min_notes_for_home_link": 1},
+            "toplevel_folder": {"enabled": False},
+        }
+        mocker.patch("scripts.forever_notes.sync_hubs.load_settings", return_value=settings)
+        mocker.patch("scripts.forever_notes.sync_hubs.load_taxonomy", return_value=taxonomy)
+        mocker.patch("scripts.forever_notes.sync_hubs.local_taxonomy_exists", return_value=True)
+        mocker.patch("scripts.forever_notes.sync_hubs.RunLogger")
+
+        lookup_spy = mocker.patch(
+            "scripts.forever_notes.sync_hubs._lookup_folder_order",
+            return_value=({}, {}),
+        )
+
+        written_bodies: list[str] = []
+
+        def _capture(title: str, body: str, *args: object, **kwargs: object) -> tuple[str, str]:
+            written_bodies.append(body)
+            return ("created", "p1")
+
+        mocker.patch(
+            "scripts.forever_notes.sync_hubs._write_note_applescript",
+            side_effect=_capture,
+        )
+
+        run_sync_hubs(export_file=str(export_file), dry_run=False)
+
+        home_body = written_bodies[-1]
+        assert home_body.index("Areas") < home_body.index("Inbox")
+        # _lookup_folder_order called once (sf-only), NOT for top-level order
+        assert lookup_spy.call_count == 1
+
+    def test_user_folder_order_empty_falls_through_to_notestore(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        # folder_order: [] → _lookup_folder_order is called with both top + sf.
+        taxonomy = {
+            "taxonomy": {
+                "inbox": {"folder": "Inbox"},
+                "areas": {"folder": "Areas", "subfolders": ["Finance"]},
+            }
+        }
+        notes = [
+            {
+                "id": f"x-coredata://test/p{i}",
+                "title": f"Finance Note {i}",
+                "folder": "Areas",
+                "folder_path": "Areas/Finance",
+                "modified": "2026-01-01",
+            }
+            for i in range(3)
+        ]
+        export_file = tmp_path / "notes-fallthrough.json"
+        export_file.write_text(json.dumps(notes))
+
+        settings = {
+            "forever_notes_mode": "strict",
+            "strict_mode": {
+                "hub_title_prefix": "✱ ",
+                "home_note_title": "✱ Home",
+                "folder_order": [],
+            },
+            "thresholds": {"min_notes_for_hub": 5, "min_notes_for_home_link": 1},
+            "toplevel_folder": {"enabled": False},
+        }
+        mocker.patch("scripts.forever_notes.sync_hubs.load_settings", return_value=settings)
+        mocker.patch("scripts.forever_notes.sync_hubs.load_taxonomy", return_value=taxonomy)
+        mocker.patch("scripts.forever_notes.sync_hubs.local_taxonomy_exists", return_value=True)
+        mocker.patch("scripts.forever_notes.sync_hubs.RunLogger")
+
+        lookup_spy = mocker.patch(
+            "scripts.forever_notes.sync_hubs._lookup_folder_order",
+            return_value=({"Areas": 0, "Inbox": 1}, {}),
+        )
+
+        mocker.patch(
+            "scripts.forever_notes.sync_hubs._write_note_applescript",
+            return_value=("created", "p1"),
+        )
+
+        run_sync_hubs(export_file=str(export_file), dry_run=False)
+
+        # _lookup_folder_order called for both top + sf (the normal NoteStore path)
+        assert lookup_spy.call_count == 1

@@ -11,6 +11,7 @@ from scripts.execute.apply_dedup import run_apply_dedup
 from scripts.execute.run_apply import run_apply
 from scripts.execute.run_revert import run_revert
 from scripts.export.run_export import run_backup, run_export
+from scripts.forever_notes.arrange_folders import run_arrange
 from scripts.forever_notes.sync_hubs import run_sync_hubs
 from scripts.maintenance.audit import run_audit
 from scripts.maintenance.process_inbox import run_inbox
@@ -259,6 +260,19 @@ def sync_hubs(
 ) -> None:
     """Create or update ✱ Home and ✱ Hub notes (strict mode only)."""
     run_sync_hubs(export_file=export_file, dry_run=dry_run, json_output=json_output)
+
+
+@app.command()
+def arrange(
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview without writing."
+    ),
+    reset: bool = typer.Option(
+        False, "--reset", help="Clear saved order; restore automatic ordering."
+    ),
+) -> None:
+    """Interactively set the Home note category order (strict mode only)."""
+    run_arrange(dry_run=dry_run, reset=reset)
 
 
 if __name__ == "__main__":

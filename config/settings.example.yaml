@@ -216,6 +216,8 @@ strict_mode:
   internal_links: "text"         # "text" = plain title list (safe, default)
                                   # "html" = applenotes:// links (experimental - may break
                                   #          after iCloud sync; see docs/forever-notes-framework.md)
+  folder_order: []                # top-level category order for the Home note; set by `notes arrange`
+                                  # empty = derive order from Apple Notes sidebar (NoteStore.sqlite)
 
   # -- Future / unreleased settings -----------------------------------------
   # These keys are reserved for upcoming features and are NOT yet read by any script.

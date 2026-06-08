@@ -620,32 +620,61 @@ def run_sync_hubs(
             for n in notes
         ]
 
-    # Read true sidebar order from NoteStore.sqlite (ZPARENTMODIFICATIONDATE DESC).
-    # Falls back to export first-appearance order when Full Disk Access is unavailable;
-    # note that AppleScript returns folders alphabetically, so the fallback is
-    # alphabetical rather than sidebar order.
-    export_top_order, export_sf_order = _lookup_folder_order(container, _con=_con)
-    if export_top_order:
+    # Determine top-level category order.
+    # Priority: (1) user-pinned via `notes arrange`, (2) NoteStore.sqlite sidebar order,
+    # (3) export first-appearance order (alphabetical fallback).
+    export_top_order: dict[str, int] = {}
+    export_sf_order: dict[str, int] = {}
+    user_folder_order: list[str] = strict.get("folder_order") or []
+    if user_folder_order:
+        export_top_order = {name: idx for idx, name in enumerate(user_folder_order)}
         _con.print(
-            f"  [dim]Sidebar order loaded from NoteStore "
-            f"({len(export_top_order)} top-level, {len(export_sf_order)} subfolders).[/dim]"
+            f"  [dim]Folder order from settings ({len(export_top_order)} top-level).[/dim]"
         )
-    else:
-        # Fallback: first-appearance order in the export JSON
-        _seen_ep: set[str] = set()
-        _sf_idx = _top_idx = 0
-        for _n in notes:
-            _fp = _n.get("folder_path", "")
-            if not _fp or _fp in _seen_ep:
-                continue
-            _seen_ep.add(_fp)
-            _top = _fp.split("/")[0]
-            if _top not in export_top_order:
-                export_top_order[_top] = _top_idx
-                _top_idx += 1
-            if "/" in _fp:
+        # NoteStore still consulted for subfolder order only
+        _, export_sf_order = _lookup_folder_order(container, _con=_con)
+        if export_sf_order:
+            _con.print(
+                f"  [dim]Subfolder order from NoteStore ({len(export_sf_order)} subfolders).[/dim]"
+            )
+        else:
+            # sf-only fallback: first-appearance from export
+            _seen_ep: set[str] = set()
+            _sf_idx = 0
+            for _n in notes:
+                _fp = _n.get("folder_path", "")
+                if not _fp or _fp in _seen_ep or "/" not in _fp:
+                    continue
+                _seen_ep.add(_fp)
                 export_sf_order[_fp] = _sf_idx
                 _sf_idx += 1
+    else:
+        # Read true sidebar order from NoteStore.sqlite (ZPARENTMODIFICATIONDATE DESC).
+        # Falls back to export first-appearance order when Full Disk Access is unavailable;
+        # note that AppleScript returns folders alphabetically, so the fallback is
+        # alphabetical rather than sidebar order.
+        export_top_order, export_sf_order = _lookup_folder_order(container, _con=_con)
+        if export_top_order:
+            _con.print(
+                f"  [dim]Sidebar order loaded from NoteStore "
+                f"({len(export_top_order)} top-level, {len(export_sf_order)} subfolders).[/dim]"
+            )
+        else:
+            # Fallback: first-appearance order in the export JSON
+            _seen_ep2: set[str] = set()
+            _sf_idx2 = _top_idx = 0
+            for _n in notes:
+                _fp = _n.get("folder_path", "")
+                if not _fp or _fp in _seen_ep2:
+                    continue
+                _seen_ep2.add(_fp)
+                _top = _fp.split("/")[0]
+                if _top not in export_top_order:
+                    export_top_order[_top] = _top_idx
+                    _top_idx += 1
+                if "/" in _fp:
+                    export_sf_order[_fp] = _sf_idx2
+                    _sf_idx2 += 1
 
     hub_index = _build_theme_index(taxonomy, notes, min_hub)
     home_index = _build_theme_index(taxonomy, notes, min_home)
