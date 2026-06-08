@@ -187,6 +187,14 @@ uv run notes purge --execute   # actually delete; notes go to Recently Deleted (
   `sync-hubs` builds hub content from the latest export, so the export must reflect the
   current state of Apple Notes — including any manual moves made after `notes move`.
 
+- To control the order of categories on the ✱ Home page, run `notes arrange` once after
+  your initial sync. The saved order is persisted to `settings.local.yaml` and applied on
+  every subsequent `sync-hubs` run:
+  ```bash
+  uv run notes arrange        # interactive — pick order, confirm
+  uv run notes arrange --reset  # revert to automatic (Apple Notes sidebar) order
+  ```
+
 ---
 
 ## Ongoing Inbox Processing (weekly)
