@@ -268,10 +268,10 @@ def arrange(
         False, "--dry-run", help="Preview without writing."
     ),
     reset: bool = typer.Option(
-        False, "--reset", help="Clear saved order; restore automatic ordering."
+        False, "--reset", help="Clear saved Home page order; restore automatic ordering."
     ),
 ) -> None:
-    """Interactively set the Home note category order (strict mode only)."""
+    """Interactively set the Home page category order (strict mode only)."""
     run_arrange(dry_run=dry_run, reset=reset)
 
 

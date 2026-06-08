@@ -1,4 +1,4 @@
-"""notes arrange — interactive Home note category ordering."""
+"""notes arrange — interactive Home page category ordering."""
 
 from __future__ import annotations
 
@@ -43,7 +43,9 @@ def _write_folder_order(order: list[str], dry_run: bool) -> None:
         return
 
     if dry_run:
-        console.print(f"  [dim]Would set folder_order: {order_str} in settings.local.yaml[/dim]")
+        console.print(
+            f"  [dim]Would set Home page folder_order: {order_str} in settings.local.yaml[/dim]"
+        )
         return
 
     path.write_text(new_content, encoding="utf-8")
@@ -63,7 +65,8 @@ def run_arrange(dry_run: bool = False, reset: bool = False) -> None:
     if mode != "strict":
         console.print(
             "[yellow]Strict mode is not enabled.[/yellow] "
-            "Set [bold]forever_notes_mode: strict[/bold] in settings.local.yaml to use arrange."
+            "Set [bold]forever_notes_mode: strict[/bold] in settings.local.yaml to use arrange. "
+            "The Home page is only available in strict mode."
         )
         raise typer.Exit(1)
 
@@ -78,10 +81,13 @@ def run_arrange(dry_run: bool = False, reset: bool = False) -> None:
     if reset:
         _write_folder_order([], dry_run)
         if dry_run:
-            console.print("  [dim]Would clear folder_order (restore automatic ordering).[/dim]")
+            console.print(
+                "  [dim]Would clear Home page folder order (restore automatic ordering).[/dim]"
+            )
         else:
             console.print(
-                "[green]Folder order cleared.[/green] Automatic ordering (sidebar / export) restored."
+                "[green]Home page folder order cleared.[/green] "
+                "Automatic ordering (sidebar / export) restored."
             )
         return
 
@@ -95,7 +101,7 @@ def run_arrange(dry_run: bool = False, reset: bool = False) -> None:
         current = folders
 
     console.print(
-        "\nCurrent order — type new order as space-separated numbers, or Enter to keep:\n"
+        "\nHome page category order — type new order as space-separated numbers, or Enter to keep:\n"
     )
     for i, name in enumerate(current, 1):
         console.print(f"  {i}. {name}")
@@ -140,5 +146,5 @@ def run_arrange(dry_run: bool = False, reset: bool = False) -> None:
     _write_folder_order(new_order, dry_run)
     if not dry_run:
         console.print(
-            "[green]Folder order saved.[/green] Run [bold]notes sync-hubs[/bold] to apply."
+            "[green]Home page folder order saved.[/green] Run [bold]notes sync-hubs[/bold] to apply."
         )
