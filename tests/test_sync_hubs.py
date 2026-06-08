@@ -305,6 +305,85 @@ class TestBuildHomeBody:
         assert python_pos > prog_pos
         assert "&nbsp;" in body
 
+    def test_subfolders_sorted_by_export_order(self) -> None:
+        # Taxonomy lists Finance before Health, but export has Health first.
+        # The Home body should reflect the export order (Health before Finance).
+        taxonomy = {
+            "taxonomy": {
+                "areas": {
+                    "folder": "Areas",
+                    "subfolders": ["Finance", "Health & Wellness"],
+                }
+            }
+        }
+        home_index = {
+            "Finance": {"_sf_def": {"name": "Finance"}, "categories": {}, "total": 5},
+            "Health & Wellness": {
+                "_sf_def": {"name": "Health & Wellness"},
+                "categories": {},
+                "total": 5,
+            },
+        }
+        export_sf_order = {"Areas/Health & Wellness": 0, "Areas/Finance": 1}
+        body = _build_home_body(
+            taxonomy,
+            {},
+            home_index,
+            "✱ ",
+            "✱ Home",
+            export_sf_order=export_sf_order,
+        )
+        assert body.index("Health &amp; Wellness") < body.index("Finance")
+
+    def test_subfolder_not_in_export_falls_to_end(self) -> None:
+        # "NewFolder" is in taxonomy but not in export → appears after export-ordered entries.
+        taxonomy = {
+            "taxonomy": {
+                "areas": {
+                    "folder": "Areas",
+                    "subfolders": ["NewFolder", "Finance"],
+                }
+            }
+        }
+        home_index = {
+            "Finance": {"_sf_def": {"name": "Finance"}, "categories": {}, "total": 5},
+            "NewFolder": {"_sf_def": {"name": "NewFolder"}, "categories": {}, "total": 5},
+        }
+        # Export only knows Finance (NewFolder not yet moved to Apple Notes)
+        export_sf_order = {"Areas/Finance": 0}
+        body = _build_home_body(
+            taxonomy,
+            {},
+            home_index,
+            "✱ ",
+            "✱ Home",
+            export_sf_order=export_sf_order,
+        )
+        # Finance (in export, pos 0) should appear before NewFolder (not in export)
+        assert body.index("Finance") < body.index("NewFolder")
+
+    def test_export_sf_order_none_preserves_taxonomy_order(self) -> None:
+        # When export_sf_order is not provided, taxonomy list order is preserved.
+        taxonomy = {
+            "taxonomy": {
+                "areas": {
+                    "folder": "Areas",
+                    "subfolders": ["Finance", "Health & Wellness"],
+                }
+            }
+        }
+        home_index = {
+            "Finance": {"_sf_def": {"name": "Finance"}, "categories": {}, "total": 5},
+            "Health & Wellness": {
+                "_sf_def": {"name": "Health & Wellness"},
+                "categories": {},
+                "total": 5,
+            },
+        }
+        body = _build_home_body(taxonomy, {}, home_index, "✱ ", "✱ Home")
+        # No export_sf_order → taxonomy order (Finance first)
+        assert body.index("Finance") < body.index("Health &amp; Wellness")
+
 
 class TestLookupUuids:
     def test_empty_keys_returns_empty(self) -> None:

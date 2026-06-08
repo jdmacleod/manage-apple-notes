@@ -323,6 +323,7 @@ def _build_home_body(
     hub_ids: dict[str, str] | None = None,
     hub_uuids: dict[str, str] | None = None,
     use_links: bool = False,
+    export_sf_order: dict[str, int] | None = None,
 ) -> str:
     """Build the taxonomy-driven ✱ Home note body as HTML.
 
@@ -332,6 +333,10 @@ def _build_home_body(
     home_index: all subfolders listed on Home (>= min_notes_for_home_link).
       Entries present here but absent from hub_index appear as plain leaf names
       (no Hub note exists to link to).
+    export_sf_order: path → position from the loaded export (Apple Notes native
+      sidebar order). When provided, subfolders within each category are sorted
+      by this order so the Home page reflects the user's current Notes arrangement.
+      Taxonomy subfolders absent from the export fall to the end, then alphabetical.
     The home_title is placed first so Apple Notes uses it as the note title.
     """
     hub_eligible: set[str] = set(hub_index.keys())
@@ -339,6 +344,7 @@ def _build_home_body(
     hub_uuids = hub_uuids or {}
     cats = taxonomy.get("taxonomy", {})
     parts: list[str] = [f"<h1>{html.escape(home_title)}</h1>", "<br>"]
+    _n_sf = len(export_sf_order) if export_sf_order else 0
 
     for cat_key, cat_val in cats.items():
         if not isinstance(cat_val, dict):
@@ -347,6 +353,13 @@ def _build_home_body(
         parts.append(f"<h2>{html.escape(heading)}</h2>")
         deep_paths = [p for p in enumerate_paths(cat_val) if path_depth(p) >= 2]
         if deep_paths:
+            # Sort subfolders by Apple Notes native sidebar order when available;
+            # fall back to taxonomy list order for paths not yet in the export.
+            if export_sf_order:
+                deep_paths = sorted(
+                    deep_paths,
+                    key=lambda p: (export_sf_order.get(p, _n_sf), p),
+                )
             parts.append("<ul>")
             for path in deep_paths:
                 depth = path_depth(path)
@@ -445,6 +458,27 @@ def run_sync_hubs(
             for n in notes
         ]
 
+    # Build export-derived ordering dicts so Home/Hub rendering reflects the user's
+    # current Apple Notes sidebar arrangement rather than (possibly stale) taxonomy
+    # list order.  AppleScript returns folders in native UI order, so first-appearance
+    # in the export mirrors what the user sees in their Notes sidebar.
+    _seen_ep: set[str] = set()
+    export_sf_order: dict[str, int] = {}  # subfolder paths (depth ≥ 2) → position
+    export_top_order: dict[str, int] = {}  # top-level folder names → position
+    _sf_idx = _top_idx = 0
+    for _n in notes:
+        _fp = _n.get("folder_path", "")
+        if not _fp or _fp in _seen_ep:
+            continue
+        _seen_ep.add(_fp)
+        _top = _fp.split("/")[0]
+        if _top not in export_top_order:
+            export_top_order[_top] = _top_idx
+            _top_idx += 1
+        if "/" in _fp:
+            export_sf_order[_fp] = _sf_idx
+            _sf_idx += 1
+
     hub_index = _build_theme_index(taxonomy, notes, min_hub)
     home_index = _build_theme_index(taxonomy, notes, min_home)
 
@@ -493,10 +527,18 @@ def run_sync_hubs(
     created = updated = errors = 0
     hub_ids: dict[str, str] = {}  # hub_title → local pNNN returned by AppleScript
 
-    # Build a position map from taxonomy key order so Hub note category sections
-    # appear in the user's sidebar order rather than alphabetically.
+    # Build cat_order using export top-level folder positions so Hub note category
+    # sections appear in the user's current Apple Notes sidebar order.  Fall back to
+    # taxonomy position when the folder isn't in the export (e.g. pre-move).
     # cat_display = cat_key.capitalize() is how _build_theme_index sets display names.
-    cat_order = {k.capitalize(): i for i, k in enumerate(taxonomy.get("taxonomy", {}).keys())}
+    _fn = taxonomy.get("taxonomy", {})
+    _n_cats = len(_fn)
+    cat_order = {
+        folder_name(v) or k.capitalize(): export_top_order.get(
+            folder_name(v) or k.capitalize(), _n_cats + i
+        )
+        for i, (k, v) in enumerate(_fn.items())
+    }
 
     # Process Hub notes in taxonomy subfolder order (matches sidebar); alphabetical fallback.
     t_order = _theme_order(taxonomy)
@@ -573,6 +615,7 @@ def run_sync_hubs(
         hub_ids,
         hub_uuids,
         use_links=use_links,
+        export_sf_order=export_sf_order,
     )
 
     home_status, _ = _write_note_applescript(
