@@ -399,6 +399,55 @@ class TestBuildHomeBody:
         # No export_sf_order → taxonomy order (Finance first)
         assert body.index("Finance") < body.index("Health &amp; Wellness")
 
+    def test_categories_sorted_by_export_top_order(self) -> None:
+        # Taxonomy lists inbox before areas, but export has areas first in the sidebar.
+        # Home note should show Areas h2 before Inbox h2.
+        taxonomy = {
+            "taxonomy": {
+                "inbox": {"folder": "Inbox"},
+                "areas": {
+                    "folder": "Areas",
+                    "subfolders": ["Finance"],
+                },
+            }
+        }
+        home_index = {
+            "Finance": {"_sf_def": {"name": "Finance"}, "categories": {}, "total": 3}
+        }
+        export_top_order = {"Areas": 0, "Inbox": 1}
+        body = _build_home_body(
+            taxonomy, {}, home_index, "✱ ", "✱ Home", export_top_order=export_top_order
+        )
+        assert body.index("Areas") < body.index("Inbox")
+
+    def test_categories_fall_back_to_taxonomy_order_without_export_top_order(self) -> None:
+        # Without export_top_order, categories appear in taxonomy dict order (inbox first).
+        taxonomy = {
+            "taxonomy": {
+                "inbox": {"folder": "Inbox"},
+                "areas": {"folder": "Areas"},
+            }
+        }
+        body = _build_home_body(taxonomy, {}, {}, "✱ ", "✱ Home")
+        assert body.index("Inbox") < body.index("Areas")
+
+    def test_category_not_in_export_falls_to_end(self) -> None:
+        # "Archive" is in taxonomy but not in export → appears after export-present categories.
+        taxonomy = {
+            "taxonomy": {
+                "archive": {"folder": "Archive"},
+                "areas": {"folder": "Areas", "subfolders": ["Finance"]},
+            }
+        }
+        home_index = {
+            "Finance": {"_sf_def": {"name": "Finance"}, "categories": {}, "total": 3}
+        }
+        export_top_order = {"Areas": 0}  # Archive absent from export
+        body = _build_home_body(
+            taxonomy, {}, home_index, "✱ ", "✱ Home", export_top_order=export_top_order
+        )
+        assert body.index("Areas") < body.index("Archive")
+
     def test_flat_notes_shown_when_no_subfolders(self) -> None:
         # "Projects" has no subfolders in taxonomy; flat_index has notes for it.
         taxonomy = {"taxonomy": {"projects": {"folder": "Projects"}}}
@@ -713,6 +762,73 @@ class TestRunSyncHubs:
         # After stripping "Library/" the notes match "Resources/Reference" in the
         # taxonomy → home_index non-empty → hub and home writes are attempted.
         assert write_mock.called
+
+    def test_export_top_order_drives_home_category_order(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        # Taxonomy: inbox before areas. Export: Areas/Finance notes appear before
+        # Inbox notes. Home note should show Areas heading before Inbox heading.
+        taxonomy = {
+            "taxonomy": {
+                "inbox": {"folder": "Inbox"},
+                "areas": {
+                    "folder": "Areas",
+                    "subfolders": ["Finance"],
+                },
+            }
+        }
+        # Areas/Finance notes come first in the export → Areas gets top_order 0
+        notes = [
+            {
+                "id": f"x-coredata://test/p{i}",
+                "title": f"Finance Note {i}",
+                "folder": "Areas",
+                "folder_path": "Areas/Finance",
+                "modified": "2026-01-01",
+            }
+            for i in range(3)
+        ] + [
+            {
+                "id": f"x-coredata://test/p{i + 10}",
+                "title": f"Inbox Note {i}",
+                "folder": "Inbox",
+                "folder_path": "Inbox",
+                "modified": "2026-01-01",
+            }
+            for i in range(3)
+        ]
+        export_file = tmp_path / "notes-cat-order.json"
+        export_file.write_text(json.dumps(notes))
+
+        settings = {
+            "forever_notes_mode": "strict",
+            "strict_mode": {"hub_title_prefix": "✱ ", "home_note_title": "✱ Home"},
+            "thresholds": {"min_notes_for_hub": 5, "min_notes_for_home_link": 1},
+            "toplevel_folder": {"enabled": False},
+        }
+        mocker.patch("scripts.forever_notes.sync_hubs.load_settings", return_value=settings)
+        mocker.patch("scripts.forever_notes.sync_hubs.load_taxonomy", return_value=taxonomy)
+        mocker.patch("scripts.forever_notes.sync_hubs.local_taxonomy_exists", return_value=True)
+        mocker.patch("scripts.forever_notes.sync_hubs.RunLogger")
+
+        written_bodies: list[str] = []
+
+        def _capture(title: str, body: str, *args: object, **kwargs: object) -> tuple[str, str]:
+            written_bodies.append(body)
+            return ("created", "p1")
+
+        mocker.patch(
+            "scripts.forever_notes.sync_hubs._write_note_applescript",
+            side_effect=_capture,
+        )
+
+        run_sync_hubs(export_file=str(export_file), dry_run=False)
+
+        home_body = written_bodies[-1]
+        # Export order: Areas first → Areas h2 must precede Inbox h2
+        assert home_body.index("Areas") < home_body.index("Inbox")
 
     def test_flat_notes_appear_in_home_body(
         self,

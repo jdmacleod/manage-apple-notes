@@ -342,12 +342,14 @@ def _build_home_body(
     hub_uuids: dict[str, str] | None = None,
     use_links: bool = False,
     export_sf_order: dict[str, int] | None = None,
+    export_top_order: dict[str, int] | None = None,
     flat_index: dict[str, list[tuple[str, str]]] | None = None,
     flat_uuids: dict[str, str] | None = None,
 ) -> str:
     """Build the taxonomy-driven ✱ Home note body as HTML.
 
-    Categories appear in taxonomy file order; headings use the folder: value.
+    Categories appear in export (Apple Notes sidebar) order when export_top_order
+    is provided; otherwise taxonomy file order is used. Headings use the folder: value.
     hub_index: subfolders that have a Hub note (>= min_notes_for_hub). These
       receive Hub-title rendering and, when use_links=True, applenotes:// links.
     home_index: all subfolders listed on Home (>= min_notes_for_home_link).
@@ -357,6 +359,9 @@ def _build_home_body(
       sidebar order). When provided, subfolders within each category are sorted
       by this order so the Home page reflects the user's current Notes arrangement.
       Taxonomy subfolders absent from the export fall to the end, then alphabetical.
+    export_top_order: top-level folder name → position from the loaded export.
+      When provided, category h2 headings are sorted by this order. Categories
+      absent from the export fall to the end, then alphabetical by taxonomy key.
     flat_index: category display name → [(title, nid)] for notes sitting directly
       in a top-level taxonomy folder with no subfolders. Rendered when a category
       section would otherwise be empty (no home-eligible subfolders).
@@ -370,7 +375,20 @@ def _build_home_body(
     parts: list[str] = [f"<h1>{html.escape(home_title)}</h1>", "<br>"]
     _n_sf = len(export_sf_order) if export_sf_order else 0
 
-    for cat_key, cat_val in cats.items():
+    # Sort category headings by Apple Notes sidebar order when available;
+    # fall back to taxonomy dict insertion order for categories not in the export.
+    cat_items = list(cats.items())
+    if export_top_order:
+        _n_top = len(export_top_order)
+        cat_items = sorted(
+            cat_items,
+            key=lambda kv: (
+                export_top_order.get(folder_name(kv[1]) or kv[0].capitalize(), _n_top),
+                kv[0],
+            ),
+        )
+
+    for cat_key, cat_val in cat_items:
         if not isinstance(cat_val, dict):
             continue
         heading = folder_name(cat_val) or cat_key.capitalize()
@@ -678,6 +696,7 @@ def run_sync_hubs(
         hub_uuids,
         use_links=use_links,
         export_sf_order=export_sf_order,
+        export_top_order=export_top_order,
         flat_index=flat_index,
         flat_uuids=note_uuid_map,
     )
