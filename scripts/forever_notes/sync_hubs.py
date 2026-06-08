@@ -135,6 +135,114 @@ def _lookup_uuids(primary_keys: list[str], _con: Console | None = None) -> dict[
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def _lookup_folder_order(
+    container: str = "",
+    _con: Console | None = None,
+) -> tuple[dict[str, int], dict[str, int]]:
+    """Read sidebar folder order from NoteStore.sqlite.
+
+    Returns (top_order, sf_order):
+      top_order  folder name → 0-based sidebar position for taxonomy-level folders
+      sf_order   folder path → 0-based position within siblings for subfolders
+
+    Siblings are sorted by ZPARENTMODIFICATIONDATE DESC. When a folder is
+    repositioned in the Apple Notes sidebar, Apple Notes writes the current
+    timestamp into ZPARENTMODIFICATIONDATE on that folder; DESC order puts the
+    most-recently-repositioned folder first, recovering the sidebar arrangement
+    for top-to-bottom drag-and-drop reorganisations.
+
+    Requires Full Disk Access for Terminal. Returns ({}, {}) on any failure so
+    callers fall back gracefully to export-derived (alphabetical) ordering.
+    """
+    _c = _con or console
+    if not NOTESTORE_DB.exists():
+        return {}, {}
+
+    tmp_dir = tempfile.mkdtemp()
+    db_copy = Path(tmp_dir) / "NoteStore_copy.sqlite"
+    try:
+        shutil.copy2(NOTESTORE_DB, db_copy)
+        for ext in ("-wal", "-shm"):
+            src = Path(str(NOTESTORE_DB) + ext)
+            if src.exists():
+                shutil.copy2(src, Path(str(db_copy) + ext))
+    except PermissionError:
+        _c.print(
+            "[yellow]Folder sidebar order unavailable:[/yellow] Full Disk Access for Terminal "
+            "is required to read NoteStore.sqlite.\n"
+            "  Grant it in System Settings → Privacy & Security → Full Disk Access.\n"
+            "  Home note category order will fall back to export-derived (alphabetical) ordering."
+        )
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        return {}, {}
+
+    try:
+        db_con = sqlite3.connect(str(db_copy))
+        # Z_ENT=15 = ICFolder; ZSORTORDER=2 = user-created folders (excludes the
+        # built-in "Notes" default folder (ZSORTORDER=1) and Recently Deleted (3)).
+        # ZTITLE2 holds folder display names for user folders.
+        rows = db_con.execute(
+            """
+            SELECT Z_PK, ZTITLE2, ZPARENT, ZPARENTMODIFICATIONDATE
+            FROM ZICCLOUDSYNCINGOBJECT
+            WHERE Z_ENT = 15 AND ZSORTORDER = 2 AND ZTITLE2 IS NOT NULL
+            """
+        ).fetchall()
+        db_con.close()
+    except Exception as exc:
+        _c.print(f"[yellow]Folder order lookup failed: {exc}[/yellow]")
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        return {}, {}
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    # pk → (title, parent_pk, parent_mod_date)
+    pk_map: dict[int, tuple[str, int | None, float]] = {
+        pk: (title, parent, float(pmdate) if pmdate is not None else 0.0)
+        for pk, title, parent, pmdate in rows
+    }
+
+    # Build children lists sorted by ZPARENTMODIFICATIONDATE DESC
+    _children: dict[int | None, list[tuple[int, float]]] = {}
+    for pk, (_, parent, pmdate) in pk_map.items():
+        _children.setdefault(parent, []).append((pk, pmdate))
+    for lst in _children.values():
+        lst.sort(key=lambda x: x[1], reverse=True)
+
+    # Find container pk when enabled; return empty on failure so the caller
+    # can fall back to export order.
+    walk_root: int | None = None
+    if container:
+        for pk, (title, _, _) in pk_map.items():
+            if title == container:
+                walk_root = pk
+                break
+        if walk_root is None:
+            return {}, {}
+    # else walk_root stays None → walk account-root folders directly
+
+    top_order: dict[str, int] = {}
+    sf_order: dict[str, int] = {}
+    _sf_idx = 0
+
+    def _walk(parent_pk: int | None, path_prefix: str, depth: int) -> None:
+        nonlocal _sf_idx
+        for pos, (child_pk, _) in enumerate(_children.get(parent_pk, [])):
+            child_title = pk_map[child_pk][0]
+            if depth == 0:
+                # Taxonomy-level: record position by folder name
+                top_order[child_title] = pos
+                _walk(child_pk, child_title, depth + 1)
+            else:
+                full_path = f"{path_prefix}/{child_title}"
+                sf_order[full_path] = _sf_idx
+                _sf_idx += 1
+                _walk(child_pk, full_path, depth + 1)
+
+    _walk(walk_root, "", 0)
+    return top_order, sf_order
+
+
 def _note_link(title: str, nid: str, uuid: str = "") -> str:
     """Return an HTML link to a note, or plain escaped text if no ID available.
 
@@ -512,26 +620,32 @@ def run_sync_hubs(
             for n in notes
         ]
 
-    # Build export-derived ordering dicts so Home/Hub rendering reflects the user's
-    # current Apple Notes sidebar arrangement rather than (possibly stale) taxonomy
-    # list order.  AppleScript returns folders in native UI order, so first-appearance
-    # in the export mirrors what the user sees in their Notes sidebar.
-    _seen_ep: set[str] = set()
-    export_sf_order: dict[str, int] = {}  # subfolder paths (depth ≥ 2) → position
-    export_top_order: dict[str, int] = {}  # top-level folder names → position
-    _sf_idx = _top_idx = 0
-    for _n in notes:
-        _fp = _n.get("folder_path", "")
-        if not _fp or _fp in _seen_ep:
-            continue
-        _seen_ep.add(_fp)
-        _top = _fp.split("/")[0]
-        if _top not in export_top_order:
-            export_top_order[_top] = _top_idx
-            _top_idx += 1
-        if "/" in _fp:
-            export_sf_order[_fp] = _sf_idx
-            _sf_idx += 1
+    # Read true sidebar order from NoteStore.sqlite (ZPARENTMODIFICATIONDATE DESC).
+    # Falls back to export first-appearance order when Full Disk Access is unavailable;
+    # note that AppleScript returns folders alphabetically, so the fallback is
+    # alphabetical rather than sidebar order.
+    export_top_order, export_sf_order = _lookup_folder_order(container, _con=_con)
+    if export_top_order:
+        _con.print(
+            f"  [dim]Sidebar order loaded from NoteStore "
+            f"({len(export_top_order)} top-level, {len(export_sf_order)} subfolders).[/dim]"
+        )
+    else:
+        # Fallback: first-appearance order in the export JSON
+        _seen_ep: set[str] = set()
+        _sf_idx = _top_idx = 0
+        for _n in notes:
+            _fp = _n.get("folder_path", "")
+            if not _fp or _fp in _seen_ep:
+                continue
+            _seen_ep.add(_fp)
+            _top = _fp.split("/")[0]
+            if _top not in export_top_order:
+                export_top_order[_top] = _top_idx
+                _top_idx += 1
+            if "/" in _fp:
+                export_sf_order[_fp] = _sf_idx
+                _sf_idx += 1
 
     hub_index = _build_theme_index(taxonomy, notes, min_hub)
     home_index = _build_theme_index(taxonomy, notes, min_home)

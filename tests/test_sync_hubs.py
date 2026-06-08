@@ -14,6 +14,7 @@ from scripts.forever_notes.sync_hubs import (
     _generate_hub_body,
     _hub_tag,
     _hub_title,
+    _lookup_folder_order,
     _lookup_uuids,
     _note_link,
     _placement_label,
@@ -542,6 +543,101 @@ class TestLookupUuids:
         assert result == {"123": "STABLE-UUID-123"}
 
 
+class TestLookupFolderOrder:
+    # Rows: (Z_PK, ZTITLE2, ZPARENT, ZPARENTMODIFICATIONDATE)
+    # Sidebar order for Library children: Inbox(most recent), Projects, Areas, Resources, Archive
+    _FOLDER_ROWS = [
+        (1, "Library", None, 100.0),
+        (2, "Inbox",    1,   500.0),   # most recent → sidebar pos 0
+        (3, "Projects", 1,   490.0),
+        (4, "Areas",    1,   480.0),
+        (5, "Resources", 1,  470.0),
+        (6, "Archive",  1,   460.0),   # least recent → sidebar pos 4
+        (7, "Finance",  4,   300.0),   # subfolder of Areas
+        (8, "Health",   4,   290.0),
+    ]
+
+    def _mock_db(self, mocker: MagicMock, tmp_path: Path) -> None:
+        fake_db = tmp_path / "NoteStore.sqlite"
+        fake_db.write_bytes(b"fake")
+        mocker.patch("scripts.forever_notes.sync_hubs.NOTESTORE_DB", fake_db)
+        mocker.patch("shutil.copy2")
+        mock_con = MagicMock()
+        mock_con.execute.return_value.fetchall.return_value = self._FOLDER_ROWS
+        mocker.patch("sqlite3.connect", return_value=mock_con)
+
+    def test_db_absent_returns_empty(self, mocker: MagicMock) -> None:
+        mocker.patch(
+            "scripts.forever_notes.sync_hubs.NOTESTORE_DB", Path("/nonexistent/NoteStore.sqlite")
+        )
+        top, sf = _lookup_folder_order(container="Library")
+        assert top == {}
+        assert sf == {}
+
+    def test_permission_error_returns_empty(self, mocker: MagicMock, tmp_path: Path) -> None:
+        fake_db = tmp_path / "NoteStore.sqlite"
+        fake_db.write_bytes(b"fake")
+        mocker.patch("scripts.forever_notes.sync_hubs.NOTESTORE_DB", fake_db)
+        mocker.patch("shutil.copy2", side_effect=PermissionError)
+        top, sf = _lookup_folder_order(container="Library")
+        assert top == {}
+        assert sf == {}
+
+    def test_container_not_found_returns_empty(self, mocker: MagicMock, tmp_path: Path) -> None:
+        self._mock_db(mocker, tmp_path)
+        top, sf = _lookup_folder_order(container="Nonexistent")
+        assert top == {}
+        assert sf == {}
+
+    def test_top_order_by_parent_mod_date_desc(self, mocker: MagicMock, tmp_path: Path) -> None:
+        self._mock_db(mocker, tmp_path)
+        top, _ = _lookup_folder_order(container="Library")
+        # Inbox has highest pmdate → pos 0; Archive lowest → pos 4
+        assert top["Inbox"] == 0
+        assert top["Projects"] == 1
+        assert top["Areas"] == 2
+        assert top["Resources"] == 3
+        assert top["Archive"] == 4
+
+    def test_sf_order_subfolders_sorted_by_parent_mod_date(
+        self, mocker: MagicMock, tmp_path: Path
+    ) -> None:
+        self._mock_db(mocker, tmp_path)
+        _, sf = _lookup_folder_order(container="Library")
+        # Finance (pmdate 300) > Health (290) → Finance appears first
+        assert sf["Areas/Finance"] < sf["Areas/Health"]
+
+    def test_no_container_walks_root(self, mocker: MagicMock, tmp_path: Path) -> None:
+        # Without a container, children of parent=None are returned at depth 0.
+        fake_db = tmp_path / "NoteStore.sqlite"
+        fake_db.write_bytes(b"fake")
+        mocker.patch("scripts.forever_notes.sync_hubs.NOTESTORE_DB", fake_db)
+        mocker.patch("shutil.copy2")
+        # Flat layout: taxonomy folders are at root (ZPARENT=None)
+        flat_rows = [
+            (1, "Inbox",    None, 500.0),
+            (2, "Projects", None, 490.0),
+            (3, "Areas",    None, 480.0),
+        ]
+        mock_con = MagicMock()
+        mock_con.execute.return_value.fetchall.return_value = flat_rows
+        mocker.patch("sqlite3.connect", return_value=mock_con)
+        top, _ = _lookup_folder_order(container="")
+        assert top["Inbox"] == 0
+        assert top["Projects"] == 1
+        assert top["Areas"] == 2
+
+    def test_sqlite_error_returns_empty(self, mocker: MagicMock, tmp_path: Path) -> None:
+        fake_db = tmp_path / "NoteStore.sqlite"
+        fake_db.write_bytes(b"fake")
+        mocker.patch("scripts.forever_notes.sync_hubs.NOTESTORE_DB", fake_db)
+        mocker.patch("shutil.copy2")
+        mocker.patch("sqlite3.connect", side_effect=Exception("corrupt"))
+        top, sf = _lookup_folder_order(container="Library")
+        assert top == {}
+        assert sf == {}
+
+
 class TestWriteNoteApplescript:
     def test_dry_run_returns_dry_run_status(self) -> None:
         status, local_id = _write_note_applescript(
@@ -762,6 +858,68 @@ class TestRunSyncHubs:
         # After stripping "Library/" the notes match "Resources/Reference" in the
         # taxonomy → home_index non-empty → hub and home writes are attempted.
         assert write_mock.called
+
+    def test_notestore_order_drives_home_category_order(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        # _lookup_folder_order returns Areas before Inbox (reverse of taxonomy order).
+        # Home note should show Areas h2 before Inbox h2 regardless of taxonomy order.
+        taxonomy = {
+            "taxonomy": {
+                "inbox": {"folder": "Inbox"},
+                "areas": {
+                    "folder": "Areas",
+                    "subfolders": ["Finance"],
+                },
+            }
+        }
+        notes = [
+            {
+                "id": f"x-coredata://test/p{i}",
+                "title": f"Finance Note {i}",
+                "folder": "Areas",
+                "folder_path": "Areas/Finance",
+                "modified": "2026-01-01",
+            }
+            for i in range(3)
+        ]
+        export_file = tmp_path / "notes-notestore-order.json"
+        export_file.write_text(json.dumps(notes))
+
+        settings = {
+            "forever_notes_mode": "strict",
+            "strict_mode": {"hub_title_prefix": "✱ ", "home_note_title": "✱ Home"},
+            "thresholds": {"min_notes_for_hub": 5, "min_notes_for_home_link": 1},
+            "toplevel_folder": {"enabled": False},
+        }
+        mocker.patch("scripts.forever_notes.sync_hubs.load_settings", return_value=settings)
+        mocker.patch("scripts.forever_notes.sync_hubs.load_taxonomy", return_value=taxonomy)
+        mocker.patch("scripts.forever_notes.sync_hubs.local_taxonomy_exists", return_value=True)
+        mocker.patch("scripts.forever_notes.sync_hubs.RunLogger")
+
+        # NoteStore returns Areas(pos 0) before Inbox(pos 1) — opposite of taxonomy order
+        mocker.patch(
+            "scripts.forever_notes.sync_hubs._lookup_folder_order",
+            return_value=({"Areas": 0, "Inbox": 1}, {}),
+        )
+
+        written_bodies: list[str] = []
+
+        def _capture(title: str, body: str, *args: object, **kwargs: object) -> tuple[str, str]:
+            written_bodies.append(body)
+            return ("created", "p1")
+
+        mocker.patch(
+            "scripts.forever_notes.sync_hubs._write_note_applescript",
+            side_effect=_capture,
+        )
+
+        run_sync_hubs(export_file=str(export_file), dry_run=False)
+
+        home_body = written_bodies[-1]
+        assert home_body.index("Areas") < home_body.index("Inbox")
 
     def test_export_top_order_drives_home_category_order(
         self,
