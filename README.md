@@ -8,6 +8,8 @@
 
 AI-powered organization for Apple Notes. The pipeline is **export → discover → classify → human review → apply** — nothing touches your notes until you approve a proposal.
 
+![Apple Notes organized with manage-apple-notes](docs/images/apple-notes.png)
+
 ## Quickstart
 
 > macOS 26+ · Apple Silicon · Apple Intelligence enabled in System Settings → Apple Intelligence & Siri
