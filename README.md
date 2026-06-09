@@ -78,8 +78,8 @@ uv run notes move                # apply approved proposal
 uv run notes dedup               # detect duplicates → data/dedup-proposals/
 uv run notes review --dedup      # interactive dedup review
 uv run notes purge --execute     # delete confirmed duplicates
-uv run notes sync-hubs           # update ✱ Home and Hub notes (strict mode only)
 uv run notes arrange             # set Home page category order (strict mode only)
+uv run notes sync-hubs           # update ✱ Home and Hub notes (strict mode only)
 
 # Ongoing
 uv run notes triage              # triage Inbox → data/proposals/

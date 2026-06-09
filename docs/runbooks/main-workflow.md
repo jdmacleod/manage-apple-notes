@@ -180,22 +180,19 @@ uv run notes purge --execute   # actually delete; notes go to Recently Deleted (
 
 - Run `uv run notes audit` to find remaining stale, stub, or duplicate notes
 - Set a recurring inbox-processing habit (see below)
-- If running in strict mode (`forever_notes_mode: strict`), export first then sync hubs
-  to create the ✱ Home and ✱ Hub notes:
-  ```bash
-  uv run notes export
-  uv run notes sync-hubs
-  ```
-  `sync-hubs` builds hub content from the latest export, so the export must reflect the
-  current state of Apple Notes — including any manual moves made after `notes move`.
-
-- To control the order of categories on the ✱ Home page, run `notes arrange` once after
-  your initial sync. The saved order is persisted to `settings.local.yaml` and applied on
-  every subsequent `sync-hubs` run:
+- If running in strict mode (`forever_notes_mode: strict`), set your preferred category
+  order first, then export and sync hubs so the Home note reflects your intent from the
+  start:
   ```bash
   uv run notes arrange        # interactive — pick order, confirm
   uv run notes arrange --reset  # revert to automatic (Apple Notes sidebar) order
+  uv run notes export
+  uv run notes sync-hubs
   ```
+  The order chosen in `notes arrange` is saved to `settings.local.yaml` and applied on
+  every `sync-hubs` run. `sync-hubs` builds hub content from the latest export, so the
+  export must reflect the current state of Apple Notes — including any manual moves made
+  after `notes move`.
 
 ---
 
