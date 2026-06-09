@@ -22,19 +22,22 @@ cd manage-apple-notes
 git config core.hooksPath .git-hooks   # blocks accidental data commits
 uv sync
 
-# 3. Pick a framework and name your folders (takes ~2 minutes)
+# 3. Export your notes first — the setup wizard uses your library to recommend a framework
+uv run notes export
+
+# 4. Pick a framework and name your folders (takes ~2 minutes)
 uv run notes setup
 
-# 4. Build the on-device inference bridge (requires Xcode 26)
+# 5. Build the on-device inference bridge (Apple Intelligence only — requires Xcode 26)
 make -C swift/apple-llm build
 
-# 5. Grant Automation permission
+# 6. Grant Automation permission
 # System Settings → Privacy & Security → Automation → enable Notes for your terminal app.
 
-# 6. Run the pipeline
-uv run notes export
+# 7. Classify, review, and apply
 uv run notes classify
-# Review data/proposals/proposal-YYYY-MM-DD.json, then:
+uv run notes review              # interactive review — no JSON editing needed
+uv run notes backup              # safety snapshot before moving anything
 uv run notes move --dry-run
 uv run notes move
 ```
@@ -60,7 +63,7 @@ See [docs/runbooks/main-workflow.md](docs/runbooks/main-workflow.md) for the ful
 
 ```bash
 # First-time setup
-uv run notes export              # export from Apple Notes
+uv run notes export              # export from Apple Notes (run before setup)
 uv run notes setup               # interactive wizard — pick framework, name folders
 
 # Initial library setup
@@ -69,22 +72,24 @@ uv run notes discover            # map thematic clusters → data/theme-maps/
 uv run notes draft               # generate taxonomy draft → data/taxonomy-drafts/
 # → HUMAN: review draft, copy to config/taxonomy.local.yaml
 uv run notes classify            # classify notes → data/proposals/
-# → HUMAN: review proposal JSON
+uv run notes review              # interactive review — no JSON editing needed
 uv run notes move --dry-run      # preview moves
 uv run notes move                # apply approved proposal
 uv run notes dedup               # detect duplicates → data/dedup-proposals/
-# → HUMAN: review dedup proposal
+uv run notes review --dedup      # interactive dedup review
 uv run notes purge --execute     # delete confirmed duplicates
 uv run notes sync-hubs           # update ✱ Home and Hub notes (strict mode only)
 uv run notes arrange             # set Home page category order (strict mode only)
 
 # Ongoing
 uv run notes triage              # triage Inbox → data/proposals/
+uv run notes review              # interactive review of triage proposal
 uv run notes audit               # quality report (stale, stub, duplicate)
 uv run notes sync-hubs           # update ✱ Home and Hub notes (strict mode only)
 
 # Recovery
-uv run notes restore             # recreate notes lost during a move (Note: can only recreate text notes!)
+uv run notes revert              # reverse a previous move (returns notes to original folders)
+uv run notes restore             # recreate notes lost during a move (text only)
 ```
 
 Most commands accept `--dry-run`. `purge` is dry-run by default; pass `--execute` to apply.

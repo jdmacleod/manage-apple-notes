@@ -15,6 +15,8 @@ Run this once to organize an existing library into the configured folder taxonom
 
 ### Step 1 — Export
 
+> **Run this before `notes setup`.** The setup wizard uses your export to recommend a framework and detect your folder structure. If you haven't run setup yet, do Step 1 first, then run `uv run notes setup`, then return to Step 2.
+
 ```bash
 uv run notes export
 ```
