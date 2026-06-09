@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-06-08
+
 ### Documentation
 
 - README quickstart: `notes export` moved before `notes setup` so the wizard can analyse the library for framework recommendation (matches the runbook and Commands section, which already had the correct order)
@@ -15,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README Commands section: added `notes revert` to the Recovery block (was documented in the runbook but absent from the README)
 - README and runbook: `notes arrange` now appears before `notes sync-hubs` in all examples — the saved category order must be set before syncing so the Home note reflects the user's intent
 - Runbook Step 1: added callout directing users who haven't set up yet to run export before `notes setup`
+- README: added Apple Notes screenshot
 
 ## [0.4.0] - 2026-06-08
 
