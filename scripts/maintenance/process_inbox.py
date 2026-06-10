@@ -156,6 +156,15 @@ def run_inbox(dry_run: bool, json_output: bool = False) -> None:
             for result in results:
                 note_id = result.get("id", "")
                 note = note_index.get(note_id, {})
+                if result.get("_no_change"):
+                    no_change.append(
+                        {
+                            "id": note_id,
+                            "title": note.get("title", ""),
+                            "current_folder": note.get("folder", ""),
+                        }
+                    )
+                    continue
                 current_folder = note.get("folder", "")
                 confidence = result.get("confidence", "low")
                 reason = result.get("reason", "")

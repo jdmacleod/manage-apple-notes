@@ -290,11 +290,25 @@ def classify_batch_resilient(
                 ) + classify_batch_resilient(
                     provider, notes_batch[mid:], system_prompt, settings, con=_con
                 )
+            # Single note: body content triggers the locale filter even after normalization
+            # (e.g. dense foreign-vocabulary lists with no English sentence structure).
+            # Retry with title only — the title is usually plain English and sufficient
+            # to classify the note correctly.
+            note = notes_batch[0]
             _con.print(
-                f"[yellow]Warning:[/yellow] skipping note '{notes_batch[0].get('title', '')}'"
-                " — Apple Intelligence locale error (unsupported language)"
+                f"[yellow]Locale error — retrying '{note.get('title', '')}' with title only[/yellow]"
             )
-            return []
+            try:
+                return classify_batch(provider, [{**note, "body": ""}], system_prompt, settings)
+            except Exception:
+                pass
+            # Title-only also failed.  Leave the note in its current folder and surface
+            # a warning so the user knows it was not classified.
+            _con.print(
+                f"[yellow]Warning:[/yellow] '{note.get('title', '')}' could not be classified"
+                f" — Apple Intelligence locale error. Left in '{note.get('folder', '')}'."
+            )
+            return [{"id": note.get("id", ""), "_no_change": True}]
         is_recoverable = is_context_overflow(exc) or isinstance(
             exc, (ValueError, json.JSONDecodeError)
         )
@@ -519,6 +533,15 @@ def run_classify(export_file: str | None, dry_run: bool, json_output: bool = Fal
             for result in results:
                 note_id = result.get("id", "")
                 note = note_index.get(note_id, {})
+                if result.get("_no_change"):
+                    no_change.append(
+                        {
+                            "id": note_id,
+                            "title": note.get("title", ""),
+                            "current_folder": note.get("folder", ""),
+                        }
+                    )
+                    continue
                 current_folder = note.get("folder", "")
                 confidence = result.get("confidence", "low")
                 reason = result.get("reason", "")
