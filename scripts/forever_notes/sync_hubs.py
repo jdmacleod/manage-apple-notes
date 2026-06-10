@@ -13,7 +13,13 @@ from pathlib import Path
 
 from rich.console import Console
 
-from scripts.config import find_latest_export, load_settings, load_taxonomy, local_taxonomy_exists
+from scripts.config import (
+    export_age_hours,
+    find_latest_export,
+    load_settings,
+    load_taxonomy,
+    local_taxonomy_exists,
+)
 from scripts.folder_utils import enumerate_paths, folder_name, path_depth
 from scripts.json_output import emit_result
 from scripts.run_logger import RunLogger, logs_dir_path
@@ -545,7 +551,10 @@ def _build_home_body(
 
 
 def run_sync_hubs(
-    export_file: str | None = None, dry_run: bool = False, json_output: bool = False
+    export_file: str | None = None,
+    dry_run: bool = False,
+    json_output: bool = False,
+    force: bool = False,
 ) -> None:
     _con = Console(stderr=True) if json_output else console
     settings = load_settings()
@@ -601,6 +610,25 @@ def run_sync_hubs(
                 _con.print(f"[red]{exc}[/red]")
             raise SystemExit(1) from exc
 
+    max_age = (settings.get("safety") or {}).get("export_max_age_hours", 24)
+    if max_age:
+        age_h = export_age_hours(export_path)
+        if age_h > max_age:
+            _con.print(
+                f"[yellow]Warning:[/yellow] Export is {age_h:.0f}h old"
+                " — Hub/Home notes may not reflect current library state."
+            )
+            if not force:
+                msg = (
+                    f"Refusing to update Hub/Home notes from a {age_h:.0f}h-old export."
+                    " Re-run 'notes export' first, or use --force to override."
+                )
+                if json_output:
+                    emit_result("sync-hubs", status="error", dry_run=dry_run, error=msg)
+                else:
+                    _con.print(f"[red]{msg}[/red]")
+                raise SystemExit(1)
+
     _con.print(f"Loading export: [dim]{export_path.name}[/dim]")
     with open(export_path) as f:
         notes: list[dict] = json.load(f)
@@ -628,9 +656,7 @@ def run_sync_hubs(
     user_folder_order: list[str] = strict.get("folder_order") or []
     if user_folder_order:
         export_top_order = {name: idx for idx, name in enumerate(user_folder_order)}
-        _con.print(
-            f"  [dim]Folder order from settings ({len(export_top_order)} top-level).[/dim]"
-        )
+        _con.print(f"  [dim]Folder order from settings ({len(export_top_order)} top-level).[/dim]")
         # NoteStore still consulted for subfolder order only
         _, export_sf_order = _lookup_folder_order(container, _con=_con)
         if export_sf_order:

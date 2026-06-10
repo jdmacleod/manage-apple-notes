@@ -191,10 +191,13 @@ def move(
         help="Proposal JSON to apply. Defaults to most recent file in data/proposals/.",
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview moves without touching Notes."),
+    force: bool = typer.Option(
+        False, "--force", help="Apply proposal even if it references a stale export."
+    ),
     json_output: bool = typer.Option(False, "--json", help=_JSON_HELP),
 ) -> None:
     """Move notes in Apple Notes according to an approved proposal."""
-    run_apply(proposal_file=proposal_file, dry_run=dry_run, json_output=json_output)
+    run_apply(proposal_file=proposal_file, dry_run=dry_run, json_output=json_output, force=force)
 
 
 @app.command()
@@ -256,17 +259,18 @@ def sync_hubs(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Preview hub content without writing to Apple Notes."
     ),
+    force: bool = typer.Option(
+        False, "--force", help="Update Hub/Home notes even if the export is stale."
+    ),
     json_output: bool = typer.Option(False, "--json", help=_JSON_HELP),
 ) -> None:
     """Create or update ✱ Home and ✱ Hub notes (strict mode only)."""
-    run_sync_hubs(export_file=export_file, dry_run=dry_run, json_output=json_output)
+    run_sync_hubs(export_file=export_file, dry_run=dry_run, json_output=json_output, force=force)
 
 
 @app.command()
 def arrange(
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Preview without writing."
-    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing."),
     reset: bool = typer.Option(
         False, "--reset", help="Clear saved Home page order; restore automatic ordering."
     ),

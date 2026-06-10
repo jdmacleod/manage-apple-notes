@@ -22,7 +22,13 @@ from scripts.classify.classify_notes import (
     load_prompt_template,
     price_per_million,
 )
-from scripts.config import find_latest_export, get_llm_config, load_settings, load_taxonomy
+from scripts.config import (
+    export_age_hours,
+    find_latest_export,
+    get_llm_config,
+    load_settings,
+    load_taxonomy,
+)
 from scripts.folder_utils import folder_name
 from scripts.json_output import emit_result
 from scripts.providers import get_provider
@@ -50,6 +56,16 @@ def run_inbox(dry_run: bool, json_output: bool = False) -> None:
         raise SystemExit(1)
 
     export_path = find_latest_export()
+
+    max_age = (settings.get("safety") or {}).get("export_max_age_hours", 24)
+    if max_age:
+        age_h = export_age_hours(export_path)
+        if age_h > max_age:
+            con.print(
+                f"[yellow]Warning:[/yellow] Export is {age_h:.0f}h old"
+                " — consider re-running 'notes export' first."
+            )
+
     all_notes = json.loads(export_path.read_text())
     notes = [n for n in all_notes if n.get("folder", "") == inbox_folder]
 

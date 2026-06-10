@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json as _json
 import subprocess
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from rich.console import Console
 
-from scripts.config import load_settings
+from scripts.config import find_latest_export, load_settings
 from scripts.json_output import emit_result
 from scripts.run_logger import RunLogger, logs_dir_path
 
@@ -24,7 +26,56 @@ def find_latest_proposal() -> Path:
     return files[-1]
 
 
-def run_apply(proposal_file: str | None, dry_run: bool, json_output: bool = False) -> None:
+def _check_proposal_freshness(
+    path: Path, settings: dict, con: Console, force: bool, json_output: bool, dry_run: bool
+) -> None:
+    try:
+        data = _json.loads(path.read_text())
+    except Exception:
+        return
+
+    warnings: list[str] = []
+
+    generated_at_str = data.get("generated_at")
+    if generated_at_str:
+        max_age_h = (settings.get("safety") or {}).get("proposal_max_age_hours", 48)
+        if max_age_h:
+            age = datetime.now(UTC) - datetime.fromisoformat(generated_at_str)
+            if age > timedelta(hours=max_age_h):
+                days, rem = divmod(int(age.total_seconds()), 86400)
+                warnings.append(
+                    f"Proposal is {days}d {rem // 3600}h old (generated {generated_at_str[:16]}Z)"
+                )
+
+    source_export_str = data.get("source_export")
+    if source_export_str:
+        try:
+            latest = find_latest_export()
+            if latest.resolve() != Path(source_export_str).resolve():
+                warnings.append(
+                    f"Newer export exists: {latest.name}\n"
+                    f"  Proposal was built from: {Path(source_export_str).name}\n"
+                    f"  Re-run 'notes classify' or use --force to proceed anyway."
+                )
+        except FileNotFoundError:
+            pass
+
+    if not warnings:
+        return
+    for w in warnings:
+        con.print(f"[yellow]Warning:[/yellow] {w}")
+    if not force:
+        msg = "Refusing to apply stale proposal. Use --force to override."
+        if json_output:
+            emit_result("move", status="error", dry_run=dry_run, error=msg)
+        else:
+            con.print(f"[red]{msg}[/red]")
+        raise SystemExit(1)
+
+
+def run_apply(
+    proposal_file: str | None, dry_run: bool, json_output: bool = False, force: bool = False
+) -> None:
     con = Console(stderr=True) if json_output else console
 
     if proposal_file:
@@ -50,6 +101,8 @@ def run_apply(proposal_file: str | None, dry_run: bool, json_output: bool = Fals
     settings = load_settings()
     cfg = settings.get("toplevel_folder", {})
     logger = RunLogger("move", logs_dir_path(settings))
+
+    _check_proposal_freshness(path, settings, con, force, json_output, dry_run)
 
     script = REPO_ROOT / "scripts" / "execute" / "apply-proposal.applescript"
     cmd = ["osascript", str(script)]

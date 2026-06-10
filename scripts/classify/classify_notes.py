@@ -17,6 +17,7 @@ from rich.progress import (
 )
 
 from scripts.config import (
+    export_age_hours,
     find_latest_export,
     get_category_meta,
     get_llm_config,
@@ -351,6 +352,15 @@ def run_classify(export_file: str | None, dry_run: bool, json_output: bool = Fal
         else:
             con.print(f"[red]Export file not found:[/red] {export_path}")
         raise SystemExit(1)
+
+    max_age = (settings.get("safety") or {}).get("export_max_age_hours", 24)
+    if max_age:
+        age_h = export_age_hours(export_path)
+        if age_h > max_age:
+            con.print(
+                f"[yellow]Warning:[/yellow] Export is {age_h:.0f}h old"
+                " — consider re-running 'notes export' first."
+            )
 
     all_notes = json.loads(export_path.read_text())
     skip_empty = settings.get("export", {}).get("skip_empty", True)

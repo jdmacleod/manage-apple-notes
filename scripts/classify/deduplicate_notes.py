@@ -12,7 +12,7 @@ from pathlib import Path
 
 from rich.console import Console
 
-from scripts.config import find_latest_export, load_settings
+from scripts.config import export_age_hours, find_latest_export, load_settings
 from scripts.json_output import emit_result
 from scripts.json_utils import extract_json_array
 from scripts.providers import LLMProvider, get_max_tokens, get_provider
@@ -243,6 +243,15 @@ def run_dedup(
         else:
             con.print(f"[red]Export file not found:[/red] {export_path}")
         raise SystemExit(1)
+
+    max_age = (settings.get("safety") or {}).get("export_max_age_hours", 24)
+    if max_age:
+        age_h = export_age_hours(export_path)
+        if age_h > max_age:
+            con.print(
+                f"[yellow]Warning:[/yellow] Export is {age_h:.0f}h old"
+                " — consider re-running 'notes export' first."
+            )
 
     all_notes = json.loads(export_path.read_text())
 

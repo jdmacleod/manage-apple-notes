@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-10
+
+### Added
+
+- Export staleness safety checks across all pipeline commands, driven by new `safety:` config block in `settings.example.yaml` (`export_max_age_hours: 24`, `proposal_max_age_hours: 48`):
+  - **Soft warning** on `discover`, `classify`, `triage`, `audit`, and `dedup` if the export is older than `export_max_age_hours`
+  - **Hard guard** on `notes move`: aborts if a newer export exists since the proposal was generated, or if the proposal itself is older than `proposal_max_age_hours`; `--force` downgrades to a warning
+  - **Hard guard** on `notes sync-hubs`: aborts if the export is older than `export_max_age_hours`; `--force` downgrades to a warning
+  - `restore` intentionally excluded (designed to operate from historical data); `revert` and `arrange` don't use exports
+- `export_age_hours(path)` helper in `scripts/config.py`
+
 ## [0.4.1] - 2026-06-08
 
 ### Documentation

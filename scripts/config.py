@@ -59,6 +59,14 @@ def find_latest_export() -> Path:
     return files[0]
 
 
+def export_age_hours(export_path: Path) -> float:
+    """Return age of export_path in fractional hours based on file mtime."""
+    from datetime import UTC, datetime
+
+    mtime = datetime.fromtimestamp(export_path.stat().st_mtime, tz=UTC)
+    return (datetime.now(UTC) - mtime).total_seconds() / 3600
+
+
 _SETTINGS_EXAMPLE = CONFIG_DIR / "settings.example.yaml"
 
 # Built-in defaults for the nine standard taxonomy roles.

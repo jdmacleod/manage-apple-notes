@@ -18,6 +18,7 @@ from rich.progress import (
 
 from scripts.classify.classify_notes import price_per_million
 from scripts.config import (
+    export_age_hours,
     find_latest_export,
     get_category_meta,
     get_llm_config,
@@ -495,6 +496,15 @@ def run_discover(
         else:
             con.print(f"[red]Export file not found:[/red] {export_path}")
         raise SystemExit(1)
+
+    max_age = (settings.get("safety") or {}).get("export_max_age_hours", 24)
+    if max_age:
+        age_h = export_age_hours(export_path)
+        if age_h > max_age:
+            con.print(
+                f"[yellow]Warning:[/yellow] Export is {age_h:.0f}h old"
+                " — consider re-running 'notes export' first."
+            )
 
     all_notes = json.loads(export_path.read_text())
     system_prompt = inject_discover_taxonomy(

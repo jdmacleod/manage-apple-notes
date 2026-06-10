@@ -118,6 +118,11 @@ classify:
   exclude_archive: true   # Skip Archive notes during classification (added to no_change automatically)
                           # Set to false to include Archive notes in a full library re-organization
 
+safety:
+  export_max_age_hours: 24    # Warn (read-only commands) or block (write commands) if export is older than this.
+                              # Set to 0 to disable. --force bypasses the block on write commands.
+  proposal_max_age_hours: 48  # Block notes move if proposal is older than this. 0 = disable. --force bypasses.
+
 deduplication:
   fuzzy_title_threshold: 85      # thefuzz token_sort_ratio threshold (0-100)
   jaccard_content_threshold: 80  # thefuzz token_set_ratio threshold (0-100)
