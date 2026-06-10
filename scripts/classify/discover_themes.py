@@ -440,6 +440,17 @@ def _discover_batch(
             if len(batch) == 1:
                 note_title = (batch[0].get("title") or "").strip()[:60]
                 _con.print(
+                    f"[yellow]Locale error — retrying '{note_title}' with title only[/yellow]"
+                )
+                title_only_payload = _build_discover_payload([{**batch[0], "body": ""}])
+                try:
+                    note_response = provider.classify_messages(
+                        system_prompt, title_only_payload, max_tokens=min(400, max_tokens)
+                    )
+                    return extract_json_themes(note_response)
+                except Exception:
+                    pass
+                _con.print(
                     f"[yellow]Warning:[/yellow] skipping note '{note_title}'"
                     " — Apple Intelligence locale error (unsupported language)"
                 )
@@ -464,9 +475,20 @@ def _discover_batch(
                     if is_locale_error(note_exc):
                         note_title = (note.get("title") or "").strip()[:60]
                         _con.print(
-                            f"[yellow]Warning:[/yellow] skipping note '{note_title}'"
-                            " — Apple Intelligence locale error (unsupported language)"
+                            f"[yellow]Locale error — retrying '{note_title}' with title only[/yellow]"
                         )
+                        title_only_payload = _build_discover_payload([{**note, "body": ""}])
+                        try:
+                            note_response = provider.classify_messages(
+                                system_prompt, title_only_payload, max_tokens=probe_max_tokens
+                            )
+                            note_themes = extract_json_themes(note_response)
+                            themes.extend(note_themes)
+                        except Exception:
+                            _con.print(
+                                f"[yellow]Warning:[/yellow] skipping note '{note_title}'"
+                                " — Apple Intelligence locale error (unsupported language)"
+                            )
                     elif debug:
                         _con.print(
                             f"[dim][debug]   note probe failed "

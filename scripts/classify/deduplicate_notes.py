@@ -14,7 +14,7 @@ from rich.console import Console
 
 from scripts.config import export_age_hours, find_latest_export, load_settings
 from scripts.json_output import emit_result
-from scripts.json_utils import extract_json_array
+from scripts.json_utils import extract_json_array, is_locale_error
 from scripts.providers import LLMProvider, get_max_tokens, get_provider
 from scripts.run_logger import RunLogger, logs_dir_path
 
@@ -215,11 +215,23 @@ def pass3_llm(
         for i, (note_a, note_b, score) in enumerate(candidates)
     ]
 
-    text = provider.classify_messages(
-        system_prompt,
-        json.dumps(groups_payload, indent=2, ensure_ascii=False),
-        max_tokens=max_tokens,
-    )
+    payload_str = json.dumps(groups_payload, indent=2, ensure_ascii=False)
+    try:
+        text = provider.classify_messages(system_prompt, payload_str, max_tokens=max_tokens)
+    except Exception as exc:
+        if not is_locale_error(exc):
+            raise
+        # Body content triggered Apple's locale filter; retry with titles only.
+        # Title + folder context is usually sufficient to judge duplicate pairs.
+        title_only = [
+            {**g, "notes": [{k: v for k, v in n.items() if k != "body"} for n in g["notes"]]}  # type: ignore[attr-defined]
+            for g in groups_payload
+        ]
+        text = provider.classify_messages(
+            system_prompt,
+            json.dumps(title_only, indent=2, ensure_ascii=False),
+            max_tokens=max_tokens,
+        )
     result: list[dict] = extract_json_array(text)
     return result
 

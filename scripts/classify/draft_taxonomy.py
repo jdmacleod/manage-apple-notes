@@ -22,7 +22,7 @@ from scripts.config import (
 )
 from scripts.folder_utils import enumerate_paths
 from scripts.json_output import emit_result
-from scripts.json_utils import extract_json_object
+from scripts.json_utils import extract_json_object, is_locale_error
 from scripts.providers import LLMProvider, get_max_tokens, get_provider
 from scripts.run_logger import RunLogger, logs_dir_path
 
@@ -195,7 +195,13 @@ def bootstrap_taxonomy(
         )
         mapping = extract_json_object(response)
     except Exception as exc:
-        console.print(f"[yellow]Warning:[/yellow] Bootstrap LLM call failed — {exc}")
+        if is_locale_error(exc):
+            console.print(
+                "[yellow]Warning:[/yellow] Bootstrap LLM call failed —"
+                " Apple Intelligence locale error (folder names may contain unsupported characters)"
+            )
+        else:
+            console.print(f"[yellow]Warning:[/yellow] Bootstrap LLM call failed — {exc}")
         return {}
 
     taxonomy_entries = {
