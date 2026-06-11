@@ -673,8 +673,12 @@ This mirrors the context-overflow split strategy and ensures that English notes 
 mixed-language batch are not discarded because non-English notes tipped the detector.
 
 **Single-note path (batch == 1):**
-1. Sanitize and retry once.
-2. If still locale error: skip with a per-note warning showing the note title.
+1. Sanitize and retry once (handled by the Swift bridge).
+2. If still locale error from Python: retry `classify_batch` with `body=""` (title only).
+3. If title-only also fails: route the note to `no_change` (leave in current folder) and
+   print a warning. The note is not dropped — it appears in the proposal's `no_change`
+   array with its original folder preserved. `discover` skips the note entirely (no
+   themes are extracted) since there is no proposal array for discovery output.
 
 #### Residual limitations
 

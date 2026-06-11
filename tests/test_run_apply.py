@@ -252,3 +252,120 @@ class TestRunApply:
         out = json.loads(capsys.readouterr().out)
         assert out["status"] == "error"
         assert "No proposals" in out["error"]
+
+
+class TestCheckProposalFreshness:
+    """Tests for the staleness guard in _check_proposal_freshness."""
+
+    def _mock_popen(self, mocker: MagicMock) -> MagicMock:
+        mock_popen = mocker.patch("subprocess.Popen")
+        mock_proc = MagicMock()
+        mock_proc.stdout.readline.side_effect = [""]
+        mock_proc.returncode = 0
+        mock_proc.wait.return_value = 0
+        mock_popen.return_value = mock_proc
+        return mock_popen
+
+    def test_no_metadata_passes_through(self, mocker: MagicMock, tmp_path: Path) -> None:
+        proposal = tmp_path / "proposal.json"
+        proposal.write_text(json.dumps({"moves": []}))
+        mock_popen = self._mock_popen(mocker)
+        mocker.patch(
+            "scripts.execute.run_apply.load_settings",
+            return_value={"safety": {"proposal_max_age_hours": 1}},
+        )
+        run_apply(proposal_file=str(proposal), dry_run=False)
+        mock_popen.assert_called_once()
+
+    def test_stale_proposal_aborts_without_force(self, mocker: MagicMock, tmp_path: Path) -> None:
+        proposal = tmp_path / "proposal.json"
+        proposal.write_text(json.dumps({"generated_at": "2020-01-01T00:00:00+00:00", "moves": []}))
+        mocker.patch(
+            "scripts.execute.run_apply.load_settings",
+            return_value={"safety": {"proposal_max_age_hours": 1}},
+        )
+        with pytest.raises(SystemExit):
+            run_apply(proposal_file=str(proposal), dry_run=False, force=False)
+
+    def test_stale_proposal_continues_with_force(self, mocker: MagicMock, tmp_path: Path) -> None:
+        proposal = tmp_path / "proposal.json"
+        proposal.write_text(json.dumps({"generated_at": "2020-01-01T00:00:00+00:00", "moves": []}))
+        mock_popen = self._mock_popen(mocker)
+        mocker.patch(
+            "scripts.execute.run_apply.load_settings",
+            return_value={"safety": {"proposal_max_age_hours": 1}},
+        )
+        run_apply(proposal_file=str(proposal), dry_run=False, force=True)
+        mock_popen.assert_called_once()
+
+    def test_newer_export_aborts_without_force(self, mocker: MagicMock, tmp_path: Path) -> None:
+        old_export = tmp_path / "notes-2026-01-01.json"
+        old_export.write_text("[]")
+        new_export = tmp_path / "notes-2026-06-10.json"
+        new_export.write_text("[]")
+
+        proposal = tmp_path / "proposal.json"
+        proposal.write_text(json.dumps({"source_export": str(old_export), "moves": []}))
+
+        mocker.patch("scripts.execute.run_apply.find_latest_export", return_value=new_export)
+        mocker.patch(
+            "scripts.execute.run_apply.load_settings",
+            return_value={"safety": {"proposal_max_age_hours": 0}},
+        )
+        with pytest.raises(SystemExit):
+            run_apply(proposal_file=str(proposal), dry_run=False, force=False)
+
+    def test_newer_export_continues_with_force(self, mocker: MagicMock, tmp_path: Path) -> None:
+        old_export = tmp_path / "notes-2026-01-01.json"
+        old_export.write_text("[]")
+        new_export = tmp_path / "notes-2026-06-10.json"
+        new_export.write_text("[]")
+
+        proposal = tmp_path / "proposal.json"
+        proposal.write_text(json.dumps({"source_export": str(old_export), "moves": []}))
+
+        mock_popen = self._mock_popen(mocker)
+        mocker.patch("scripts.execute.run_apply.find_latest_export", return_value=new_export)
+        mocker.patch(
+            "scripts.execute.run_apply.load_settings",
+            return_value={"safety": {"proposal_max_age_hours": 0}},
+        )
+        run_apply(proposal_file=str(proposal), dry_run=False, force=True)
+        mock_popen.assert_called_once()
+
+    def test_malformed_generated_at_does_not_crash(self, mocker: MagicMock, tmp_path: Path) -> None:
+        proposal = tmp_path / "proposal.json"
+        proposal.write_text(json.dumps({"generated_at": "not-a-date", "moves": []}))
+        mock_popen = self._mock_popen(mocker)
+        mocker.patch(
+            "scripts.execute.run_apply.load_settings",
+            return_value={"safety": {"proposal_max_age_hours": 1}},
+        )
+        run_apply(proposal_file=str(proposal), dry_run=False)
+        mock_popen.assert_called_once()
+
+    def test_naive_datetime_does_not_crash(self, mocker: MagicMock, tmp_path: Path) -> None:
+        proposal = tmp_path / "proposal.json"
+        proposal.write_text(
+            json.dumps({"generated_at": "2020-01-01T00:00:00", "moves": []})  # no tz
+        )
+        mock_popen = self._mock_popen(mocker)
+        mocker.patch(
+            "scripts.execute.run_apply.load_settings",
+            return_value={"safety": {"proposal_max_age_hours": 1}},
+        )
+        run_apply(proposal_file=str(proposal), dry_run=False)
+        mock_popen.assert_called_once()
+
+    def test_proposal_max_age_hours_zero_disables_check(
+        self, mocker: MagicMock, tmp_path: Path
+    ) -> None:
+        proposal = tmp_path / "proposal.json"
+        proposal.write_text(json.dumps({"generated_at": "2020-01-01T00:00:00+00:00", "moves": []}))
+        mock_popen = self._mock_popen(mocker)
+        mocker.patch(
+            "scripts.execute.run_apply.load_settings",
+            return_value={"safety": {"proposal_max_age_hours": 0}},
+        )
+        run_apply(proposal_file=str(proposal), dry_run=False)
+        mock_popen.assert_called_once()

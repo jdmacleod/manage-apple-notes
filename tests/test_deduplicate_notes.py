@@ -368,6 +368,48 @@ class TestPass3Llm:
         with pytest.raises(ValueError):
             pass3_llm([(note_a, note_b, 90.0)], "system", mock_llm_provider, 100)
 
+    def test_locale_error_retries_with_title_only(self, mock_llm_provider: MagicMock) -> None:
+        llm_result = json.dumps(
+            [
+                {
+                    "group_id": 1,
+                    "is_duplicate": False,
+                    "resolution": "keep",
+                    "keep_id": "1",
+                    "delete_ids": [],
+                }
+            ]
+        )
+        mock_llm_provider.classify_messages.side_effect = [
+            RuntimeError("apple_unsupported_locale"),
+            llm_result,
+        ]
+        note_a = {
+            "id": "1",
+            "title": "日本語タイトル",
+            "folder": "Inbox",
+            "proposed_folder_path": "Inbox",
+            "modified": "2026-01-01",
+            "word_count": 3,
+            "body": "CJK body content",
+        }
+        note_b = {
+            "id": "2",
+            "title": "別のタイトル",
+            "folder": "Inbox",
+            "proposed_folder_path": "Inbox",
+            "modified": "2026-01-01",
+            "word_count": 3,
+            "body": "Other CJK body",
+        }
+        result = pass3_llm([(note_a, note_b, 85.0)], "system", mock_llm_provider, 100)
+        # Second call succeeds with title-only payload (no "body" key)
+        assert mock_llm_provider.classify_messages.call_count == 2
+        title_only_payload = json.loads(mock_llm_provider.classify_messages.call_args[0][1])
+        assert all("body" not in n for group in title_only_payload for n in group["notes"])
+        assert len(result) == 1
+        assert result[0]["is_duplicate"] is False
+
 
 class TestRunDedup:
     def test_dry_run_does_not_write_proposal(

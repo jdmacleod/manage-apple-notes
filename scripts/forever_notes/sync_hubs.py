@@ -600,6 +600,13 @@ def run_sync_hubs(
 
     if export_file:
         export_path = Path(export_file)
+        if not export_path.exists():
+            msg = f"Export file not found: {export_path}"
+            if json_output:
+                emit_result("sync-hubs", status="error", dry_run=dry_run, error=msg)
+            else:
+                _con.print(f"[red]Export file not found:[/red] {export_path}")
+            raise SystemExit(1)
     else:
         try:
             export_path = find_latest_export()
@@ -614,10 +621,6 @@ def run_sync_hubs(
     if max_age:
         age_h = export_age_hours(export_path)
         if age_h > max_age:
-            _con.print(
-                f"[yellow]Warning:[/yellow] Export is {age_h:.0f}h old"
-                " — Hub/Home notes may not reflect current library state."
-            )
             if not force:
                 msg = (
                     f"Refusing to update Hub/Home notes from a {age_h:.0f}h-old export."
@@ -628,6 +631,10 @@ def run_sync_hubs(
                 else:
                     _con.print(f"[red]{msg}[/red]")
                 raise SystemExit(1)
+            _con.print(
+                f"[yellow]Warning:[/yellow] Export is {age_h:.0f}h old"
+                " — Hub/Home notes may not reflect current library state."
+            )
 
     _con.print(f"Loading export: [dim]{export_path.name}[/dim]")
     with open(export_path) as f:

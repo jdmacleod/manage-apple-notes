@@ -534,6 +534,13 @@ def run_classify(export_file: str | None, dry_run: bool, json_output: bool = Fal
                 note_id = result.get("id", "")
                 note = note_index.get(note_id, {})
                 if result.get("_no_change"):
+                    if not note_id or not note:
+                        batch_errors += 1
+                        con.print(
+                            f"[yellow]Warning:[/yellow] _no_change result"
+                            f" has unknown note id {note_id!r} — skipping"
+                        )
+                        continue
                     no_change.append(
                         {
                             "id": note_id,

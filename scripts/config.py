@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
@@ -61,8 +62,6 @@ def find_latest_export() -> Path:
 
 def export_age_hours(export_path: Path) -> float:
     """Return age of export_path in fractional hours based on file mtime."""
-    from datetime import UTC, datetime
-
     mtime = datetime.fromtimestamp(export_path.stat().st_mtime, tz=UTC)
     return (datetime.now(UTC) - mtime).total_seconds() / 3600
 

@@ -40,12 +40,16 @@ def _check_proposal_freshness(
     if generated_at_str:
         max_age_h = (settings.get("safety") or {}).get("proposal_max_age_hours", 48)
         if max_age_h:
-            age = datetime.now(UTC) - datetime.fromisoformat(generated_at_str)
-            if age > timedelta(hours=max_age_h):
-                days, rem = divmod(int(age.total_seconds()), 86400)
-                warnings.append(
-                    f"Proposal is {days}d {rem // 3600}h old (generated {generated_at_str[:16]}Z)"
-                )
+            try:
+                age = datetime.now(UTC) - datetime.fromisoformat(generated_at_str)
+                if age > timedelta(hours=max_age_h):
+                    days, rem = age.days, age.seconds
+                    warnings.append(
+                        f"Proposal is {days}d {rem // 3600}h old"
+                        f" (generated {generated_at_str[:16]}Z)"
+                    )
+            except (TypeError, ValueError):
+                pass
 
     source_export_str = data.get("source_export")
     if source_export_str:

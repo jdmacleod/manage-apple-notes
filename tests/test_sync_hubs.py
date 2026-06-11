@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
+import time
 from pathlib import Path
 from unittest.mock import MagicMock
+
+import pytest
 
 from scripts.folder_utils import folder_name
 from scripts.forever_notes.sync_hubs import (
@@ -412,9 +416,7 @@ class TestBuildHomeBody:
                 },
             }
         }
-        home_index = {
-            "Finance": {"_sf_def": {"name": "Finance"}, "categories": {}, "total": 3}
-        }
+        home_index = {"Finance": {"_sf_def": {"name": "Finance"}, "categories": {}, "total": 3}}
         export_top_order = {"Areas": 0, "Inbox": 1}
         body = _build_home_body(
             taxonomy, {}, home_index, "✱ ", "✱ Home", export_top_order=export_top_order
@@ -440,9 +442,7 @@ class TestBuildHomeBody:
                 "areas": {"folder": "Areas", "subfolders": ["Finance"]},
             }
         }
-        home_index = {
-            "Finance": {"_sf_def": {"name": "Finance"}, "categories": {}, "total": 3}
-        }
+        home_index = {"Finance": {"_sf_def": {"name": "Finance"}, "categories": {}, "total": 3}}
         export_top_order = {"Areas": 0}  # Archive absent from export
         body = _build_home_body(
             taxonomy, {}, home_index, "✱ ", "✱ Home", export_top_order=export_top_order
@@ -473,13 +473,9 @@ class TestBuildHomeBody:
                 }
             }
         }
-        home_index = {
-            "Reference": {"_sf_def": {"name": "Reference"}, "categories": {}, "total": 3}
-        }
+        home_index = {"Reference": {"_sf_def": {"name": "Reference"}, "categories": {}, "total": 3}}
         flat_index = {"Resources": [("Stray Note", "x-coredata://u/p9")]}
-        body = _build_home_body(
-            taxonomy, {}, home_index, "✱ ", "✱ Home", flat_index=flat_index
-        )
+        body = _build_home_body(taxonomy, {}, home_index, "✱ ", "✱ Home", flat_index=flat_index)
         assert "Reference" in body
         assert "Stray Note" not in body
 
@@ -548,13 +544,13 @@ class TestLookupFolderOrder:
     # Sidebar order for Library children: Inbox(most recent), Projects, Areas, Resources, Archive
     _FOLDER_ROWS = [
         (1, "Library", None, 100.0),
-        (2, "Inbox",    1,   500.0),   # most recent → sidebar pos 0
-        (3, "Projects", 1,   490.0),
-        (4, "Areas",    1,   480.0),
-        (5, "Resources", 1,  470.0),
-        (6, "Archive",  1,   460.0),   # least recent → sidebar pos 4
-        (7, "Finance",  4,   300.0),   # subfolder of Areas
-        (8, "Health",   4,   290.0),
+        (2, "Inbox", 1, 500.0),  # most recent → sidebar pos 0
+        (3, "Projects", 1, 490.0),
+        (4, "Areas", 1, 480.0),
+        (5, "Resources", 1, 470.0),
+        (6, "Archive", 1, 460.0),  # least recent → sidebar pos 4
+        (7, "Finance", 4, 300.0),  # subfolder of Areas
+        (8, "Health", 4, 290.0),
     ]
 
     def _mock_db(self, mocker: MagicMock, tmp_path: Path) -> None:
@@ -615,9 +611,9 @@ class TestLookupFolderOrder:
         mocker.patch("shutil.copy2")
         # Flat layout: taxonomy folders are at root (ZPARENT=None)
         flat_rows = [
-            (1, "Inbox",    None, 500.0),
+            (1, "Inbox", None, 500.0),
             (2, "Projects", None, 490.0),
-            (3, "Areas",    None, 480.0),
+            (3, "Areas", None, 480.0),
         ]
         mock_con = MagicMock()
         mock_con.execute.return_value.fetchall.return_value = flat_rows
@@ -1026,7 +1022,9 @@ class TestRunSyncHubs:
 
         written_bodies: list[str] = []
 
-        def _capture_write(title: str, body: str, *args: object, **kwargs: object) -> tuple[str, str]:
+        def _capture_write(
+            title: str, body: str, *args: object, **kwargs: object
+        ) -> tuple[str, str]:
             written_bodies.append(body)
             return ("created", "p1")
 
@@ -1203,3 +1201,93 @@ class TestRunSyncHubs:
 
         # _lookup_folder_order called for both top + sf (the normal NoteStore path)
         assert lookup_spy.call_count == 1
+
+
+class TestRunSyncHubsStalenessGuard:
+    """Tests for the export staleness hard guard in run_sync_hubs."""
+
+    def _minimal_settings(self, max_age: int = 24) -> dict:
+        return {
+            "forever_notes_mode": "strict",
+            "strict_mode": {"hub_title_prefix": "✱ ", "home_note_title": "✱ Home"},
+            "thresholds": {"min_notes_for_hub": 5},
+            "toplevel_folder": {"enabled": False},
+            "safety": {"export_max_age_hours": max_age},
+        }
+
+    def _make_stale_export(self, tmp_path: Path, age_hours: float = 48.0) -> Path:
+        """Create an export file whose mtime is set to age_hours ago."""
+        notes = [
+            {
+                "id": f"x-coredata://test/p{i}",
+                "title": f"Note {i}",
+                "folder": "Resources",
+                "folder_path": "Resources/Reference",
+                "modified": "2026-01-01",
+            }
+            for i in range(10)
+        ]
+        export_file = tmp_path / "notes-test.json"
+        export_file.write_text(json.dumps(notes))
+        old_mtime = time.time() - age_hours * 3600
+        os.utime(export_file, (old_mtime, old_mtime))
+        return export_file
+
+    def test_stale_export_aborts_without_force(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_taxonomy: dict,
+    ) -> None:
+        export_file = self._make_stale_export(tmp_path, age_hours=48)
+        mocker.patch(
+            "scripts.forever_notes.sync_hubs.load_settings",
+            return_value=self._minimal_settings(max_age=24),
+        )
+        mocker.patch("scripts.forever_notes.sync_hubs.load_taxonomy", return_value=minimal_taxonomy)
+
+        with pytest.raises(SystemExit):
+            run_sync_hubs(export_file=str(export_file), dry_run=False, force=False)
+
+    def test_stale_export_continues_with_force(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_taxonomy: dict,
+    ) -> None:
+        export_file = self._make_stale_export(tmp_path, age_hours=48)
+        mocker.patch(
+            "scripts.forever_notes.sync_hubs.load_settings",
+            return_value=self._minimal_settings(max_age=24),
+        )
+        mocker.patch("scripts.forever_notes.sync_hubs.load_taxonomy", return_value=minimal_taxonomy)
+        mocker.patch(
+            "scripts.forever_notes.sync_hubs._write_note_applescript",
+            return_value=("created", "p1"),
+        )
+        mocker.patch("scripts.forever_notes.sync_hubs.RunLogger")
+
+        # Should not raise — warning is printed but execution continues
+        run_sync_hubs(export_file=str(export_file), dry_run=False, force=True)
+
+    def test_export_max_age_hours_zero_disables_check(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_taxonomy: dict,
+    ) -> None:
+        # age_hours=9999 would normally abort, but max_age=0 disables the check
+        export_file = self._make_stale_export(tmp_path, age_hours=9999)
+        mocker.patch(
+            "scripts.forever_notes.sync_hubs.load_settings",
+            return_value=self._minimal_settings(max_age=0),
+        )
+        mocker.patch("scripts.forever_notes.sync_hubs.load_taxonomy", return_value=minimal_taxonomy)
+        mocker.patch(
+            "scripts.forever_notes.sync_hubs._write_note_applescript",
+            return_value=("created", "p1"),
+        )
+        mocker.patch("scripts.forever_notes.sync_hubs.RunLogger")
+
+        # Should not raise even with enormous stale age
+        run_sync_hubs(export_file=str(export_file), dry_run=False, force=False)

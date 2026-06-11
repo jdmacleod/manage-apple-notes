@@ -92,7 +92,7 @@ class TestCliCommands:
         mock = mocker.patch("scripts.cli.run_sync_hubs")
         result = runner.invoke(app, ["sync-hubs", "--dry-run"])
         assert result.exit_code == 0
-        mock.assert_called_once_with(export_file=None, dry_run=True, json_output=False)
+        mock.assert_called_once_with(export_file=None, dry_run=True, json_output=False, force=False)
 
     def test_dedup_invokes_run_dedup(self, mocker: MagicMock) -> None:
         mock = mocker.patch("scripts.cli.run_dedup")

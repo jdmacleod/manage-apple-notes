@@ -422,38 +422,41 @@ class TestClassifyBatchResilient:
         assert result == []
 
     def test_locale_error_single_note_skips_immediately(self, mock_llm_provider: MagicMock) -> None:
-        # Single-note batch: locale error → skip immediately, no split or retry.
+        # Single-note batch: locale error on body → retry with title only → also fails → _no_change.
+        # 2 total calls: body attempt + title-only retry.
         notes = [{"id": "1", "title": "日本語タイトル", "body": "本文", "folder": "Inbox"}]
         mock_llm_provider.classify_messages.side_effect = RuntimeError("apple_unsupported_locale")
         result = classify_batch_resilient(mock_llm_provider, notes, "prompt", {})
-        assert result == []
-        mock_llm_provider.classify_messages.assert_called_once()
+        assert result == [{"id": "1", "_no_change": True}]
+        assert mock_llm_provider.classify_messages.call_count == 2
 
     def test_locale_error_multi_note_batch_splits_to_probe(
         self, mock_llm_provider: MagicMock
     ) -> None:
-        # Multi-note batch: locale error → split into 1-note probes; both fail → skip both.
-        # 3 total calls: 1 original batch + 2 individual probes.
+        # Multi-note batch: locale error → split into 1-note probes; each probe tries body then
+        # title-only, both fail → each returns _no_change.
+        # 5 total calls: 1 original batch + 2×(body probe + title-only retry).
         mock_llm_provider.classify_messages.side_effect = RuntimeError("apple_unsupported_locale")
         notes = [
             {"id": "1", "title": "A", "body": "B", "folder": "Inbox"},
             {"id": "2", "title": "日本語", "body": "本文", "folder": "Inbox"},
         ]
         result = classify_batch_resilient(mock_llm_provider, notes, "prompt", {})
-        assert result == []
-        assert mock_llm_provider.classify_messages.call_count == 3
+        assert result == [{"id": "1", "_no_change": True}, {"id": "2", "_no_change": True}]
+        assert mock_llm_provider.classify_messages.call_count == 5
 
     def test_locale_error_multi_note_batch_rescues_clean_notes(
         self, mock_llm_provider: MagicMock
     ) -> None:
-        # Multi-note batch: first note fails locale; second note succeeds after split.
+        # Multi-note batch: note 1 fails all retries (body + title-only); note 2 succeeds.
+        # Call sequence: original batch → note1 body probe → note1 title-only → note2 body (ok).
         call_count = 0
 
         def side_effect(system: str, user: str, **kwargs: object) -> str:
             nonlocal call_count
             call_count += 1
-            if call_count <= 2:
-                # Original 2-note call + probe of first note both fail
+            if call_count <= 3:
+                # Original 2-note call + note1 body probe + note1 title-only all fail
                 raise RuntimeError("apple_unsupported_locale")
             return json.dumps([{"id": "2", "proposed_folder": "Resources", "confidence": "high"}])
 
@@ -463,8 +466,11 @@ class TestClassifyBatchResilient:
             {"id": "2", "title": "Tech meeting notes", "body": "Q3 planning", "folder": "Inbox"},
         ]
         result = classify_batch_resilient(mock_llm_provider, notes, "prompt", {})
-        assert result == [{"id": "2", "proposed_folder": "Resources", "confidence": "high"}]
-        assert call_count == 3
+        assert result == [
+            {"id": "1", "_no_change": True},
+            {"id": "2", "proposed_folder": "Resources", "confidence": "high"},
+        ]
+        assert call_count == 4
 
 
 class TestSanitizeNotesForLocale:
@@ -770,3 +776,44 @@ class TestRunClassify:
         )
         assert all(m["id"] != "ref-1" for m in data["moves"])
         assert any(n["id"] == "ref-1" for n in data["no_change"])
+
+    def test_locale_error_routes_to_no_change_in_proposal(
+        self,
+        mocker: MagicMock,
+        tmp_path: Path,
+        minimal_settings: dict,
+        minimal_taxonomy: dict,
+    ) -> None:
+        """LLM always raises locale error → note lands in no_change array of written proposal."""
+        notes = [
+            {
+                "id": "cjk-1",
+                "title": "日本語タイトル",
+                "body": "本文",
+                "folder": "Inbox",
+                "folder_path": "Inbox",
+            }
+        ]
+        export_file = tmp_path / "notes-test.json"
+        export_file.write_text(json.dumps(notes))
+
+        mock_provider = MagicMock()
+        mock_provider.name = "mock"
+        mock_provider.model = "mock-model"
+        mock_provider.classify_messages.side_effect = RuntimeError("apple_unsupported_locale")
+
+        mocker.patch("scripts.classify.classify_notes.load_settings", return_value=minimal_settings)
+        mocker.patch("scripts.classify.classify_notes.load_taxonomy", return_value=minimal_taxonomy)
+        mocker.patch(
+            "scripts.classify.classify_notes.load_prompt_template",
+            return_value="{CATEGORY_LIST} {CATCHALL}",
+        )
+        mocker.patch("scripts.classify.classify_notes.get_provider", return_value=mock_provider)
+        mocker.patch("scripts.classify.classify_notes.PROPOSALS_DIR", tmp_path)
+
+        run_classify(export_file=str(export_file), dry_run=False)
+
+        proposals = list(tmp_path.glob("proposal-*.json"))
+        data = json.loads(proposals[0].read_text())
+        assert all(m["id"] != "cjk-1" for m in data["moves"])
+        assert any(n["id"] == "cjk-1" for n in data["no_change"])

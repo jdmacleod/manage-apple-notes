@@ -272,11 +272,12 @@ class TestDiscoverBatch:
     def test_locale_error_all_cjk_skips_retry_returns_empty(
         self, mock_llm_provider: MagicMock
     ) -> None:
-        # title strips to "" → has_content is False → no retry
+        # Body call fails with locale error → retry with title only → also fails → skip, return [].
+        # 2 total calls: body attempt + title-only retry.
         mock_llm_provider.classify_messages.side_effect = RuntimeError("apple_unsupported_locale")
         result = _discover_batch(mock_llm_provider, "system", [{"id": "1", "title": "日本語"}])
         assert result == []
-        mock_llm_provider.classify_messages.assert_called_once()
+        assert mock_llm_provider.classify_messages.call_count == 2
 
     def test_apple_presanitize_strips_non_ascii_before_first_call(
         self, mock_llm_provider: MagicMock
@@ -321,14 +322,13 @@ class TestDiscoverBatch:
     def test_locale_error_single_note_skipped_immediately(
         self, mock_llm_provider: MagicMock
     ) -> None:
-        # Single-note batch: locale error → skip immediately with exactly one call.
-        # No retry is attempted because pre-sanitization already ran for Apple and
-        # a retry on the same sanitized content would always fail the same way.
+        # Single-note batch: locale error on body → retry with title only → also fails → skip.
+        # 2 total calls: body attempt + title-only retry.
         mock_llm_provider.classify_messages.side_effect = RuntimeError("apple_unsupported_locale")
         batch = [{"id": "1", "title": "Tech note", "excerpt": "Hello world"}]
         result = _discover_batch(mock_llm_provider, "system", batch)
         assert result == []
-        assert mock_llm_provider.classify_messages.call_count == 1
+        assert mock_llm_provider.classify_messages.call_count == 2
 
     def test_locale_error_splits_on_persistent_retry_failure(
         self, mock_llm_provider: MagicMock

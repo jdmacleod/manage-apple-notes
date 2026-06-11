@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from scripts.config import (
+    export_age_hours,
     find_latest_export,
     load_settings,
     load_taxonomy,
@@ -99,3 +100,23 @@ class TestFindLatestExport:
         f.write_text(json.dumps([]))
         result = find_latest_export()
         assert result == f
+
+
+class TestExportAgeHours:
+    def test_fresh_file_returns_near_zero(self, tmp_path: Path) -> None:
+        f = tmp_path / "notes-fresh.json"
+        f.write_text("[]")
+        age = export_age_hours(f)
+        assert 0.0 <= age < 0.1  # just created; well under 6 minutes
+
+    def test_old_file_returns_correct_age(self, tmp_path: Path) -> None:
+        import os
+        import time
+
+        f = tmp_path / "notes-old.json"
+        f.write_text("[]")
+        target_hours = 48.0
+        old_mtime = time.time() - target_hours * 3600
+        os.utime(f, (old_mtime, old_mtime))
+        age = export_age_hours(f)
+        assert abs(age - target_hours) < 0.01
