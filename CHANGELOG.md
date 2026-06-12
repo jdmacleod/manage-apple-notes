@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.0] - 2026-06-10
+## [0.5.0] - 2026-06-12
 
 ### Added
 
@@ -17,6 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Hard guard** on `notes sync-hubs`: aborts if the export is older than `export_max_age_hours`; `--force` downgrades to a warning
   - `restore` intentionally excluded (designed to operate from historical data); `revert` and `arrange` don't use exports
 - `export_age_hours(path)` helper in `scripts/config.py`
+
+### Fixed
+
+- `classify` and `triage`: locale errors (Apple Intelligence `unsupportedLanguageOrLocale`) now trigger a title-only retry before routing the note to `no_change` — previously the note was silently dropped from the proposal
+- `discover`: title-only retry applied at the single-note top-level path and inside the per-note linear-probe loop, matching the pattern used in `classify`
+- `dedup` (pass 3 LLM): locale errors retry with note bodies stripped; title + folder context is sufficient to judge duplicate pairs; re-raises on title-only failure so the caller logs a warning rather than crashing
+- `draft`: locale errors distinguished from other LLM failures in the warning message
+- `_check_proposal_freshness`: fixed crash on naive datetimes (missing timezone → `TypeError`)
+- `sync_hubs`: added existence guard for user-supplied `--export-file` path before age check; fixed double-print on blocking path (yellow warning now only fires when `--force` is set)
+- `classify`/`triage`: guard `_no_change` sentinel results with empty/unknown `note_id` to prevent bad proposal entries
+
+### Tests
+
+- 15 new tests covering staleness guards (`TestCheckProposalFreshness`, `TestRunSyncHubsStalenessGuard`), `export_age_hours`, locale-error retry paths in `classify` and `dedup`, and `run_apply` staleness behaviour
+- 5 existing locale-error tests updated to match revised retry logic
 
 ## [0.4.1] - 2026-06-08
 
